@@ -1,0 +1,8 @@
+{
+  "appId": "com.dakeera.mtgdeckmaster",
+  "appName": "MtG DeckMaster",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}
