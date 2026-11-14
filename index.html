@@ -85,8 +85,8 @@ const isReal=c=>!['Token','Accessory'].includes(c.type);
 const findCard=n=>(IDX||(IDX=new Map([...D.cards].reverse().map(c=>[norm(front(c.name)),c])))).get(norm(front(n)));
 const usage=n=>D.decks.map(d=>{const q=sum(d.cards.filter(x=>norm(x.name)===norm(n)));return {d,q,qty:q}}).filter(x=>x.q>0);
 const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600)};
-let MBACK=null,SLD=false;
-const openM=(h,back)=>{$('#mbody').innerHTML=h;$('#modal').classList.add('open');MBACK=back||null},closeM=()=>{$('#modal').classList.remove('open');MBACK=null;SLD=false;SLN=null;CR=null};
+let MBACK=null,SLD=false,KEEPSCROLL=false;
+const openM=(h,back)=>{const was=$('#modal').classList.contains('open');$('#mbody').innerHTML=h;$('#modal').classList.add('open');MBACK=back||null;if(!(KEEPSCROLL&&was))$('#modal').scrollTop=0;KEEPSCROLL=false},closeM=()=>{$('#modal').classList.remove('open');$('#modal').scrollTop=0;MBACK=null;SLD=false;SLN=null;CR=null};
 const imgErr=i=>{if(i.src.includes('/large/')){i.src=i.src.replace('/large/','/normal/');return}if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else i.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:i.alt}))};
 const artOf=n=>{const c=findCard(n);return (c&&c.art)||ART[n]||''};
 const imgTag=(n,cls='',big)=>{let u=artOf(n);if(!u)return '';if(big)u=u.replace('/normal/','/large/');return `<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(u)}" alt="${esc(n)}" onerror="imgErr(this)">`};
@@ -163,8 +163,8 @@ function zoom(n){const cur=()=>(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/
   d.innerHTML=`<img src="${esc(u)}" alt="${esc(n)}" onerror="if(this.src.includes('/large/'))this.src=this.src.replace('/large/','/normal/')">${backUrl(n)?`<button class="zflip">${FACE?'↻ Show front':'↻ Show back'}</button>`:''}`;d.onclick=()=>d.remove();
   const fb=d.querySelector('.zflip');if(fb)fb.onclick=e=>{e.stopPropagation();flip(n);d.querySelector('img').src=cur();fb.textContent=FACE?'↻ Show front':'↻ Show back'};document.body.appendChild(d)}
 function flip(n){FACE=!FACE;const im=document.querySelector('.frame img[data-zoom]');if(im)im.src=(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/');const b=document.querySelector('[data-flip]');if(b)b.textContent=FACE?'↻ Show front':'↻ Show back'}
-function showCard(name){
-  FACE=false;
+function showCard(name,keep){
+  FACE=false;KEEPSCROLL=keep===true;
   const c=findCard(name)||{name,colors:'',type:'',subtype:'',text:'',qty:0,source:'',finish:''},u=usage(c.name),has=v=>v&&v!=='None';
   const acq=D.acq.filter(a=>norm(a.name)===norm(c.name)),real=isReal(c)&&findCard(c.name),kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   const btn=real?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
@@ -203,7 +203,7 @@ function qtyChange(name,dl,fin,src){
   logEdit(e.name,'Quantity',e.qty,Math.max(0,nq));fm[f]=(fm[f]||0)+dl;e.qty=Math.max(0,nq);e.finish=finStr(fm);
   if(e.qty<=0){D.acq=D.acq.filter(a=>norm(a.name)!==norm(e.name));D.cards.splice(D.cards.indexOf(e),1);IDX=null;save();closeM();render();return toast(e.name+' removed from your collection')}
   let dropped=false;if(dl<0&&src)dropped=dropSource(e,src);
-  save();render();showCard(e.name);toast(dl>0?'Copy added':dropped?`Copy removed — “${src}” no longer listed`:'Copy removed');
+  save();render();showCard(e.name,true);toast(dl>0?'Copy added':dropped?`Copy removed — “${src}” no longer listed`:'Copy removed');
 }
 function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}</span><span class="mut">${sum(d.cards)} cards</span></div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
 
