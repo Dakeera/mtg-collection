@@ -26,8 +26,8 @@ button,.btn{cursor:pointer;display:inline-block;text-align:center}.pri{backgroun
 #nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0e0c13;border-top:1px solid #2a2438;padding-bottom:env(safe-area-inset-bottom);z-index:20}
 #nav button{flex:1;border:0;border-radius:0;background:none;color:var(--mut);padding:10px 4px;font-size:12px}#nav button span{display:block;font-size:20px}#nav .on{color:var(--gold)}
 .modal{position:fixed;inset:0;background:#000b;display:none;z-index:30;overflow:auto}.modal.open{display:block}
-.sheet{background:var(--bg);max-width:760px;margin:20px auto;border-radius:14px;padding:16px;min-height:100px;position:relative}.x{position:absolute;right:10px;top:10px}
-.cd{display:grid;grid-template-columns:minmax(140px,280px) 1fr;gap:16px}.cd img,.cmp img{width:100%;border-radius:12px}@media(max-width:520px){.cd{grid-template-columns:1fr}}
+.sheet{background:var(--bg);max-width:900px;margin:20px auto;border-radius:14px;padding:16px;min-height:100px;position:relative}.x{position:absolute;right:10px;top:10px}
+.cd{display:grid;grid-template-columns:minmax(200px,420px) 1fr;gap:16px}.cd img,.cmp img{width:100%;border-radius:12px}@media(max-width:520px){.cd{grid-template-columns:1fr}}
 .tags span{display:inline-block;background:var(--card2);border-radius:20px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px}
 pre{white-space:pre-wrap;font:inherit;background:var(--card);padding:10px;border-radius:10px}
 .cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.row>*{flex:1}
@@ -41,31 +41,41 @@ pre{white-space:pre-wrap;font:inherit;background:var(--card);padding:10px;border
 input[type=checkbox]{width:auto;margin-right:8px}.f input[type=checkbox]{width:auto}
 .dot{display:inline-block;width:.9em;height:.9em;border-radius:50%;vertical-align:-.1em;margin-right:.35em;border:1px solid #fff5}
 .swr{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}.sw{width:40px;height:40px;border-radius:50%;padding:0;border:3px solid #fff3}.sw.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}
+.artwrap{position:relative}.artbtn{position:absolute;right:8px;top:8px;width:46px;height:46px;border-radius:50%;padding:0;font-size:21px;background:#000c;border:1px solid #fff5}
+.lk{color:var(--gold);text-decoration:underline;cursor:pointer}.sheet .grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr))}.sheet .nm{font-size:11px;padding:4px 6px}
+.vf{position:absolute;left:6px;top:6px;width:22px;height:22px;border-radius:50%;background:#000c;color:var(--gold);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
+.vfbtn{position:absolute;left:8px;top:8px;width:46px;height:46px;border-radius:50%;padding:0;font-size:24px;font-weight:900;color:var(--gold);background:#000c;border:2px solid var(--gold)}
+ol.st{padding-left:20px;margin:6px 0;color:var(--mut)}ol.st li{margin:3px 0}a{color:var(--gold)}
 #prog{font-size:12px;color:var(--mut);padding:4px 12px}
 </style></head><body>
 <div id="prog"></div><div id="main">Loading…</div><nav id="nav"></nav>
 <div id="modal" class="modal"><div class="sheet"><button class="x" onclick="closeM()">✕</button><div id="mbody"></div></div></div><div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const LS='mtg_state_v1',AS='mtg_art_v1';let D,A={step:'start'},PD='',ART={};try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}
+const NS='';const LS='mtg_state_v1'+NS,AS='mtg_art_v1'+NS,BK='mtg_backup_v1'+NS,DY='mtg_dirty_v1'+NS;const EMPTY={cards:[],decks:[],swaps:[],matchups:[],sleeves:['Pink','Purple','Light Pink','Light Blue','Blue','Red','Light Green','Green','Yellow','Orange','White','Black'].map(color=>({color,total:0,deck:'',inUse:0}))};
+let IDX=null,D,A={step:'start'},PD='',ART={};try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}
 const V={view:'collection',q:'',type:'',color:'',deck:null,sub:'log'};
-const save=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
+const persist=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
+const save=()=>{IDX=null;persist();try{localStorage.setItem(DY,'1')}catch(e){}};
 const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
 const today=()=>new Date().toISOString().slice(0,10),sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
 const isReal=c=>!['Token','Accessory'].includes(c.type);
-const findCard=n=>D.cards.find(c=>norm(front(c.name))===norm(front(n)));
+const findCard=n=>(IDX||(IDX=new Map([...D.cards].reverse().map(c=>[norm(front(c.name)),c])))).get(norm(front(n)));
 const usage=n=>D.decks.map(d=>({d,q:sum(d.cards.filter(x=>norm(x.name)===norm(n)))})).filter(x=>x.q>0);
 const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600)};
 const openM=h=>{$('#mbody').innerHTML=h;$('#modal').classList.add('open')},closeM=()=>$('#modal').classList.remove('open');
-const imgErr=i=>{if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else i.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:i.alt}))};
-const imgTag=(n,cls='')=>ART[n]?`<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(ART[n])}" alt="${esc(n)}" onerror="imgErr(this)">`:'';
+const imgErr=i=>{if(i.src.includes('/large/')){i.src=i.src.replace('/large/','/normal/');return}if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else i.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:i.alt}))};
+const artOf=n=>{const c=findCard(n);return (c&&c.art)||ART[n]||''};
+const imgTag=(n,cls='',big)=>{let u=artOf(n);if(!u)return '';if(big)u=u.replace('/normal/','/large/');return `<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(u)}" alt="${esc(n)}" onerror="imgErr(this)">`};
+const cl=n=>`<span class="lk" data-card="${esc(n)}">${esc(n)}</span>`;
 const noEmoji=s=>String(s??'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu,'').replace(/\s+/g,' ').trim();
 const cell=x=>x&&x.h!==undefined?x.h:esc(x);
 const tbl=(h,rows)=>`<div class="tw"><table><thead><tr>${h.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${cell(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 const SLV={pink:'#ff5fa2','light pink':'#ffc2dd',purple:'#8e44ad',red:'#e53935','light blue':'#7fc8ff',blue:'#2f6df6','light green':'#9be37a',green:'#2e9e44',yellow:'#ffd400',orange:'#ff8c1a',white:'#ffffff',black:'#0b0b0b'};
 const title=s=>s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
-const sl=n=>{const c=noEmoji(n);return c&&c!=='—'?`<span class="dot" style="background:${SLV[c.toLowerCase()]||'#888'}"></span>${esc(title(c))}`:'—'};
+const sleeveBg=s=>s.img?`url(${s.img}) center/cover`:(s.hex||SLV[noEmoji(s.color).toLowerCase()]||'#888');
+const sl=n=>{const c=noEmoji(n);if(!c||c==='—')return '—';const s=D.sleeves.find(x=>noEmoji(x.color).toLowerCase()===c.toLowerCase());return `<span class="dot" style="background:${s?sleeveBg(s):SLV[c.toLowerCase()]||'#888'}"></span>${esc(title(c))}`};
 let last=0;async function scry(p){await new Promise(r=>setTimeout(r,Math.max(0,110-(Date.now()-last))));last=Date.now();
   try{const r=await fetch(p.startsWith('http')?p:'https://api.scryfall.com'+p,{headers:{Accept:'application/json'}});return r.ok?await r.json():null}catch(e){return null}}
 const sImg=c=>c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
@@ -73,8 +83,9 @@ const sImg=c=>c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
 /* ---------- startup ---------- */
 async function init(){
   const s=localStorage.getItem(LS);
-  try{D=s?JSON.parse(s):await (await fetch('data.json')).json()}catch(e){$('#main').textContent='Could not load data.json';return}
-  D.acq=D.acq||[];if(!s)save();render();fetchArt();
+  try{D=s?JSON.parse(s):await startData()}catch(e){$('#main').textContent='Could not load your data.';return}
+  D.acq=D.acq||[];if(!s)persist();render();fetchArt();
+  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 async function fetchArt(){
@@ -95,16 +106,17 @@ const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','�
 function render(){
   $('#nav').innerHTML=NAV.map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
   ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
+  const due=backupDue();if(due&&!(V.view==='more'&&V.sub==='backup'))$('#main').insertAdjacentHTML('afterbegin',`<div class="warn">💾 ${esc(due)} <button style="margin-left:8px;padding:6px 10px" onclick="V.view='more';V.sub='backup';render()">Back up now</button></div>`);
 }
 function go(k){V.view=k;V.deck=null;render();scrollTo(0,0)}
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
   if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return confirm(`Add ${b.dataset.adc} to ${D.decks[V.deck].name}?`)&&(addToDeck(V.deck,b.dataset.adc,1),deckSearch());
-  if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
+  if(b=t.closest('[data-vf]'))return vfAsk(b.dataset.vf);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(t.id==='modal')closeM()});
 
 /* ---------- collection ---------- */
-const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art">${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
+const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art">${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${c.verified?'<span class="vf" title="Artwork verified">✓</span>':''}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
 function vCollection(m){
   const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
   m.innerHTML=`<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div></div>
@@ -114,20 +126,45 @@ function vCollection(m){
 function drawList(){
   if(V.view!=='collection'||!$('#list'))return;const q=V.q.toLowerCase();
   const cs=D.cards.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.text.toLowerCase().includes(q))&&(!V.type||c.type===V.type)&&(!V.color||c.colors.includes(V.color)));
-  $('#list').innerHTML=cs.map(c=>tile(c,'×'+c.qty)).join('')||'<p class="mut">No cards match.</p>';
+  $('#list').innerHTML=cs.map(c=>tile(c,'×'+c.qty)).join('')||`<p class="mut">${D.cards.length?'No cards match.':'Your collection is empty. Use the Add card tab to scan or search for your first card, or restore a backup in More → Backup.'}</p>`;
 }
 function showCard(name){
   const c=findCard(name)||{name,colors:'',type:'',subtype:'',text:'',qty:0,source:'',finish:''},u=usage(c.name),has=v=>v&&v!=='None';
   const acq=D.acq.filter(a=>norm(a.name)===norm(c.name));
-  openM(`<div class="cd"><div>${imgTag(c.name)}</div><div><h2>${esc(c.name)}</h2><div class="tags">${[c.type,has(c.subtype)&&c.subtype,c.colors,has(c.cost)&&c.cost,has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</div>
+  openM(`<div class="cd"><div class="artwrap">${imgTag(c.name,'',true)}${isReal(c)&&findCard(c.name)?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):''}</div><div><h2>${esc(c.name)}</h2><div class="tags">${[c.type,has(c.subtype)&&c.subtype,c.colors,has(c.cost)&&c.cost,has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</div>
   ${has(c.text)?`<pre>${esc(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut">${esc(c.keywords)}</p>`:''}
   <p><b>Owned:</b> ${c.qty} ${has(c.finish)?`<span class="mut">(${esc(c.finish)})</span>`:''}</p>${has(c.legal)&&!/^None/.test(c.legal)?`<p class="warn">${esc(c.legal)}</p>`:''}
+  <p><b>Printing:</b> ${c.set?`${esc(c.setName||'')} (${esc(c.set.toUpperCase())}) #${esc(c.cn||'')}${c.verified?' <span style="color:var(--gold)">✓ verified</span>':''}`:'<span class="mut">not set — tap 🎨 to match your physical card</span>'}</p>
   <p><b>Pulled from:</b><br>${esc(c.source||'—').replace(/, /g,'<br>')}</p>
   <p><b>In decks:</b> ${u.length?u.map(x=>`${esc(x.d.name)} ×${x.q}`).join(', '):'none'}</p>
   ${acq.length?`<p><b>Added in app:</b> ${acq.map(a=>`${esc(a.date)} · ${esc(a.source)} ×${a.qty}`).join('; ')}</p>`:''}
   ${isReal(c)?`<button class="pri" data-pd="${esc(c.name)}">Add to a deck…</button>`:''}</div></div>`);
 }
 function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}</span><span class="mut">${sum(d.cards)} cards</span></div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
+
+const vfAsk=n=>{if(confirm(`The artwork for ${n} is marked verified ✓.\n\nDo you want to change it?`))artPicker(n)};
+let AP={name:'',list:[],q:''};
+async function artPicker(name){
+  AP={name,list:[],q:''};
+  openM(`<button onclick="showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}</h3><p class="mut">Pick the printing that matches your physical card. Your “pulled from” source stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div>`);
+  const base=await scry('/cards/named?fuzzy='+encodeURIComponent(front(name)));
+  if(!base||base.object!=='card'){if($('#apst'))$('#apst').textContent='No printings found for this card.';return}
+  let url=base.prints_search_uri,pages=0;
+  while(url&&pages<6&&AP.name===name&&$('#apg')){const p=await scry(url);if(!p?.data)break;AP.list.push(...p.data);pages++;url=p.has_more?p.next_page:null;apDraw(url?' Loading more…':'')}
+  apDraw();
+}
+function apDraw(more=''){
+  if(!$('#apg'))return;const cur=findCard(AP.name)?.scryId,q=AP.q.toLowerCase();
+  const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'';
+  const ls=AP.list.filter(p=>sm(p)&&(!q||`${p.set} ${p.set_name} ${p.collector_number}`.toLowerCase().includes(q)));
+  $('#apst').textContent=`${ls.length} of ${AP.list.length} printings${more}`;
+  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-ap="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${p.id===cur?'<span class="badge">✓</span>':''}</div><div class="nm"><b>${esc(p.set.toUpperCase())}</b> #${esc(p.collector_number)}<br><span class="mut">${esc(p.set_name)}</span></div></div>`).join('');
+}
+function useArt(id){
+  const p=AP.list.find(x=>x.id===id),c=findCard(AP.name);if(!p||!c)return;
+  if(!confirm(`Use ${p.set_name} (${p.set.toUpperCase()}) #${p.collector_number} for ${c.name}?\n\nYour “pulled from” source stays the same.`))return;
+  Object.assign(c,{art:sImg(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:true});save();render();showCard(c.name);toast('Artwork and set info updated');
+}
 
 /* ---------- decks ---------- */
 const sleeveOf=d=>D.sleeves.find(s=>s.deck&&s.deck.toLowerCase().startsWith(d.name.toLowerCase()));
@@ -151,7 +188,7 @@ function vDeck(m,i){
   const d=D.decks[i],ents=d.cards.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(d.cards),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
   const mx=Math.max(1,...cv);
-  m.innerHTML=`<button onclick="V.deck=null;render()">← Decks</button><h2>${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${esc(d.commander)}</span>`:''}</div>
+  m.innerHTML=`<button onclick="V.deck=null;render()">← Decks</button><h2>${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
   ${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
@@ -170,7 +207,7 @@ function newDeck(){
 }
 let NSV='';
 function sleeveOpts(){const need=$('#nf').value==='Commander'?100:60,ok=D.sleeves.filter(s=>!s.deck&&s.total>=need);if(!ok.some(s=>s.color===NSV))NSV=ok[0]?.color||'';
-  $('#ns').innerHTML=ok.map(s=>`<button type="button" class="sw ${s.color===NSV?'on':''}" title="${esc(noEmoji(s.color))}" style="background:${SLV[noEmoji(s.color).toLowerCase()]||'#888'}" onclick="NSV=this.title&&'${esc(s.color)}';sleeveOpts()"></button>`).join('')||'<span class="mut">None free with enough sleeves</span>';
+  $('#ns').innerHTML=ok.map(s=>`<button type="button" class="sw ${s.color===NSV?'on':''}" title="${esc(noEmoji(s.color))}" style="background:${sleeveBg(s)}" onclick="pickSleeve(${D.sleeves.indexOf(s)})"></button>`).join('')||'<span class="mut">None free with enough sleeves</span>';
   $('#sl').textContent=NSV?'· '+title(noEmoji(NSV))+' (first available is pre-selected)':''}
 function mkDeck(){
   const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=NSV,s=D.sleeves.find(x=>x.color===col);
@@ -246,7 +283,9 @@ function commit(){
   if(e){e.finish=mergeFinish(e.finish,e.qty,A.finish,n);e.qty+=n;if(!e.source.split(', ').includes(src))e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src}
   else{const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/');
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(c.type_line)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:cat,subtype:(c.type_line.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
-      text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1]}
+      text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
+  const pr={art:sImg(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
+  if(A.photo&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
   ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||''});
   if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n);save();
@@ -263,8 +302,8 @@ function vAI(m){
   <label>Commander (optional)</label><input value="${esc(G.cmd)}" oninput="G.cmd=this.value" placeholder="Leave blank to let the AI choose">
   <label><input type="checkbox" ${G.own?'checked':''} onchange="G.own=this.checked">Only use cards I own</label>
   <label><input type="checkbox" ${G.avoid?'checked':''} onchange="G.avoid=this.checked">Avoid cards already used in my other decks</label></div>
-  <h3>Option A — use your own AI chat (no key needed)</h3><p class="mut">Works with any AI account: copy the prompt, paste it into your AI app, then paste its answer below.</p><button class="pri" onclick="copyPrompt()">📋 Copy prompt</button>
-  <h3>Option B — generate here (needs an API key)</h3><p class="mut">You type your own key each visit. It is held in memory only (gone when you close the app) and sent only to the provider you pick. API usage is billed separately from chat subscriptions.</p>
+  <h3>Option A — use your own AI chat (no key needed)</h3><p class="mut">Works with any AI account: copy the prompt, paste it into your AI app, then paste its answer below.</p><ol class="st"><li>Fill in the format and theme above.</li><li>Tap <b>Copy prompt</b>.</li><li>Open your AI app or website (Gemini, ChatGPT, Claude, etc.), paste into a new chat, and send.</li><li>Copy the deck list it gives you (lines like “1 Sol Ring”).</li><li>Come back here, paste it into the <b>AI reply</b> box at the bottom, and tap <b>Read reply</b>.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><button class="pri" onclick="copyPrompt()">📋 Copy prompt</button>
+  <h3>Option B — generate here (needs an API key)</h3><ol class="st"><li>Get an API key from your AI provider: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> (Gemini), <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a>, or <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a>. Sign in and choose “Create API key”.</li><li>Pick that provider below, paste the key, and leave the model as is (change it only if you get a model error).</li><li>Tap <b>Generate deck</b>. It can take up to a minute; the AI’s list fills the reply box and a preview appears.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><p class="mut">Gemini offers a free tier with limits; OpenAI and Anthropic bill per use. You type your own key each visit. It is held in memory only (gone when you close the app) and sent only to the provider you pick. API usage is billed separately from chat subscriptions.</p>
   <div class="f"><label>Provider</label><select onchange="G.prov=this.value;G.model=MODELS[G.prov];render()">${[['anthropic','Anthropic (Claude)'],['openai','OpenAI'],['gemini','Google Gemini']].map(([k,l])=>`<option value="${k}" ${G.prov===k?'selected':''}>${l}</option>`).join('')}</select>
   <label>Model (edit if your provider has renamed it)</label><input value="${esc(G.model)}" oninput="G.model=this.value"><label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value"></div>
   <br><button class="pri" onclick="aiGenerate()" ${G.busy?'disabled':''}>${G.busy?'Thinking…':'✨ Generate deck'}</button>${G.err?`<div class="warn">${esc(G.err)}</div>`:''}
@@ -305,7 +344,7 @@ function readReply(){
 }
 function drawPrev(){
   const r=G.res,t=G.fmt==='Commander'?100:60,tot=sum(r.ents,e=>e.add),el=$('#gprev');if(!el)return;
-  el.innerHTML=r.ents.length?`<h3>Preview — ${tot}/${t} cards from your collection</h3>${tbl(['Qty','Card','Status'],r.ents.map(e=>[e.add||e.want,e.name,e.st]))}<div class="f"><label>Deck name</label><input id="gname" value="${esc('AI: '+(G.theme||'New deck').slice(0,32))}"></div><br><button class="pri big" onclick="mkAIDeck()">Create deck from this list</button><p class="mut">Cards you don’t own are skipped. Cards borrowed from other decks are logged in the swap log.</p>`:'<div class="warn">I couldn’t find any “quantity card name” lines in that reply.</div>';
+  el.innerHTML=r.ents.length?`<h3>Preview — ${tot}/${t} cards from your collection</h3>${tbl(['Qty','Card','Status'],r.ents.map(e=>[e.add||e.want,{h:cl(e.name)},e.st]))}<div class="f"><label>Deck name</label><input id="gname" value="${esc('AI: '+(G.theme||'New deck').slice(0,32))}"></div><br><button class="pri big" onclick="mkAIDeck()">Create deck from this list</button><p class="mut">Cards you don’t own are skipped. Cards borrowed from other decks are logged in the swap log.</p>`:'<div class="warn">I couldn’t find any “quantity card name” lines in that reply.</div>';
 }
 function mkAIDeck(){
   const r=G.res,name=($('#gname').value||'AI deck').trim(),f=G.fmt,need=f==='Commander'?100:60,s=D.sleeves.find(x=>!x.deck&&x.total>=need);
@@ -321,16 +360,98 @@ function mkAIDeck(){
 function vMore(m){
   const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['sleeves','Sleeves'],['backup','Backup']];
   let body='';
-  if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,a.name,a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
-  if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>[s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji)));
+  if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
+  if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>(r=>(r[2]={h:cl(r[2])},r))([s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji))));
   if(V.sub==='matchups')body=D.matchups.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0].map(noEmoji),s.rows.slice(1).map(r=>r.map(noEmoji)))}`).join('');
-  if(V.sub==='sleeves')body=tbl(['Color','Owned','Assigned deck','In use','Spare'],D.sleeves.map(s=>[{h:sl(s.color)},s.total,s.deck||'Available',s.inUse,s.total-s.inUse]));
-  if(V.sub==='backup')body=`<p class="mut">Your changes live on this phone. Export a backup regularly.</p><div class="row"><button class="pri" onclick="exportData()">⬇ Export backup</button><label class="btn">⬆ Import backup<input type="file" accept=".json" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to spreadsheet data</button>`;
+  if(V.sub==='sleeves')body='<div class="row"><button class="pri" onclick="slEdit(null)">＋ Add sleeves</button></div><p class="mut">Set how many you own in each color. New decks pick from sleeves that have enough free.</p>'+tbl(['Sleeves','Owned','Assigned deck','In use','Spare',''],D.sleeves.map((s,i)=>[{h:sl(s.color)},{h:`<input type="number" min="0" value="${s.total}" style="width:84px;padding:6px" onchange="setSleeve(${i},this.value)">`},s.deck||'Available',s.inUse,s.total-s.inUse,{h:`<button style="padding:4px 8px" onclick="slEdit(${i})">Edit</button> <button class="danger" style="padding:4px 8px" onclick="slDel(${i})">✕</button>`}]));
+  if(V.sub==='backup')body=`<p class="mut">Your collection is stored on this phone. Last backup: <b>${esc(localStorage.getItem(BK)||'never')}</b><br>Storage protection: <b id="pst">checking…</b></p>
+  <label>Backup file type</label><select onchange="BKF=this.value"><option value="sqlite" ${BKF==='sqlite'?'selected':''}>SQLite database (.sqlite)</option><option value="json" ${BKF==='json'?'selected':''}>JSON (.json)</option></select>
+  <div class="row"><button class="pri" onclick="doBackup(true)">📤 Back up to Drive / Files…</button><button onclick="doBackup(false)">⬇ Download to phone</button></div>
+  <p class="mut">The first button opens your phone’s share sheet so you can save the file to Google Drive or Files, or send it to yourself. The .sqlite file opens in any database viewer and can be restored here too.</p>
+  <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>`;
   m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
+  if(V.sub==='backup')checkPersist();
 }
-function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(D)],{type:'application/json'}));a.download=`mtg-backup-${today()}.json`;a.click()}
-async function importData(f){if(!f)return;try{const j=JSON.parse(await f.text());if(!j.cards||!j.decks)throw 0;D=j;D.acq=D.acq||[];save();toast('Backup restored');render()}catch(e){toast('That file is not a valid backup')}}
-async function resetData(){if(!confirm('Replace everything with the original spreadsheet data? Changes made in the app will be lost (export a backup first).'))return;
-  D=await (await fetch('data.json',{cache:'reload'})).json();D.acq=[];save();render();toast('Reset complete')}
+const PAL=[['Pink','#ff5fa2'],['Light Pink','#ffc2dd'],['Magenta','#d6249f'],['Purple','#8e44ad'],['Lavender','#b9a3e3'],['Navy','#1b2a6b'],['Blue','#2f6df6'],['Light Blue','#7fc8ff'],['Teal','#1abc9c'],['Mint','#98ffcc'],['Green','#2e9e44'],['Light Green','#9be37a'],['Yellow','#ffd400'],['Gold','#d4af37'],['Orange','#ff8c1a'],['Peach','#ffb38a'],['Red','#e53935'],['Maroon','#800000'],['Brown','#8b5a2b'],['Gray','#7f8c8d'],['Silver','#c0c0c0'],['White','#ffffff'],['Black','#0b0b0b'],['Clear','#dff3f7']];
+let SLN=null;
+const pickSleeve=i=>{NSV=D.sleeves[i].color;sleeveOpts()};
+function slEdit(i){const s=i==null?null:D.sleeves[i];SLN={idx:i,name:s?noEmoji(s.color):'',total:s?s.total:100,hex:s?(s.img?'':(s.hex||SLV[noEmoji(s.color).toLowerCase()]||'')):'#2f6df6',img:s?.img||'',auto:false};slDraw(true)}
+function slDraw(open){
+  const n=SLN,bg=n.img?`url(${n.img}) center/cover`:(n.hex||'#888'),cv=/^#[0-9a-f]{6}$/i.test(n.hex)?n.hex:'#888888';
+  const h=`<h3>${n.idx==null?'Add':'Edit'} sleeves</h3><div class="f"><label>Name</label><input value="${esc(n.name)}" oninput="SLN.name=this.value;SLN.auto=false" placeholder="e.g. Teal, or Dragon Shield Matte Teal"><label>How many do you own?</label><input type="number" min="0" value="${n.total}" onchange="SLN.total=Math.max(0,+this.value||0)">
+  <label>Pick a color</label><div class="swr">${PAL.map(([nm,hx])=>`<button type="button" class="sw ${!n.img&&n.hex.toLowerCase()===hx?'on':''}" title="${nm}" style="background:${hx}" onclick="slPick('${nm}','${hx}')"></button>`).join('')}<label class="sw" title="Any color" style="display:flex;margin:0;padding:0;background:conic-gradient(red,yellow,lime,aqua,blue,magenta,red)"><input type="color" value="${cv}" onchange="slPick('',this.value)" style="opacity:0;width:100%;height:100%;padding:0"></label></div>
+  <label>…or use a photo of your sleeves (fancy art, custom designs)</label><div class="row"><label class="btn">📷 Take photo<input type="file" accept="image/*" capture="environment" hidden onchange="slPhoto(this.files[0])"></label><label class="btn">🖼 Choose photo<input type="file" accept="image/*" hidden onchange="slPhoto(this.files[0])"></label></div>
+  <div style="display:flex;align-items:center;gap:10px;margin:8px 0"><span class="dot" style="width:52px;height:52px;background:${bg}"></span><span class="mut">Preview${n.img?' (your photo — retake to crop again)':''}</span></div></div><button class="pri big" onclick="slSave()">Save sleeves</button>`;
+  if(open)openM(h);else $('#mbody').innerHTML=h;
+}
+function slPick(nm,hx){SLN.hex=hx;SLN.img='';if(nm&&(!SLN.name||SLN.auto)){SLN.name=nm;SLN.auto=true}slDraw()}
+let CR=null;
+async function slPhoto(file){if(!file)return;try{CR={bmp:await createImageBitmap(file),z:1,ox:0,oy:0};slCrop()}catch(e){toast("Couldn't read that photo")}}
+function slCrop(){
+  $('#mbody').innerHTML=`<h3>Crop your sleeve</h3><p class="mut">Drag the photo to line the sleeve up inside the circle, and use the slider to zoom. Only the circle is saved.</p><canvas id="crv" width="300" height="300" style="width:100%;max-width:340px;display:block;margin:auto;touch-action:none;border-radius:12px;background:#000"></canvas><label>Zoom</label><input type="range" min="1" max="4" step="0.02" value="${CR.z}" style="width:100%" oninput="CR.z=+this.value;crDraw()"><div class="row"><button onclick="slDraw()">Cancel</button><button onclick="CR.z=1;CR.ox=CR.oy=0;slCrop()">Re-center</button><button class="pri" onclick="crSave()">Use this crop</button></div>`;
+  const c=$('#crv');let last=null;
+  c.onpointerdown=e=>{last=[e.clientX,e.clientY];c.setPointerCapture(e.pointerId)};
+  c.onpointermove=e=>{if(!last)return;const k=300/c.getBoundingClientRect().width;CR.ox+=(e.clientX-last[0])*k;CR.oy+=(e.clientY-last[1])*k;last=[e.clientX,e.clientY];crDraw()};
+  c.onpointerup=c.onpointercancel=()=>{last=null};crDraw();
+}
+function crGeom(){const b=CR.bmp,s=300/Math.min(b.width,b.height)*CR.z,w=b.width*s,hh=b.height*s;
+  CR.ox=Math.max(-(w-300)/2,Math.min((w-300)/2,CR.ox));CR.oy=Math.max(-(hh-300)/2,Math.min((hh-300)/2,CR.oy));return {s,w,h:hh,px:150-w/2+CR.ox,py:150-hh/2+CR.oy}}
+function crDraw(){const c=$('#crv');if(!c)return;const x=c.getContext('2d'),g=crGeom();x.clearRect(0,0,300,300);x.drawImage(CR.bmp,g.px,g.py,g.w,g.h);
+  x.fillStyle='rgba(0,0,0,.6)';x.beginPath();x.rect(0,0,300,300);x.arc(150,150,140,0,7,true);x.fill('evenodd');x.strokeStyle='#f1c40f';x.lineWidth=2;x.beginPath();x.arc(150,150,140,0,7);x.stroke()}
+function crSave(){const g=crGeom(),cv=document.createElement('canvas');cv.width=cv.height=160;
+  cv.getContext('2d').drawImage(CR.bmp,(10-g.px)/g.s,(10-g.py)/g.s,280/g.s,280/g.s,0,0,160,160);SLN.img=cv.toDataURL('image/jpeg',.8);SLN.hex='';CR=null;slDraw()}
+function slSave(){const n=SLN,name=n.name.trim();if(!name)return toast('Give the sleeves a name');
+  if(D.sleeves.some((s,i)=>i!==n.idx&&noEmoji(s.color).toLowerCase()===name.toLowerCase()))return toast('You already have sleeves with that name');
+  if(n.idx==null)D.sleeves.push({color:name,total:n.total,deck:'',inUse:0,hex:n.hex,img:n.img});else Object.assign(D.sleeves[n.idx],{color:name,total:n.total,hex:n.hex,img:n.img});
+  save();closeM();render();toast('Sleeves saved')}
+function slDel(i){const s=D.sleeves[i];if(s.deck)return toast('Those sleeves are assigned to a deck — free them first');if(confirm(`Remove ${noEmoji(s.color)} sleeves from your inventory?`)){D.sleeves.splice(i,1);save();render()}}
+let BKF='sqlite';
+const setSleeve=(i,v)=>{D.sleeves[i].total=Math.max(0,+v||0);save();render()};
+const stamp=()=>{try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}};
+async function checkPersist(){let p=false;try{p=await navigator.storage.persisted()}catch(e){}const el=$('#pst');if(el)el.textContent=p?'protected ✓':'not guaranteed — back up regularly'}
+function backupDue(){try{if(!localStorage.getItem(DY))return '';const l=localStorage.getItem(BK);if(!l)return 'You have changes that have never been backed up.';const d=Math.floor((Date.now()-new Date(l))/864e5);return d>=14?`Your last backup was ${d} days ago.`:''}catch(e){return ''}}
+let SQLP=null;const SQLB='https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/';
+const loadSQL=()=>SQLP||(SQLP=new Promise((ok,no)=>{const s=document.createElement('script');s.src=SQLB+'sql-wasm.js';s.onload=()=>initSqlJs({locateFile:f=>SQLB+f}).then(ok,e=>{SQLP=null;no(e)});s.onerror=()=>{SQLP=null;no()};document.head.appendChild(s)}));
+async function sqliteBytes(){
+  const SQL=await loadSQL(),db=new SQL.Database();
+  db.exec(`CREATE TABLE app_state(key TEXT PRIMARY KEY,value TEXT);
+  CREATE TABLE cards(name TEXT,pull_sources TEXT,color_identity TEXT,mana_cost TEXT,mana_value REAL,card_type TEXT,subtype TEXT,power TEXT,toughness TEXT,rules_text TEXT,keywords TEXT,restrictions TEXT,quantity_owned INTEGER,finish TEXT,set_code TEXT,set_name TEXT,collector_number TEXT,scryfall_id TEXT,art_url TEXT,art_verified INTEGER);
+  CREATE TABLE decks(id INTEGER PRIMARY KEY,name TEXT,format TEXT,commander TEXT,sleeve TEXT);
+  CREATE TABLE deck_cards(deck_id INTEGER,card_name TEXT,quantity INTEGER,finish TEXT,is_token INTEGER);
+  CREATE TABLE acquisitions(date TEXT,card_name TEXT,set_code TEXT,collector_number TEXT,finish TEXT,quantity INTEGER,source TEXT,price TEXT,notes TEXT);
+  CREATE TABLE swap_log(deck TEXT,section TEXT,card TEXT,from_to TEXT,quantity TEXT,date TEXT,notes TEXT,status TEXT);
+  CREATE TABLE sleeves(color TEXT,total INTEGER,assigned_deck TEXT,in_use INTEGER);`);
+  const ins=(t,rows)=>{if(!rows.length)return;const st=db.prepare(`INSERT INTO ${t} VALUES(${rows[0].map(()=>'?').join(',')})`);rows.forEach(r=>st.run(r.map(v=>v??'')));st.free()};
+  ins('app_state',[['backup_json',JSON.stringify(D)],['exported',new Date().toISOString()]]);
+  ins('cards',D.cards.map(c=>[c.name,c.source,c.colors,c.cost,+c.cmc||0,c.type,c.subtype,c.power,c.toughness,c.text,c.keywords,c.legal,c.qty,c.finish,c.set,c.setName,c.cn,c.scryId,c.art,c.verified?1:0]));
+  ins('decks',D.decks.map((d,i)=>[i+1,d.name,d.format,d.commander,noEmoji(sleeveOf(d)?.color||d.sleeve||'')]));
+  ins('deck_cards',D.decks.flatMap((d,i)=>[...d.cards.map(c=>[i+1,c.name,c.qty,c.finish,0]),...d.tokens.map(c=>[i+1,c.name,c.qty,c.finish,1])]));
+  ins('acquisitions',D.acq.map(a=>[a.date,a.name,a.set,a.cn,a.finish,a.qty,a.source,a.price,a.notes]));
+  ins('swap_log',D.swaps.map(s=>[s.deck,s.section,...s.row]));
+  ins('sleeves',D.sleeves.map(s=>[noEmoji(s.color),s.total,noEmoji(s.deck||''),s.inUse]));
+  const out=db.export();db.close();return out;
+}
+async function doBackup(share){
+  const ext=BKF==='json'?'json':'sqlite',name=`mtg-collection-${today()}.${ext}`;let blob;
+  try{blob=BKF==='json'?new Blob([JSON.stringify(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
+  catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
+  const f=new File([blob],name,{type:blob.type});
+  if(share&&navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'MTG collection backup'});stamp();toast('Backup shared');return render()}catch(e){if(e.name==='AbortError')return}}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();stamp();
+  toast(share?'Your phone’s share sheet didn’t accept this file, so it was saved to Downloads — send it to Drive from the Files app':'Saved to Downloads');render();
+}
+async function importData(f){
+  if(!f)return;
+  try{const buf=new Uint8Array(await f.arrayBuffer());let j;
+    if(String.fromCharCode(...buf.slice(0,15))==='SQLite format 3'){const SQL=await loadSQL(),db=new SQL.Database(buf),r=db.exec("SELECT value FROM app_state WHERE key='backup_json'");db.close();j=JSON.parse(r[0].values[0][0])}
+    else j=JSON.parse(new TextDecoder().decode(buf));
+    if(!j.cards||!j.decks)throw 0;
+    if(!confirm(`Restore this backup? It replaces everything currently in the app (${D.cards.length} cards, ${D.decks.length} decks).`))return;
+    D=j;D.acq=D.acq||[];save();stamp();toast('Backup restored');render()}
+  catch(e){toast('That file is not a valid backup')}
+}
+async function startData(){try{const r=await fetch('data.json',{cache:'reload'});if(r.ok)return await r.json()}catch(e){}return JSON.parse(JSON.stringify(EMPTY))}
+async function resetData(){if(!confirm('Replace everything with the starting data (a blank collection if the app has no starting data file)? Changes made in the app will be lost — back up first.'))return;
+  D=await startData();D.acq=[];save();render();toast('Reset complete')}
 init();
 </script></body></html>
