@@ -77,7 +77,7 @@ const NS='';const LS='mtg_state_v1'+NS,AS='mtg_art_v1'+NS,BK='mtg_backup_v1'+NS,
 let IDX=null,D,A={step:'start'},PD='',ART={},ART2={},FACE=false;try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}try{ART2=JSON.parse(localStorage.getItem(AS+'_b')||'{}')}catch(e){}
 const V={view:'collection',q:'',type:'',color:'',deck:null,sub:'log'};
 const persist=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
-const save=()=>{try{reconcileLoans()}catch(e){}IDX=null;persist();try{localStorage.setItem(DY,'1')}catch(e){}};
+const save=()=>{try{reconcileLoans()}catch(e){}IDX=null;persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
 const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART));localStorage.setItem(AS+'_b',JSON.stringify(ART2))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
 const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
@@ -657,9 +657,9 @@ function vMore(m){
   <label>Backup file type</label><select onchange="BKF=this.value"><option value="sqlite" ${BKF==='sqlite'?'selected':''}>SQLite database (.sqlite)</option><option value="json" ${BKF==='json'?'selected':''}>JSON (.json)</option></select>
   <div class="row"><button class="pri" onclick="doBackup(true)">📤 Back up to Drive / Files…</button><button onclick="doBackup(false)">⬇ Download to phone</button></div>
   <p class="mut">The first button opens your phone’s share sheet so you can save the file to Google Drive or Files, or send it to yourself. The .sqlite file opens in any database viewer and can be restored here too.</p>
-  <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>`;
+  <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>${autoBox()}`;
   m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
-  if(V.sub==='backup')checkPersist();
+  if(V.sub==='backup'){checkPersist();autoRefresh()}
 }
 const PAL=[['Pink','#ff5fa2'],['Light Pink','#ffc2dd'],['Magenta','#d6249f'],['Purple','#8e44ad'],['Lavender','#b9a3e3'],['Navy','#1b2a6b'],['Blue','#2f6df6'],['Light Blue','#7fc8ff'],['Teal','#1abc9c'],['Mint','#98ffcc'],['Green','#2e9e44'],['Light Green','#9be37a'],['Yellow','#ffd400'],['Gold','#d4af37'],['Orange','#ff8c1a'],['Peach','#ffb38a'],['Red','#e53935'],['Maroon','#800000'],['Brown','#8b5a2b'],['Gray','#7f8c8d'],['Silver','#c0c0c0'],['White','#ffffff'],['Black','#0b0b0b'],['Clear','#dff3f7']];
 let SLN=null,SLN0='';
@@ -761,6 +761,48 @@ async function importData(f){
 async function startData(){try{const r=await fetch('data.json',{cache:'reload'});if(r.ok)return await r.json()}catch(e){}return JSON.parse(JSON.stringify(EMPTY))}
 async function resetData(){if(!confirm('Replace everything with the starting data (a blank collection if the app has no starting data file)? Changes made in the app will be lost — back up first.'))return;
   D=await startData();D.acq=[];D.loans=[];save();render();fetchArt();toast('Reset complete')}
+/* ---------- automatic backups (off by default; keeps the newest 5; separate from manual backups) ---------- */
+/* Android app: JSON files in Documents/MtG-DeckMaster/autosave. Web version: the browser can't write to a folder, so the same 5 copies live in the browser's own storage (IndexedDB). JSON is used because it is smaller than .sqlite. */
+const AUTO_KEY='mtg_auto_v1'+NS,AUTO_DIR='MtG-DeckMaster/autosave',AUTO_KEEP=5,AUTO_RE=/^auto-\d{6}-\d{6}\.json$/;
+const autoOn=()=>{try{return localStorage.getItem(AUTO_KEY)==='1'}catch(e){return false}};
+let AUTO_T=null,AUTO_LAST='',AUTO_BUSY=false,AUTO_PAUSE=false,AUTO_ERR=false,AUTO_LIST=null;
+const idbOpen=()=>new Promise((ok,no)=>{const r=indexedDB.open('mtg_auto',1);r.onupgradeneeded=()=>r.result.createObjectStore('f',{keyPath:'name'});r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+const idbRun=(mode,fn)=>idbOpen().then(db=>new Promise((ok,no)=>{const t=db.transaction('f',mode),r=fn(t.objectStore('f'));t.oncomplete=()=>{db.close();ok(r&&r.result)};t.onerror=()=>no(t.error)}));
+const FS=()=>window.Capacitor.Plugins.Filesystem;
+async function autoNames(){let n;
+  if(isNative()){const r=await FS().readdir({path:AUTO_DIR,directory:'DOCUMENTS'}).catch(()=>({files:[]}));n=(r.files||[]).map(f=>f.name||f)}
+  else n=await idbRun('readonly',st=>st.getAllKeys());
+  return (n||[]).filter(x=>AUTO_RE.test(x)).sort().reverse()}
+async function autoPut(name,text){if(isNative())await FS().writeFile({path:AUTO_DIR+'/'+name,data:text,directory:'DOCUMENTS',encoding:'utf8',recursive:true});else await idbRun('readwrite',st=>st.put({name,text}))}
+async function autoGet(name){if(isNative())return (await FS().readFile({path:AUTO_DIR+'/'+name,directory:'DOCUMENTS',encoding:'utf8'})).data;
+  const r=await idbRun('readonly',st=>st.get(name));return r&&r.text}
+async function autoDel(name){if(isNative())await FS().deleteFile({path:AUTO_DIR+'/'+name,directory:'DOCUMENTS'});else await idbRun('readwrite',st=>st.delete(name))}
+function autoSchedule(){if(!autoOn()||AUTO_PAUSE||typeof D==='undefined'||!D)return;clearTimeout(AUTO_T);AUTO_T=setTimeout(autoRun,2000)}
+async function autoRun(){AUTO_T=null;if(!autoOn()||AUTO_PAUSE)return;if(AUTO_BUSY)return autoSchedule();
+  const txt=JSON.stringify(D);if(txt===AUTO_LAST)return;AUTO_BUSY=true;
+  try{const d=new Date(),name=`auto-${tsName()}${p2(d.getSeconds())}.json`;await autoPut(name,txt);AUTO_LAST=txt;
+    for(const old of (await autoNames()).slice(AUTO_KEEP))await autoDel(old);AUTO_ERR=false;autoRefresh()}
+  catch(e){if(!AUTO_ERR)toast('Auto-backup failed: '+String(e&&e.message||e).slice(0,80));AUTO_ERR=true}
+  AUTO_BUSY=false}
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&AUTO_T){clearTimeout(AUTO_T);autoRun()}});
+function autoSet(on){try{localStorage.setItem(AUTO_KEY,on?'1':'0')}catch(e){return toast('Could not save that setting')}
+  AUTO_LAST='';if(on)autoRun().then(()=>toast('Automatic backups are on'));else toast('Automatic backups are off — existing auto-backup files are kept');render()}
+const autoWhen=n=>{const m=n.match(/^auto-(\d\d)(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)/);return m?new Date(2000+ +m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'}):n};
+function autoBox(){return `<h3>Automatic backups</h3><p class="mut">Saves a fresh copy every time something changes, and keeps only the newest ${AUTO_KEEP} so you can step back if a change was a mistake. Your manual backups above are never touched. ${isNative()?'Files go in <b>Documents/MtG-DeckMaster/autosave</b> on this phone.':'On the web version they are kept inside this browser’s storage (a web page can’t write to a folder).'}</p>
+  <label><input type="checkbox" ${autoOn()?'checked':''} onchange="autoSet(this.checked)">Turn on automatic backups</label><div id="autolist"></div>`}
+async function autoRefresh(){const el=$('#autolist');if(!el)return;
+  let names;try{names=await autoNames()}catch(e){names=[]}
+  if(!$('#autolist'))return;
+  if(!names.length){$('#autolist').innerHTML=autoOn()?'<p class="mut">Waiting for the first change…</p>':'<p class="mut">No automatic backups yet.</p>';return}
+  const rows=[];for(const [i,n] of names.entries()){let info='';try{const j=JSON.parse(await autoGet(n));info=`${j.cards.length} titles · ${j.decks.length} decks`}catch(e){info='unreadable'}
+    rows.push([autoWhen(n)+(i===0?' (latest)':''),info,{h:`<button class="pri" style="padding:6px 10px" onclick="autoRevert('${n}')">↩ Revert to this</button>`}])}
+  if($('#autolist'))$('#autolist').innerHTML=`<h4 style="margin:12px 0 4px">↩ Revert changes</h4><p class="mut">Pick a point to go back to. Newer files stay in the list, so you can also step forward again.</p>${tbl(['Saved','Contents',''],rows)}`}
+async function autoRevert(name){
+  let j;try{j=JSON.parse(await autoGet(name));if(!j.cards||!j.decks)throw 0}catch(e){return toast('That auto-backup could not be read')}
+  if(!confirm(`Revert everything to how it was at ${autoWhen(name)}?\n\nThis replaces what is in the app now (${D.cards.length} titles, ${D.decks.length} decks) with that copy (${j.cards.length} titles, ${j.decks.length} decks). Your other auto-backups and manual backups are not changed.`))return;
+  AUTO_PAUSE=true;D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();save();AUTO_PAUSE=false;AUTO_LAST=JSON.stringify(D);IDX=null;
+  toast('Reverted to '+autoWhen(name));render();fetchArt()}
+
 /* ---------- back button (shared logic; Android uses @capacitor/app, the web version uses the browser history) ---------- */
 let HIST=[],EXIT_T=0,LEAVING=false;
 const DISCARD='Discard your changes?\n\nOK = discard them\nCancel = keep editing';

@@ -23,6 +23,7 @@ A Magic: The Gathering collection and deck tracker, shipped as TWO versions from
 ## Build & release
 - Web: GitHub Pages serves the repo root (index.html, sw.js, manifest, icons). Android: `.github/workflows/android.yml` wraps the same files with Capacitor (appId com.dakeera.mtgdeckmaster, name "MtG DeckMaster") and publishes a signed APK to Releases on every push to main.
 - The APK must always be signed with the same key (GitHub secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS) so updates install over the old app and keep the user's data. Never change the appId or the key.
+- Auto-backup (More → Backup, off by default): newest 5 JSON copies; Android writes files to Documents/MtG-DeckMaster/autosave, web keeps them in IndexedDB. Never touches manual backups.
 - Back button: one shared `navBack()` in index.html (modals → in-tab steps → tab history → double-back to exit). Android hooks it to `@capacitor/app`; the web version uses a history sentinel.
 - Android-only code goes behind `window.Capacitor?.isNativePlatform()`; the shared index.html stays the single source for both.
 - When a scan or printing change reveals that an existing entry's data is wrong, the app asks for approval and UPDATES THE EXISTING CARD. It must never create a duplicate card for that.
