@@ -218,7 +218,7 @@ function fxAddCard(c,n,fin,src,price,notes){
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   if(!e.set||!e.art)Object.assign(e,{art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id});
-  if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}
+  if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
 const fxImpProg=(d,t)=>{const b=document.getElementById('impb'),x=document.getElementById('impt');if(b)b.style.width=Math.max(3,Math.round(d/Math.max(1,t)*100))+'%';if(x)x.textContent=`Looking cards up… ${Math.min(d,t)} of ${t}`};
@@ -458,3 +458,31 @@ async function fxCallAI(p){const key=AIKEY.trim(),model=G.model.trim();if(!key||
   else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();txt=(j.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('')}
   if(!r.ok)throw new Error(j.error?.message||'The provider returned an error ('+r.status+').');if(!txt)throw new Error('The AI sent back an empty reply.');return txt}
 async function fxSimAsk(id){const s=simGet(id);if(!s)return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
+
+/* ---------- card prices (Scryfall, USD) and collection sorting ---------- */
+const fxMoney=v=>'$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const fxUnit=c=>{const p=(c&&c.price)||{},n=+p.n||0,f=+p.f||n,e=+p.e||f;return {Normal:n||f||e,Foil:f||n,'Etched Foil':e||n}};
+function fxVal(c){if(!c||!c.price)return 0;const u=fxUnit(c),fm=finMapOf(c);return sum(Object.keys(fm),k=>(fm[k]||0)*(u[k]??u.Normal))}
+const fxEach=c=>c&&c.qty?fxVal(c)/c.qty:0;
+const fxSetPrice=(e,c)=>{if(c&&c.prices&&(!e.price||!e.scryId||e.scryId===c.id)){e.price={n:c.prices.usd||'',f:c.prices.usd_foil||'',e:c.prices.usd_etched||''};e.priceAt=today()}};
+let PRBUSY=false;
+async function fetchPrices(force){if(PRBUSY||!D)return;const stale=c=>force||!c.priceAt||(Date.now()-new Date(c.priceAt))>7*864e5,todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return;PRBUSY=true;let got=0;
+  const ident=c=>c.scryId?{id:c.scryId}:c.set&&c.cn?{set:String(c.set).toLowerCase(),collector_number:String(c.cn)}:{name:front(c.name)};
+  try{for(let i=0;i<todo.length;i+=75){const ch=todo.slice(i,i+75),r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ch.map(ident)})});if(!r.ok)throw 0;
+    const j=await r.json(),byId=new Map(),bySN=new Map(),byN=new Map();(j.data||[]).forEach(x=>{byId.set(x.id,x);bySN.set(x.set+'|'+x.collector_number,x);if(!byN.has(norm(front(x.name))))byN.set(norm(front(x.name)),x)});
+    ch.forEach(c=>{const x=(c.scryId&&byId.get(c.scryId))||(c.set&&c.cn&&bySN.get(String(c.set).toLowerCase()+'|'+c.cn))||byN.get(norm(front(c.name)));if(x&&x.prices){c.price={n:x.prices.usd||'',f:x.prices.usd_foil||'',e:x.prices.usd_etched||''};c.priceAt=today();got++}});
+    persist();await new Promise(r=>setTimeout(r,110))}}catch(e){}
+  PRBUSY=false;if(got&&V.view==='collection'&&!$('#modal').classList.contains('open')&&document.activeElement?.id!=='q'){const y=scrollY;render();scrollTo(0,y)}}
+function fxPriceRow(c){if(!c||!c.price||!findCard(c.name))return '';const u=fxUnit(c),fm=finMapOf(c),ks=Object.keys(fm).filter(k=>fm[k]>0),each=ks.map(k=>`${fxMoney(u[k]??u.Normal)}${ks.length>1?' '+esc(k):''}`).join(' · ');
+  if(!fxVal(c))return `<div class="kv"><span>Price</span><b class="mut">no price listed</b></div>`;
+  return `<div class="kv"><span>Price <span style="font-weight:400;font-size:11px">(Scryfall, ${esc(c.priceAt||'')})</span></span><b>${each} each${c.qty>1?` · ${fxMoney(fxVal(c))} total`:''}</b></div>`}
+const fxTotalTile=()=>{const v=sum(D.cards,fxVal);return v?`<div title="Estimated from Scryfall market prices for the printings you set"><b>${fxMoney(v)}</b>est. value</div>`:''};
+const fxDeckValue=d=>{const v=sum(d.cards,e=>e.qty*fxEach(findCard(e.name)));return v?`<span>Value ${fxMoney(v)}</span>`:''};
+const FXSORT=[['','Sort: original order'],['new','Sort: newest added first'],['az','Sort: name A → Z'],['za','Sort: name Z → A'],['qty','Sort: most copies first'],['mvlo','Sort: mana value, low → high'],['mvhi','Sort: mana value, high → low'],['prhi','Sort: price, high → low'],['prlo','Sort: price, low → high'],['total','Sort: total value, high → low'],['type','Sort: card type'],['color','Sort: color']];
+const fxSortKey=()=>{if(V.sort==null){try{V.sort=localStorage.getItem('mtg_sort_v1')||''}catch(e){V.sort=''}}return V.sort};
+const fxSortSel=()=>`<select id="fs" aria-label="Sort">${FXSORT.map(([k,l])=>`<option value="${k}" ${fxSortKey()===k?'selected':''}>${l}</option>`).join('')}</select>`;
+function fxSetSort(v){V.sort=v;try{localStorage.setItem('mtg_sort_v1',v)}catch(e){}drawList(true)}
+function fxSort(cs){const k=fxSortKey(),mv=c=>parseFloat(c.cmc)||0,nm=(a,b)=>a.name.localeCompare(b.name);if(!k)return cs;const a=[...cs];
+  return k==='new'?a.reverse():k==='az'?a.sort(nm):k==='za'?a.sort((x,y)=>nm(y,x)):k==='qty'?a.sort((x,y)=>y.qty-x.qty||nm(x,y)):k==='mvlo'?a.sort((x,y)=>mv(x)-mv(y)||nm(x,y)):k==='mvhi'?a.sort((x,y)=>mv(y)-mv(x)||nm(x,y)):
+    k==='prhi'?a.sort((x,y)=>fxEach(y)-fxEach(x)||nm(x,y)):k==='prlo'?a.sort((x,y)=>(fxEach(x)||1e9)-(fxEach(y)||1e9)||nm(x,y)):k==='total'?a.sort((x,y)=>fxVal(y)-fxVal(x)||nm(x,y)):k==='type'?a.sort((x,y)=>String(x.type).localeCompare(String(y.type))||nm(x,y)):a.sort((x,y)=>String(x.colors).localeCompare(String(y.colors))||nm(x,y))}
+const fxBadge=c=>'×'+c.qty+(/^(prhi|prlo|total)$/.test(fxSortKey())&&fxVal(c)?' · '+fxMoney(V.sort==='total'?fxVal(c):fxEach(c)):'');
