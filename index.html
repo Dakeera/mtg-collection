@@ -38,6 +38,9 @@ pre{white-space:pre-wrap;font:inherit;background:var(--card);padding:10px;border
 .sug div,.res{padding:10px;background:var(--card);border-radius:8px;margin:4px 0;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
 .warn{background:#4a2a10;border-radius:10px;padding:10px;margin:8px 0}
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#000e;padding:10px 16px;border-radius:20px;z-index:50;display:none}
+input[type=checkbox]{width:auto;margin-right:8px}.f input[type=checkbox]{width:auto}
+.dot{display:inline-block;width:.9em;height:.9em;border-radius:50%;vertical-align:-.1em;margin-right:.35em;border:1px solid #fff5}
+.swr{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}.sw{width:40px;height:40px;border-radius:50%;padding:0;border:3px solid #fff3}.sw.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}
 #prog{font-size:12px;color:var(--mut);padding:4px 12px}
 </style></head><body>
 <div id="prog"></div><div id="main">Loading…</div><nav id="nav"></nav>
@@ -57,7 +60,12 @@ const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clea
 const openM=h=>{$('#mbody').innerHTML=h;$('#modal').classList.add('open')},closeM=()=>$('#modal').classList.remove('open');
 const imgErr=i=>{if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else i.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:i.alt}))};
 const imgTag=(n,cls='')=>ART[n]?`<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(ART[n])}" alt="${esc(n)}" onerror="imgErr(this)">`:'';
-const tbl=(h,rows)=>`<div class="tw"><table><thead><tr>${h.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+const noEmoji=s=>String(s??'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu,'').replace(/\s+/g,' ').trim();
+const cell=x=>x&&x.h!==undefined?x.h:esc(x);
+const tbl=(h,rows)=>`<div class="tw"><table><thead><tr>${h.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${cell(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+const SLV={pink:'#ff5fa2','light pink':'#ffc2dd',purple:'#8e44ad',red:'#e53935','light blue':'#7fc8ff',blue:'#2f6df6','light green':'#9be37a',green:'#2e9e44',yellow:'#ffd400',orange:'#ff8c1a',white:'#ffffff',black:'#0b0b0b'};
+const title=s=>s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+const sl=n=>{const c=noEmoji(n);return c&&c!=='—'?`<span class="dot" style="background:${SLV[c.toLowerCase()]||'#888'}"></span>${esc(title(c))}`:'—'};
 let last=0;async function scry(p){await new Promise(r=>setTimeout(r,Math.max(0,110-(Date.now()-last))));last=Date.now();
   try{const r=await fetch(p.startsWith('http')?p:'https://api.scryfall.com'+p,{headers:{Accept:'application/json'}});return r.ok?await r.json():null}catch(e){return null}}
 const sImg=c=>c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
@@ -83,15 +91,15 @@ async function fetchArt(){
 }
 
 /* ---------- shell ---------- */
-const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['more','⚙️','More']];
+const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','✨','AI deck'],['more','⚙️','More']];
 function render(){
   $('#nav').innerHTML=NAV.map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
-  ({collection:vCollection,decks:vDecks,add:vAdd,more:vMore})[V.view]($('#main'));
+  ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
 }
 function go(k){V.view=k;V.deck=null;render();scrollTo(0,0)}
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
-  if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return addToDeck(V.deck,b.dataset.adc,1),deckSearch();
+  if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return confirm(`Add ${b.dataset.adc} to ${D.decks[V.deck].name}?`)&&(addToDeck(V.deck,b.dataset.adc,1),deckSearch());
   if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(t.id==='modal')closeM()});
 
@@ -131,17 +139,19 @@ function addToDeck(i,name,n){
     D.swaps.push({deck:d.name,section:'Added in app — borrowed / pulled from other decks',header:['Card Name','Original Owner / Source Deck','Quantity','Date','Notes','Status'],row:[c.name,others.map(x=>x.d.name).join(', ')||'Collection',String(n),today(),'Logged automatically when added in app','In Deck / Active']})}
   const e=d.cards.find(x=>norm(x.name)===norm(name));e?e.qty+=n:d.cards.push({name:c?c.name:name,qty:n,finish:c?.finish||'Normal'});save();toast('Added to '+d.name);if(V.view==='decks')render();
 }
-function chg(name,dl){const d=D.decks[V.deck],e=d.cards.find(x=>x.name===name);if(!e)return;if(dl>0)return addToDeck(V.deck,name,1);e.qty--;if(e.qty<=0)d.cards.splice(d.cards.indexOf(e),1);save();render()}
+function chg(name,dl){const d=D.decks[V.deck],e=d.cards.find(x=>x.name===name);if(!e)return;
+  if(!confirm(dl>0?`Add one more ${name} to ${d.name}?\n(${e.qty} → ${e.qty+1})`:`Remove one ${name} from ${d.name}?\n(${e.qty} → ${e.qty-1}${e.qty===1?' — the card will leave the deck':''})`))return;
+  if(dl>0)return addToDeck(V.deck,name,1);e.qty--;if(e.qty<=0)d.cards.splice(d.cards.indexOf(e),1);save();render()}
 function vDecks(m){
   if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
   m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" onclick="newDeck()">＋ New deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d);
-    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)"><b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${esc(s?s.color:d.sleeve||'—')}</span></div>`}).join('');
+    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)"><b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span></div>`}).join('');
 }
 function vDeck(m,i){
   const d=D.decks[i],ents=d.cards.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(d.cards),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
   const mx=Math.max(1,...cv);
-  m.innerHTML=`<button onclick="V.deck=null;render()">← Decks</button><h2>${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${esc(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${esc(d.commander)}</span>`:''}</div>
+  m.innerHTML=`<button onclick="V.deck=null;render()">← Decks</button><h2>${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${esc(d.commander)}</span>`:''}</div>
   ${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
@@ -156,11 +166,14 @@ function deckSearch(first){
     return `<div class="res" data-adc="${esc(c.name)}"><span>${esc(c.name)}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${free>0?free+' free':'<b style="color:#f39c12">all in decks</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span><b>＋</b></div>`}).join('');
 }
 function newDeck(){
-  openM(`<h3>New deck</h3><div class="f"><label>Name</label><input id="nd" placeholder="e.g. Mono-White Angels"><label>Format</label><select id="nf" onchange="sleeveOpts()"><option>Casual</option><option>Commander</option></select><label>Commander (optional)</label><input id="nc"><label>Sleeve color <span id="sl"></span></label><select id="ns"></select></div><br><button class="pri big" onclick="mkDeck()">Create deck</button>`);sleeveOpts();
+  openM(`<h3>New deck</h3><div class="f"><label>Name</label><input id="nd" placeholder="e.g. Mono-White Angels"><label>Format</label><select id="nf" onchange="sleeveOpts()"><option>Casual</option><option>Commander</option></select><label>Commander (optional)</label><input id="nc"><label>Sleeve color <span id="sl" class="mut"></span></label><div class="swr" id="ns"></div></div><br><button class="pri big" onclick="mkDeck()">Create deck</button>`);sleeveOpts();
 }
-function sleeveOpts(){const need=$('#nf').value==='Commander'?100:60,ok=D.sleeves.filter(s=>!s.deck&&s.total>=need);$('#ns').innerHTML=ok.map(s=>`<option>${esc(s.color)}</option>`).join('')||'<option value="">None available</option>';$('#sl').textContent=ok.length?'(first available auto-selected)':'(none free with enough sleeves)'}
+let NSV='';
+function sleeveOpts(){const need=$('#nf').value==='Commander'?100:60,ok=D.sleeves.filter(s=>!s.deck&&s.total>=need);if(!ok.some(s=>s.color===NSV))NSV=ok[0]?.color||'';
+  $('#ns').innerHTML=ok.map(s=>`<button type="button" class="sw ${s.color===NSV?'on':''}" title="${esc(noEmoji(s.color))}" style="background:${SLV[noEmoji(s.color).toLowerCase()]||'#888'}" onclick="NSV=this.title&&'${esc(s.color)}';sleeveOpts()"></button>`).join('')||'<span class="mut">None free with enough sleeves</span>';
+  $('#sl').textContent=NSV?'· '+title(noEmoji(NSV))+' (first available is pre-selected)':''}
 function mkDeck(){
-  const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=$('#ns').value,s=D.sleeves.find(x=>x.color===col);
+  const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=NSV,s=D.sleeves.find(x=>x.color===col);
   D.decks.push({name,format:f,sleeve:col,commander:$('#nc').value.trim(),info:'',cards:[],tokens:[]});
   if(s){s.deck=`${name} (${f==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;s.inUse=f==='Commander'?100:60}
   save();closeM();V.deck=D.decks.length-1;render();
@@ -192,7 +205,7 @@ function vAdd(m){
     <div class="row"><button onclick="A.step=A.photo?'pick':'start';A.cands=A.cands||[];render()">✗ Wrong card</button><button class="pri" onclick="A.finish=A.finish||fins0();A.step='q';A.q=A.q||{};render()">✓ Correct — next</button></div>`;}
   else if(A.step==='q'){const q=A.q,srcs=[...new Set([...D.cards.flatMap(c=>c.source.split(', ')),...D.acq.map(a=>a.source),'Booster pack','Bundle box','Prerelease kit','Commander deck','Singles order','Trade','Gift'])].filter(s=>s&&s!=='None').sort();
     m.innerHTML=`<h2>A few questions</h2><p><b>${A.qty}× ${esc(A.card.name)}</b> <span class="mut">${esc(A.card.set.toUpperCase())} · ${esc(A.finish)}</span></p><div class="f">
-    <label>Where was it pulled from? *</label><input list="srcs" value="${esc(q.src||'')}" oninput="A.q.src=this.value" placeholder="Pick one or type a new source"><datalist id="srcs">${srcs.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+    <label>Where was it pulled from? *</label><select onchange="srcSel(this.value)"><option value="">Select a source…</option>${srcs.map(s=>`<option value="${esc(s)}" ${q.sel===s?'selected':''}>${esc(s)}</option>`).join('')}<option value="__new__" ${q.sel==='__new__'?'selected':''}>＋ Add a new source</option></select><input id="newsrc" style="margin-top:8px;${q.sel==='__new__'?'':'display:none'}" placeholder="Name the new source" value="${esc(q.newSrc||'')}" oninput="A.q.newSrc=this.value">
     <label>Date acquired</label><input type="date" value="${q.date||today()}" onchange="A.q.date=this.value">
     <label>Price paid (optional)</label><input inputmode="decimal" value="${esc(q.price||'')}" oninput="A.q.price=this.value" placeholder="$0.00">
     <label>Add straight to a deck?</label><select onchange="A.q.deck=this.value"><option value="">No — just the collection</option>${D.decks.map((d,i)=>`<option value="${i}" ${q.deck==i?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
@@ -200,6 +213,7 @@ function vAdd(m){
     <div class="row"><button onclick="A.step='verify';render()">← Back</button><button class="pri" onclick="commit()">Add to collection</button></div>`;}
   else if(A.step==='done')m.innerHTML=`<h2>✓ Added</h2><p>${esc(A.msg)}</p><div class="row"><button class="pri" onclick="A={step:'start'};render()">Add another</button><button onclick="go('collection')">View collection</button></div>`;
 }
+const srcSel=v=>{A.q.sel=v;const i=$('#newsrc');i.style.display=v==='__new__'?'':'none';if(v==='__new__')i.focus()};
 const fins0=()=>finMap[(A.card.finishes||['nonfoil'])[0]]||'Normal';
 function setPrint(id){A.card=A.prints.find(p=>p.id===id)||A.card;A.finish=null;render()}
 async function pickName(n){const c=await scry('/cards/named?exact='+encodeURIComponent(n));if(!c)return toast('Lookup failed — check your connection');A.cands=[c];A.photo=null;pick(0)}
@@ -226,7 +240,7 @@ async function scanPhoto(file){
 function mergeFinish(old,qty,add,n){const o={};if(/\(\d+\)/.test(old))old.split(',').forEach(p=>{const m=p.match(/(.+?)\s*\((\d+)\)/);if(m)o[m[1].trim()]=+m[2]});else if(old&&old!=='None')o[old]=qty;o[add]=(o[add]||0)+n;
   const k=Object.keys(o);return k.length===1?k[0]:k.map(x=>`${x} (${o[x]})`).join(', ')}
 function commit(){
-  const c=A.card,q=A.q||{},src=(q.src||'').trim(),n=A.qty;if(!src)return toast('Please say where this card came from');
+  const c=A.card,q=A.q||{},src=(q.sel==='__new__'?q.newSrc||'':q.sel||'').trim(),n=A.qty;if(!src)return toast('Please say where this card came from');
   const nm=c.name,cat=(()=>{const t=c.type_line;return /Basic Land/.test(t)?'Basic Land':/Land/.test(t)?'Nonbasic Land':/Legendary Creature/.test(t)?'Legendary Creature':/Artifact Creature/.test(t)?'Artifact Creature':/Creature/.test(t)?'Creature':/Planeswalker/.test(t)?'Planeswalker':c.layout==='token'?'Token':t.split(/[ —]/)[0]})();
   let e=findCard(nm);
   if(e){e.finish=mergeFinish(e.finish,e.qty,A.finish,n);e.qty+=n;if(!e.source.split(', ').includes(src))e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src}
@@ -239,14 +253,78 @@ function commit(){
   A={step:'done',msg:`${n}× ${nm} (${c.set.toUpperCase()}) added from “${src}”${q.deck?` and placed in ${D.decks[+q.deck].name}`:''}.`};render();
 }
 
+/* ---------- AI deck builder (no accounts, no stored keys) ---------- */
+let G={fmt:'Commander',theme:'',cmd:'',own:true,avoid:true,prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY='';
+const MODELS={anthropic:'claude-sonnet-5-5',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
+function vAI(m){
+  m.innerHTML=`<h2>✨ AI deck builder</h2><p class="mut">Describe a deck and an AI drafts it from your collection. You review the list before anything is created. This app never stores logins or keys.</p>
+  <div class="f"><label>Format</label><select onchange="G.fmt=this.value"><option ${G.fmt==='Commander'?'selected':''}>Commander</option><option ${G.fmt==='Casual'?'selected':''}>Casual</option></select>
+  <label>Theme / strategy</label><textarea rows="3" oninput="G.theme=this.value" placeholder="e.g. aggressive Goblins with burn, or lifegain built around my angels">${esc(G.theme)}</textarea>
+  <label>Commander (optional)</label><input value="${esc(G.cmd)}" oninput="G.cmd=this.value" placeholder="Leave blank to let the AI choose">
+  <label><input type="checkbox" ${G.own?'checked':''} onchange="G.own=this.checked">Only use cards I own</label>
+  <label><input type="checkbox" ${G.avoid?'checked':''} onchange="G.avoid=this.checked">Avoid cards already used in my other decks</label></div>
+  <h3>Option A — use your own AI chat (no key needed)</h3><p class="mut">Works with any AI account: copy the prompt, paste it into your AI app, then paste its answer below.</p><button class="pri" onclick="copyPrompt()">📋 Copy prompt</button>
+  <h3>Option B — generate here (needs an API key)</h3><p class="mut">You type your own key each visit. It is held in memory only (gone when you close the app) and sent only to the provider you pick. API usage is billed separately from chat subscriptions.</p>
+  <div class="f"><label>Provider</label><select onchange="G.prov=this.value;G.model=MODELS[G.prov];render()">${[['anthropic','Anthropic (Claude)'],['openai','OpenAI'],['gemini','Google Gemini']].map(([k,l])=>`<option value="${k}" ${G.prov===k?'selected':''}>${l}</option>`).join('')}</select>
+  <label>Model (edit if your provider has renamed it)</label><input value="${esc(G.model)}" oninput="G.model=this.value"><label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value"></div>
+  <br><button class="pri" onclick="aiGenerate()" ${G.busy?'disabled':''}>${G.busy?'Thinking…':'✨ Generate deck'}</button>${G.err?`<div class="warn">${esc(G.err)}</div>`:''}
+  <h3>AI reply</h3><textarea id="greply" rows="6" oninput="G.reply=this.value" placeholder="Paste the AI's decklist here (Option B fills this in for you)">${esc(G.reply)}</textarea><br><br><button onclick="readReply()">Read reply</button><div id="gprev"></div>`;
+  if(G.res)drawPrev();
+}
+function buildPrompt(){
+  const n=G.fmt==='Commander'?100:60,rows=D.cards.filter(isReal).map(c=>`${c.name} | ${c.type} | ${c.colors} | MV ${c.cmc} | own ${c.qty} | free ${Math.max(0,c.qty-sum(usage(c.name)))}`);
+  return `You are an expert Magic: The Gathering deck builder. Build a ${G.fmt} deck of exactly ${n} cards${G.fmt==='Commander'?' (the commander counts toward the 100; singleton except basic lands; stay inside the commander\'s color identity)':''}.
+Theme / strategy: ${G.theme||'your choice — make it fun and coherent'}
+${G.cmd?'Commander: '+G.cmd:G.fmt==='Commander'?'Choose the commander from my collection.':''}
+${G.own?'Use ONLY cards from my collection list below, spelled exactly as listed, and never more copies than "own".':'Prefer cards from my collection, but you may add a few cards I do not own — put * at the end of those lines.'}
+${G.avoid?'Prefer cards with free copies (not already used in my other decks).':''}
+OUTPUT FORMAT: one card per line as "<quantity> <card name>", commander first. No headings or bullets. After the list, write a line containing only --- and then a short explanation (under 120 words).
+
+MY COLLECTION (name | type | colors | mana value | copies owned | copies free):
+${rows.join('\n')}`}
+async function copyPrompt(){const p=buildPrompt();try{await navigator.clipboard.writeText(p);toast('Prompt copied — paste it into your AI')}catch(e){openM(`<h3>Copy this prompt</h3><textarea rows="12" readonly style="width:100%" onfocus="this.select()">${esc(p)}</textarea>`)}}
+async function aiGenerate(){
+  const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)return toast('Enter a model and your API key first');
+  G.busy=true;G.err='';render();const p=buildPrompt();let txt='',r,j;
+  try{
+    if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:4000,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
+    else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({model,messages:[{role:'user',content:p}]})});j=await r.json();txt=j.choices?.[0]?.message?.content||''}
+    else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();txt=(j.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('')}
+    if(!r.ok)G.err=(j.error?.message||'The provider returned an error ('+r.status+').')+' Check the model name and key.';
+  }catch(e){G.err="Couldn't reach the provider — check your connection."}
+  G.busy=false;if(txt&&!G.err){G.reply=txt;G.res=null}else if(!G.err)G.err='The AI sent back an empty reply.';
+  render();if(G.reply&&!G.err)readReply();
+}
+function readReply(){
+  G.reply=$('#greply')?.value??G.reply;const ents=[],by={};
+  G.reply.split(/^\s*---+\s*$/m)[0].split('\n').forEach(l=>{l=l.replace(/^[\s\-•*]+/,'').replace(/^commander:\s*/i,'1 ');const m=l.match(/^(\d+)\s*x?\s+(.+?)\s*$/i);if(!m)return;
+    const nm=m[2].replace(/\*+$/,'').trim(),c=findCard(nm),k=norm(nm);if(by[k])return by[k].want+=+m[1];by[k]={name:c?c.name:nm,want:+m[1],c};ents.push(by[k])});
+  ents.forEach(e=>{const o=e.c?.qty||0,free=e.c?Math.max(0,o-sum(usage(e.c.name))):0;e.add=Math.min(e.want,o);
+    e.st=!e.c?'✗ not in collection (skipped)':e.add<e.want?`⚠ you own only ${o} (using ${e.add})`:e.c.type!=='Basic Land'&&free<e.add?'⚠ borrows from another deck':'✓ available'});
+  G.res={ents};drawPrev();
+}
+function drawPrev(){
+  const r=G.res,t=G.fmt==='Commander'?100:60,tot=sum(r.ents,e=>e.add),el=$('#gprev');if(!el)return;
+  el.innerHTML=r.ents.length?`<h3>Preview — ${tot}/${t} cards from your collection</h3>${tbl(['Qty','Card','Status'],r.ents.map(e=>[e.add||e.want,e.name,e.st]))}<div class="f"><label>Deck name</label><input id="gname" value="${esc('AI: '+(G.theme||'New deck').slice(0,32))}"></div><br><button class="pri big" onclick="mkAIDeck()">Create deck from this list</button><p class="mut">Cards you don’t own are skipped. Cards borrowed from other decks are logged in the swap log.</p>`:'<div class="warn">I couldn’t find any “quantity card name” lines in that reply.</div>';
+}
+function mkAIDeck(){
+  const r=G.res,name=($('#gname').value||'AI deck').trim(),f=G.fmt,need=f==='Commander'?100:60,s=D.sleeves.find(x=>!x.deck&&x.total>=need);
+  const d={name,format:f,sleeve:s?s.color:'',commander:G.cmd||(f==='Commander'?r.ents[0]?.name||'':''),info:'Built with the AI deck builder',cards:[],tokens:[]};D.decks.push(d);
+  if(s){s.deck=`${name} (${f==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;s.inUse=need}
+  r.ents.filter(e=>e.add>0).forEach(e=>{const u=usage(e.c.name).filter(x=>x.d!==d),free=e.c.qty-sum(usage(e.c.name));
+    if(e.c.type!=='Basic Land'&&e.add>free)D.swaps.push({deck:name,section:'Added by AI deck builder — borrowed / pulled from other decks',header:['Card Name','Original Owner / Source Deck','Quantity','Date','Notes','Status'],row:[e.c.name,u.map(x=>x.d.name).join(', ')||'Collection',String(e.add-Math.max(0,free)),today(),'Logged automatically','In Deck / Active']});
+    d.cards.push({name:e.c.name,qty:e.add,finish:e.c.finish||'Normal'})});
+  save();G.res=null;V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);toast('Deck created');
+}
+
 /* ---------- more ---------- */
 function vMore(m){
   const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['sleeves','Sleeves'],['backup','Backup']];
   let body='';
   if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,a.name,a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
-  if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>[s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row]));
-  if(V.sub==='matchups')body=D.matchups.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0],s.rows.slice(1))}`).join('');
-  if(V.sub==='sleeves')body=tbl(['Color','Owned','Assigned deck','In use','Spare'],D.sleeves.map(s=>[s.color,s.total,s.deck||'Available',s.inUse,s.total-s.inUse]));
+  if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>[s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji)));
+  if(V.sub==='matchups')body=D.matchups.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0].map(noEmoji),s.rows.slice(1).map(r=>r.map(noEmoji)))}`).join('');
+  if(V.sub==='sleeves')body=tbl(['Color','Owned','Assigned deck','In use','Spare'],D.sleeves.map(s=>[{h:sl(s.color)},s.total,s.deck||'Available',s.inUse,s.total-s.inUse]));
   if(V.sub==='backup')body=`<p class="mut">Your changes live on this phone. Export a backup regularly.</p><div class="row"><button class="pri" onclick="exportData()">⬇ Export backup</button><label class="btn">⬆ Import backup<input type="file" accept=".json" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to spreadsheet data</button>`;
   m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
 }
