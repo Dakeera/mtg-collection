@@ -64,6 +64,25 @@ input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display
 .bar{flex-direction:column;gap:8px}.brow{display:flex;gap:8px;width:100%}.brow>*{min-width:0}
 .qw{position:relative;flex:0 0 calc(65% - 4px)}.qw input{width:100%;min-width:0;padding-right:38px}.qx2{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:30px;height:30px;padding:0;border-radius:50%;background:none;border:0;color:var(--mut)}
 #clr{flex:1;padding:10px 6px}.brow select{flex:1 1 0}
+body.ro .ctl,body.ro .artbtn,body.ro .vfbtn,body.ro .qb,body.ro [data-pd],body.ro [data-rw],body.ro .redbox button,body.ro .sec .kv button{display:none!important}
+.robar{position:sticky;top:var(--st);z-index:7;background:var(--bg);display:flex;align-items:center;gap:8px;padding:6px 0 8px;border-bottom:1px solid #3a3350;margin-bottom:10px}
+.robar button{padding:8px 10px;font-size:12px;flex:0 0 auto}.robar b{flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;text-decoration:underline dotted}.robar span{flex:0 0 auto;font-size:11px;color:var(--mut);text-align:right}
+body.ro .bar{top:calc(var(--st) + 50px)}
+.spl b,.setcap b{display:block;font-size:12px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.spl span,.setcap span{display:block;color:var(--mut);font-size:10.5px;margin-top:2px}.sp{flex:0 0 112px}.setcap{text-align:center}
+.dl{font-style:normal;color:#f1c40f;font-weight:700}
+#dbar{position:fixed;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom));z-index:22;background:#1c1630f2;border-top:1px solid #4a4266;padding:10px 12px;display:flex;gap:10px;align-items:center}#dbar span{flex:1;font-size:13px}#dbar button{padding:10px 16px}
+.pull h4{margin:14px 0 4px;font-size:14px;color:var(--gold)}.pull .grp{background:var(--card);border-radius:10px;padding:8px 12px;margin:6px 0}.pull .grp b{display:block;margin-bottom:4px}.pull .grp div{font-size:14px;padding:1px 0}
+#cam{position:fixed;inset:0;background:#000;z-index:95;display:flex;flex-direction:column}#cam .vw{position:relative;flex:1;min-height:0;overflow:hidden}#cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#camf{position:absolute;box-shadow:0 0 0 9999px #0008;border-radius:10px}#camf i{position:absolute;width:20%;height:20%;border:0 solid #2ecc71;filter:drop-shadow(0 0 4px #2ecc71)}
+#camf i:nth-child(1){left:-2px;top:-2px;border-left-width:4px;border-top-width:4px;border-top-left-radius:10px}#camf i:nth-child(2){right:-2px;top:-2px;border-right-width:4px;border-top-width:4px;border-top-right-radius:10px}
+#camf i:nth-child(3){left:-2px;bottom:-2px;border-left-width:4px;border-bottom-width:4px;border-bottom-left-radius:10px}#camf i:nth-child(4){right:-2px;bottom:-2px;border-right-width:4px;border-bottom-width:4px;border-bottom-right-radius:10px}
+#cam .tip{position:absolute;left:0;right:0;top:calc(10px + var(--st));text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px #000;padding:0 12px}
+#cam .cb{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:#000}#cam .cb button{padding:10px 12px;font-size:13px}#cam .shut{width:68px;height:68px;border-radius:50%;background:#fff;border:5px solid #2ecc71;padding:0;flex:0 0 auto}
+.ocrow{position:relative;overflow:hidden;border-radius:12px;margin:8px 0;background:#c0392b}.ocdel{position:absolute;right:0;top:0;bottom:0;width:92px;background:#c0392b;color:#fff;border:0;border-radius:0;font-weight:700}
+.ocin{user-select:none;-webkit-user-select:none;position:relative;background:var(--card);padding:14px;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer;transition:transform .18s;touch-action:pan-y}.ocin span{color:var(--mut);font-size:12px;white-space:nowrap}
+.pbar{height:12px;background:var(--card2);border-radius:8px;overflow:hidden;margin:8px 0}.pbar i{display:block;height:100%;background:var(--ac);transition:width .2s}
+details.g{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}details.g summary{cursor:pointer;font-weight:600}
+.fmt dt{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:10px}.fmt dd{margin:2px 0 0}
 #stcover{position:fixed;top:0;left:0;right:0;height:var(--st);background:var(--bg);z-index:25;pointer-events:none}
 .sym{height:1.15em;width:1.15em;vertical-align:-.22em;margin:0 1px}
 .zflip{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);padding:12px 22px;background:#000c;border:1px solid #fff5}
@@ -76,14 +95,15 @@ input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display
 </style></head><body>
 <div id="prog"></div><div id="stcover"></div><button id="totop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button><div id="main">Loading…</div><nav id="nav"></nav>
 <div id="modal" class="modal"><div class="sheet"><button class="x" onclick="tryClose()">✕</button><div id="mbody"></div></div></div><div id="toast"></div>
+<script src="features.js"></script>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const NS='';const LS='mtg_state_v1'+NS,AS='mtg_art_v1'+NS,BK='mtg_backup_v1'+NS,DY='mtg_dirty_v1'+NS;const EMPTY={cards:[],decks:[],swaps:[],matchups:[],sleeves:['Pink','Purple','Light Pink','Light Blue','Blue','Red','Light Green','Green','Yellow','Orange','White','Black'].map(color=>({color,total:0,deck:'',inUse:0}))};
 let IDX=null,D,A={step:'start'},PD='',ART={},ART2={},FACE=false;try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}try{ART2=JSON.parse(localStorage.getItem(AS+'_b')||'{}')}catch(e){}
 const V={view:'collection',q:'',type:'',color:'',deck:null,sub:'log'};
-const persist=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
-const save=()=>{try{reconcileLoans()}catch(e){}IDX=null;persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
-const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART));localStorage.setItem(AS+'_b',JSON.stringify(ART2))}catch(e){}};
+const persist=()=>{if(RO)return;try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
+const save=()=>{if(RO){IDX=null;return}try{reconcileLoans()}catch(e){}IDX=null;D.updated=Date.now();persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
+const saveArt=()=>{if(RO)return;try{localStorage.setItem(AS,JSON.stringify(ART));localStorage.setItem(AS+'_b',JSON.stringify(ART2))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
 const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
 const isReal=c=>!['Token','Accessory'].includes(c.type);
@@ -120,7 +140,7 @@ const backUrl=n=>{const c=findCard(n);return (c&&c.art2)||ART2[n]||''};
 async function init(){
   const s=localStorage.getItem(LS);
   try{D=s?JSON.parse(s):await startData()}catch(e){$('#main').textContent='Could not load your data.';return}
-  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();if(!s)persist();render();fetchArt();
+  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();if(!s)persist();render();fetchArt();
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
@@ -166,15 +186,17 @@ function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
 /* ---------- shell ---------- */
 const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','✨','AI deck'],['more','⚙️','More']];
 function render(){
-  $('#nav').innerHTML=NAV.map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
+  document.body.classList.toggle('ro',!!RO);
+  $('#nav').innerHTML=(RO?NAV.slice(0,2):NAV).map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
   ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
+  if(RO){$('#main').insertAdjacentHTML('afterbegin',roBar());return}
   const due=backupDue();if(due&&!(V.view==='more'&&V.sub==='backup'))$('#main').insertAdjacentHTML('afterbegin',`<div class="warn">💾 ${esc(due)} <button style="margin-left:8px;padding:6px 10px" onclick="go('more');V.sub='backup';render()">Back up now</button></div>`);
 }
 const SCR={};const showTab=k=>{V.view=k;V.deck=null;render();scrollTo(0,k==='collection'?(SCR.collection||0):0);topBtn()};
-function go(k){if(k!==V.view){SCR[V.view]=scrollY;HIST.push(V.view);if(HIST.length>20)HIST.shift()}showTab(k)}
+function go(k){if(k!==V.view&&!fxCanLeave())return;if(k!==V.view){SCR[V.view]=scrollY;HIST.push(V.view);if(HIST.length>20)HIST.shift()}showTab(k)}
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
-  if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return confirm(`Add ${b.dataset.adc} to ${D.decks[V.deck].name}?`)&&(addToDeck(V.deck,b.dataset.adc,1),deckSearch());
+  if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return fxDraftChg(V.deck,b.dataset.adc,1,true);
   if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf,b.dataset.qs);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return vfAsk(b.dataset.vf);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-apv]'))return apView(b.dataset.apv);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(b=t.closest('[data-dcd]'))return dcDetail(+b.dataset.dcd);if(t.id==='modal')tryClose()});
 
@@ -182,14 +204,15 @@ document.addEventListener('click',e=>{const t=e.target;let b;
 const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art">${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${c.verified?'<span class="vf" title="Artwork verified">✓</span>':''}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
 function vCollection(m){
   const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
-  m.innerHTML=`<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div></div>
+  m.innerHTML=`${D.owner&&!RO?`<h2 style="margin:0 0 8px">${esc(D.owner)}</h2>`:''}<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div></div>
   <div class="bar"><div class="brow"><span class="qw"><input id="q" type="search" placeholder="Search name or rules text…" value="${esc(V.q)}"><button type="button" class="qx2" id="qx" aria-label="Clear search">✕</button></span><button type="button" id="clr">Clear filters</button></div><div class="brow"><select id="ft"><option value="">All types</option>${types.map(t=>opt('type',t)).join('')}</select><select id="fc"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(t=>opt('color',t)).join('')}</select></div></div><div id="list" class="grid"></div>`;
-  $('#q').oninput=e=>{V.q=e.target.value;drawList(true)};$('#qx').onclick=()=>{V.q='';$('#q').value='';drawList(true)};$('#clr').onclick=()=>{V.q=V.type=V.color='';$('#q').value=$('#ft').value=$('#fc').value='';drawList(true)};$('#ft').onchange=e=>{V.type=e.target.value;drawList(true)};$('#fc').onchange=e=>{V.color=e.target.value;drawList(true)};drawList();
+  $('#q').oninput=e=>{V.q=e.target.value;clearTimeout(V.qt);V.qt=setTimeout(()=>drawList(true),140)};$('#qx').onclick=()=>{V.q='';$('#q').value='';drawList(true)};$('#clr').onclick=()=>{V.q=V.type=V.color='';$('#q').value=$('#ft').value=$('#fc').value='';drawList(true)};$('#ft').onchange=e=>{V.type=e.target.value;drawList(true)};$('#fc').onchange=e=>{V.color=e.target.value;drawList(true)};drawList();
 }
 function drawList(jump){
   if(V.view!=='collection'||!$('#list'))return;const q=V.q.toLowerCase();
   const cs=D.cards.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.text.toLowerCase().includes(q))&&(!V.type||c.type===V.type)&&(!V.color||c.colors.includes(V.color)));
-  $('#list').innerHTML=cs.map(c=>tile(c,'×'+c.qty)).join('')||`<p class="mut">${D.cards.length?'No cards match.':'Your collection is empty. Use the Add card tab to scan or search for your first card, or restore a backup in More → Backup.'}</p>`;
+  if(jump||!V.lim)V.lim=150;const lim=V.lim;
+  $('#list').innerHTML=(cs.slice(0,lim).map(c=>tile(c,'×'+c.qty)).join('')+(cs.length>lim?`<p class="mut" id="more" style="grid-column:1/-1;text-align:center;padding:10px">Showing ${lim} of ${cs.length} — keep scrolling for more</p>`:''))||`<p class="mut">${D.cards.length?'No cards match.':'Your collection is empty. Use the Add card tab to scan or search for your first card, or restore a backup in More → Backup.'}</p>`;
   if(jump){const l=$('#list'),bar=document.querySelector('.bar');if(l&&bar){const top=bar.getBoundingClientRect().bottom+6,r=l.getBoundingClientRect().top;if(r<top)scrollTo(0,Math.max(0,scrollY+r-top))}}
 }
 function zoom(n){const cur=()=>(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/'),u=cur();if(!u)return;const d=document.createElement('div');d.id='zoom';
@@ -245,7 +268,7 @@ const vfAsk=n=>{if(confirm(`The artwork for ${n} is marked verified ✓.\n\nDo y
 let AP={name:'',list:[],q:''};
 async function artPicker(name){
   AP={name,list:[],q:''};
-  openM(`<button onclick="showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}</h3><p class="mut">Pick the printing that matches your physical card. Your “pulled from” source stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><label class="btn" style="margin:8px 0">📷 Scan the card to verify it<input type="file" accept="image/*" capture="environment" hidden onchange="apScan(this.files[0])"></label><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div>`,()=>showCard(AP.name));
+  openM(`<button onclick="showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}</h3><p class="mut">Pick the printing that matches your physical card. Your “pulled from” source stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><button style="margin:8px 0;display:block" onclick="fxCam(apScan)">📷 Scan the card to verify it</button><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div>`,()=>showCard(AP.name));
   const base=await scry('/cards/named?fuzzy='+encodeURIComponent(front(name)));
   if(!base||base.object!=='card'){if($('#apst'))$('#apst').textContent='No printings found for this card.';return}
   let url=base.prints_search_uri,pages=0;
@@ -257,7 +280,7 @@ function apDraw(more=''){
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'';
   const ls=AP.list.filter(p=>sm(p)&&(!q||`${p.set} ${p.set_name} ${p.collector_number}`.toLowerCase().includes(q)));
   $('#apst').textContent=`${ls.length} of ${AP.list.length} printings${more}`;
-  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-apv="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${p.id===cur?'<span class="badge">✓</span>':''}</div><div class="nm"><b>${esc(p.set.toUpperCase())}</b> #${esc(p.collector_number)}<br><span class="mut">${esc(p.set_name)}</span></div></div>`).join('');
+  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-apv="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${p.id===cur?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span></div></div>`).join('');
 }
 async function apScan(file){
   if(!file)return;const say=t=>{const e=$('#apst');if(e)e.textContent=t};
@@ -307,11 +330,11 @@ function reconcileLoans(){if(!D||!D.loans)return;const run={};
     if(!to||!fr){l.status='closed';l.done=today();setSwapStatus(l.id,'Closed (a deck was deleted)');return}
     const k=l.to+'|'+norm(l.card);run[k]=(run[k]||0)+l.qty;const have=sum(to.cards.filter(x=>norm(x.name)===norm(l.card)));
     if(have<run[k]){run[k]-=l.qty;l.status='returned';l.done=today();l.auto=true;setSwapStatus(l.id,'Returned '+today()+' (removed from '+l.to+')')}})}
-function returnLoan(id){const l=D.loans.find(x=>x.id===id&&x.status==='active');if(!l)return;
+function returnLoan(id){if(fxDraftDirty())return toast('Save or discard your deck changes first');const l=D.loans.find(x=>x.id===id&&x.status==='active');if(!l)return;
   if(!confirm(`Take ${l.qty}× ${l.card} back to ${l.from}?\n\nIt will be removed from ${l.to}, which will then be missing it.`))return;
   const to=D.decks.find(d=>d.name===l.to),e=to&&to.cards.find(x=>norm(x.name)===norm(l.card));if(e){e.qty-=l.qty;if(e.qty<=0)to.cards.splice(to.cards.indexOf(e),1)}
   l.status='returned';l.done=today();setSwapStatus(id,'Returned '+today());save();render();toast(`${l.card} is back in ${l.from}`)}
-function keepLoan(id){const l=D.loans.find(x=>x.id===id&&x.status==='active');if(!l)return;
+function keepLoan(id){if(fxDraftDirty())return toast('Save or discard your deck changes first');const l=D.loans.find(x=>x.id===id&&x.status==='active');if(!l)return;
   if(!confirm(`Make it permanent?\n\n${l.qty}× ${l.card} stays in ${l.to} and is taken off ${l.from}'s list, so ${l.from} is no longer flagged for it.`))return;
   const fr=D.decks.find(d=>d.name===l.from),e=fr&&fr.cards.find(x=>norm(x.name)===norm(l.card));if(e){e.qty-=l.qty;if(e.qty<=0)fr.cards.splice(fr.cards.indexOf(e),1)}
   l.status='permanent';l.done=today();setSwapStatus(id,'Permanent '+today());save();render();toast(`${l.card} now belongs to ${l.to}`)}
@@ -325,6 +348,7 @@ function loanBox(d){const out=actLoans().filter(l=>l.from===d.name),inn=actLoans
 const sleeveOf=d=>D.sleeves.find(s=>s.deck&&s.deck.toLowerCase().startsWith(d.name.toLowerCase()));
 const target=d=>d.format==='Commander'?100:d.format==='Casual'?60:0;
 function addToDeck(i,name,n){
+  if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return fxDraftChg(i,name,n);DRAFT=null;
   const d=D.decks[i],c=findCard(name);let plan=null;
   if(c&&c.type!=='Basic Land'&&n>freeCopies(c)){
     plan=planCard(c,n,D.decks.filter(x=>x!==d).map(x=>x.name));const from=plan.from.map(x=>`${x.q}× from ${x.deck}`).join(', ');
@@ -332,24 +356,22 @@ function addToDeck(i,name,n){
     plan.from.forEach(x=>makeLoan(c.name,x.q,x.deck,d.name))}
   const e=d.cards.find(x=>norm(x.name)===norm(name));e?e.qty+=n:d.cards.push({name:c?c.name:name,qty:n,finish:c?.finish||'Normal'});save();toast('Added to '+d.name);if(V.view==='decks')render();
 }
-function chg(name,dl){const d=D.decks[V.deck],e=d.cards.find(x=>x.name===name);if(!e)return;
-  if(!confirm(dl>0?`Add one more ${name} to ${d.name}?\n(${e.qty} → ${e.qty+1})`:`Remove one ${name} from ${d.name}?\n(${e.qty} → ${e.qty-1}${e.qty===1?' — the card will leave the deck':''})`))return;
-  if(dl>0)return addToDeck(V.deck,name,1);e.qty--;if(e.qty<=0)d.cards.splice(d.cards.indexOf(e),1);save();render()}
+function chg(name,dl){fxDraftChg(V.deck,name,dl)}
 function vDecks(m){
   if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
-  m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" onclick="newDeck()">＋ New deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
+  m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" data-rw onclick="newDeck()">＋ New deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
     return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
 }
 function vDeck(m,i){
-  const d=D.decks[i],ents=d.cards.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(d.cards),cv=Array(8).fill(0),ty={};
+  const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(dl),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
   const mx=Math.max(1,...cv);
-  m.innerHTML=`<button onclick="V.deck=null;render()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
+  m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
   ${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
-  <div class="row"><button class="pri" onclick="deckSearch(true)">＋ Add card from collection</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>
-  <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty,`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>
+  <div class="row" data-rw><button class="pri" onclick="deckSearch(true)">＋ Add card from collection</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxDraftNote(i)}
+  <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
   ${d.tokens.length?`<h3>Deck tokens (${sum(d.tokens)})</h3>${tbl(['Token','Qty','Details'],d.tokens.map(t=>[t.name,t.qty,{h:symHtml(t.text)}]))}`:''}`;
 }
 function deckSearch(first){
@@ -372,28 +394,28 @@ function mkDeck(){
   save();closeM();V.deck=D.decks.length-1;render();
 }
 function delDeck(i){const d=D.decks[i];if(!confirm(`Delete ${d.name}? Cards stay in your collection and its sleeves return to the available pool.`))return;
-  const s=sleeveOf(d);if(s){s.deck='';s.inUse=0}D.decks.splice(i,1);V.deck=null;save();render()}
+  const s=sleeveOf(d);if(s){s.deck='';s.inUse=0}D.decks.splice(i,1);V.deck=null;DRAFT=null;save();render()}
 
 /* ---------- add card (scan / search → verify → questions → confirm) ---------- */
 const finMap={nonfoil:'Normal',foil:'Foil',etched:'Etched Foil'};
 function vAdd(m){
   const photo=A.photo?`<img src="${A.photo}" style="max-height:160px;border-radius:10px;margin:8px 0">`:'';
-  const retake=`<label class="btn">📷 Retake<input type="file" accept="image/*" capture="environment" hidden onchange="scanPhoto(this.files[0])"></label>`;
+  const retake=`<button onclick="fxCam(scanPhoto)">📷 Retake</button>`;
   const manual=`<button onclick="A={step:'start'};render()">⌨ Enter manually</button>`;
   if(A.step==='start')m.innerHTML=`<h2>Add a card</h2><p class="mut">Nothing is saved to your collection until you confirm at the end.</p>
-    <label class="btn big pri">📷 Scan card with camera<input type="file" accept="image/*" capture="environment" hidden onchange="scanPhoto(this.files[0])"></label>
+    <button class="big pri" onclick="fxCam(scanPhoto)">📷 Scan card with camera</button>
     <label class="btn big">🖼 Choose an existing photo<input type="file" accept="image/*" hidden onchange="scanPhoto(this.files[0])"></label>
     <h3>…or search by name</h3><input id="ms" type="search" placeholder="Start typing a card name" style="width:100%" autocomplete="off"><div class="sug" id="sug"></div>`,
     $('#ms').oninput=async e=>{const q=e.target.value.trim();if(q.length<2)return $('#sug').innerHTML='';const r=await scry('/cards/autocomplete?q='+encodeURIComponent(q));
       if($('#sug')&&$('#ms').value.trim()===q)$('#sug').innerHTML=(r?.data||[]).map(n=>`<div data-pick="${esc(n)}">${esc(n)}</div>`).join('')};
   else if(A.step==='reading')m.innerHTML=`<h2>Reading card…</h2>${photo}<p id="scanmsg" class="mut">${esc(A.msg||'')}</p>`;
   else if(A.step==='fail')m.innerHTML=`<h2>Couldn't read that one</h2>${photo}<div class="warn">${esc(A.reason)} Photos can fail with glare, angles, or dark backgrounds — try a flat, well-lit shot with the card title filling the top of the frame.</div><div class="row">${retake}${manual}</div>`;
-  else if(A.step==='pick')m.innerHTML=`<h2>Is it one of these?</h2>${photo}<div class="grid">${A.cands.map((c,i)=>`<div class="tile" data-cand="${i}"><div class="art"><img src="${esc(sImg(c))}" alt="${esc(c.name)}"></div><div class="nm">${esc(c.name)}<br><span class="mut">${esc(c.set_name)}</span></div></div>`).join('')}</div><div class="row">${retake}${manual}</div>`;
+  else if(A.step==='pick')m.innerHTML=`<h2>Is it one of these?</h2>${photo}<div class="grid">${A.cands.map((c,i)=>`<div class="tile" data-cand="${i}"><div class="art"><img src="${esc(sImg(c))}" alt="${esc(c.name)}"></div><div class="nm setcap"><b>${esc(c.name)}</b><span>${esc(c.set_name)}</span></div></div>`).join('')}</div><div class="row">${retake}${manual}</div>`;
   else if(A.step==='verify'){const c=A.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f),sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'',pl=A.prints||[c];
     m.innerHTML=`<h2>Verify the match</h2><div class="${A.photo?'cmp':''}">${A.photo?`<div><div class="mut">Your photo</div><img src="${A.photo}"></div>`:''}<div><div class="mut">Matched card</div><img src="${esc(sImg(c))}" style="max-width:300px"></div></div>
     <h3>${esc(c.name)}</h3><p class="mut">${esc(c.type_line)} ${costHtml(c.mana_cost||'')}</p>${c.oracle_text?`<pre>${symHtml(c.oracle_text)}</pre>`:''}
     <h3>Which printing is yours?</h3><p class="mut">${A.pstat?esc(A.pstat):A.printOK?'✓ '+esc(A.printNote||'Printing chosen.'):'Not confirmed yet — tap the artwork that matches your card (set code and number are printed at the bottom of the card).'}</p>
-    <div class="strip">${pl.map(p=>`<div class="sp ${p.id===c.id?'on':''}" data-sp="${p.id}">${sm(p)?`<img loading="lazy" src="${esc(sm(p))}" alt="">`:'<div class="ph">?</div>'}<div class="spl"><b>${esc(p.set.toUpperCase())}</b> #${esc(p.collector_number)}</div></div>`).join('')}</div>
+    <div class="strip">${pl.map(p=>`<div class="sp ${p.id===c.id?'on':''}" data-sp="${p.id}">${sm(p)?`<img loading="lazy" src="${esc(sm(p))}" alt="">`:'<div class="ph">?</div>'}<div class="spl"><b>${esc(p.set_name||'')}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span></div></div>`).join('')}</div>
     <div class="f"><label>Finish</label><select onchange="A.finish=this.value">${fins.map(f=>`<option ${A.finish===f?'selected':''}>${f}</option>`).join('')}</select>
     <label>Quantity</label><input type="number" min="1" value="${A.qty}" onchange="A.qty=Math.max(1,+this.value||1)"></div>
     <div class="row"><button onclick="A.step=A.photo?'pick':'start';A.cands=A.cands||[];render()">✗ Wrong card</button><button class="pri" onclick="A.finish=A.finish||fins0();A.step='q';A.q=A.q||{};render()">✓ Correct — next</button></div>`;
@@ -441,7 +463,7 @@ async function ocrPass(file,y0,y1,maxW,psm){const w=await tessWorker();await w.s
   return (data.lines&&data.lines.length)?data.lines.map(l=>({t:l.text||'',c:l.confidence??50,h:l.bbox?l.bbox.y1-l.bbox.y0:10})):String(data.text||'').split('\n').map(t=>({t,c:50,h:10}))}
 // Finds the card name wherever the card sits in the photo: reads all text, ranks likely title lines, and only accepts a match that really looks like the line read.
 async function identify(file,expect,say,expCard){
-  const pass=[['Reading all text in the photo…',0,1,1800,'11'],['Trying another reading method…',0,1,1800,'3'],['Checking the top of the photo…',0,0.25,1800,'6'],['Reading at higher detail…',0,1,3200,'11']],names=D.cards.filter(isReal).map(c=>c.name),all=[];
+  const pass=file.cropped?[['Reading the card name…',0.02,0.14,1700,'7'],['Reading the name another way…',0,0.2,1800,'6'],['Reading the whole card…',0,1,1800,'6'],['Reading at higher detail…',0,1,2800,'11']]:[['Reading all text in the photo…',0,1,1800,'11'],['Trying another reading method…',0,1,1800,'3'],['Checking the top of the photo…',0,0.25,1800,'6'],['Reading at higher detail…',0,1,3200,'11']],names=D.cards.filter(isReal).map(c=>c.name),all=[];
   for(const [msg,y0,y1,mw,psm] of pass){
     say&&say(msg);TPROG=p=>say&&say(`${msg} ${Math.round(p*100)}%`);
     const L=await ocrPass(file,y0,y1,mw,psm);TPROG=null;L.forEach(l=>all.push(l.t));
@@ -467,6 +489,7 @@ async function identify(file,expect,say,expCard){
       if(sc2.length&&(sc2.length===1||sc2[0].r-sc2[1].r>=0.1))found.push({card:sc2[0].c,s:0.9})}}
   return {expected:false,cards:found,via:'text'}}
 async function detectPrint(file,prints,say){if(!prints||!prints.length)return null;say&&say('Reading the set number…');
+  if(file.cropped){const B=await ocrPass(file,0.86,1,2200,'6'),r=parseCollector(B.map(l=>l.t),prints);if(r)return r}
   const L=await ocrPass(file,0.4,1,2400,'11');return parseCollector(L.map(l=>l.t),prints)}
 async function scanPhoto(file){
   if(!file)return;const photo=URL.createObjectURL(file);A={step:'reading',photo,file,msg:'Loading text reader…'};render();
@@ -686,21 +709,25 @@ function mkAIDeck(){
 
 /* ---------- more ---------- */
 function vMore(m){
-  const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup']];
+  const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup']];
   let body='';
   if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
   if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>(r=>(r[2]={h:cl(r[2])},r))([s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji))));
-  if(V.sub==='matchups')body=D.matchups.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0].map(noEmoji),s.rows.slice(1).map(r=>r.map(noEmoji)))}`).join('');
+  if(V.sub==='matchups')body=fxMatchups();
+  if(V.sub==='import')body=fxImportView();
+  if(V.sub==='others')body=fxOthersView();
+  if(V.sub==='formats')body=fxFormatsView();
   if(V.sub==='check')body=`<p class="mut">Compares every card in your collection with the official Scryfall data (name, mana cost, type, power/toughness, rules text). Nothing changes until you approve each card. Last check: <b>${esc(D.lastCheck||'never')}</b></p><div class="row"><button class="pri" onclick="runDataCheck()" ${DC.running?'disabled':''}>${DC.running?'Checking…':'🔍 Run data check'}</button></div><p id="dcmsg" class="mut">${esc(DC.msg)}</p>`+(D.lastCheck&&!(D.flags||[]).length&&!DC.running?'<div class="sec">✓ No mismatches waiting for review.</div>':'')+(D.flags||[]).slice(0,25).map((f,i)=>`<div class="sec" data-dcd="${i}" style="cursor:pointer"><h4>Needs review · ${i+1} of ${D.flags.length} <span style="text-transform:none;letter-spacing:0">· tap for details</span></h4><b>${cl(f.name)}</b>${tbl(['Field','Yours','Official'],f.diffs.map(x=>[x.label,{h:symHtml(x.old)},{h:symHtml(x.now)}]))}<div class="row"><button data-dcf="${i}">Keep mine</button><button class="pri" data-dck="${i}">Fix to official</button></div></div>`).join('')+((D.flags||[]).length>25?`<p class="mut">Showing the first 25 of ${D.flags.length}. The rest appear as you finish these.</p>`:'')+((D.unmatched||[]).length?`<div class="sec"><h4>Couldn’t find on Scryfall (${D.unmatched.length})</h4><p class="mut" style="margin:0">${esc(D.unmatched.join(', '))}</p></div>`:'');
   if(V.sub==='edits')body=(D.edits||[]).length?'<p class="mut">Every change the app made to an existing card (data fixes, printing changes, quantity changes).</p>'+tbl(['When','Card','Field','Was','Now'],[...D.edits].reverse().slice(0,300).map(x=>[x.when,{h:cl(x.card)},x.field,{h:symHtml(x.old)},{h:symHtml(x.now)}])):'<p class="mut">No changes yet.</p>';
   if(V.sub==='sleeves')body='<div class="row"><button class="pri" onclick="slEdit(null)">＋ Add sleeves</button></div><p class="mut">Set how many you own in each color. New decks pick from sleeves that have enough free.</p>'+tbl(['Sleeves','Owned','Assigned deck','In use','Spare',''],D.sleeves.map((s,i)=>[{h:sl(s.color)},{h:`<input type="number" min="0" value="${s.total}" style="width:84px;padding:6px" onchange="setSleeve(${i},this.value)">`},s.deck||'Available',s.inUse,s.total-s.inUse,{h:`<button style="padding:4px 8px" onclick="slEdit(${i})">Edit</button> <button class="danger" style="padding:4px 8px" onclick="slDel(${i})">✕</button>`}]));
-  if(V.sub==='backup')body=`<p class="mut">Your collection is stored on this phone. Last backup: <b>${esc(localStorage.getItem(BK)||'never')}</b><br>Storage protection: <b id="pst">checking…</b></p>
+  if(V.sub==='backup')body=`<div class="f"><label>Collection name <span class="mut">(shown on your Collection tab and used at the start of backup file names)</span></label><input value="${esc(D.owner||'')}" placeholder="e.g. Nick" onchange="D.owner=this.value.trim();save();toast('Collection name saved')"></div><p class="mut">Your collection is stored on this phone. Last backup: <b>${esc(localStorage.getItem(BK)||'never')}</b><br>Storage protection: <b id="pst">checking…</b></p>
   <label>Backup file type</label><select onchange="BKF=this.value"><option value="sqlite" ${BKF==='sqlite'?'selected':''}>SQLite database (.sqlite)</option><option value="json" ${BKF==='json'?'selected':''}>JSON (.json)</option></select>
   <div class="row"><button class="pri" onclick="doBackup(true)">📤 Back up to Drive / Files…</button><button onclick="doBackup(false)">⬇ Download to phone</button></div>
   <p class="mut">The first button opens your phone’s share sheet so you can save the file to Google Drive or Files, or send it to yourself. The .sqlite file opens in any database viewer and can be restored here too.</p>
   <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>${autoBox()}<p class="mut" id="ver" style="margin-top:18px"></p>`;
   m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
   if(V.sub==='backup'){checkPersist();autoRefresh();appVersion()}
+  fxAfterMore();
 }
 const PAL=[['Pink','#ff5fa2'],['Light Pink','#ffc2dd'],['Magenta','#d6249f'],['Purple','#8e44ad'],['Lavender','#b9a3e3'],['Navy','#1b2a6b'],['Blue','#2f6df6'],['Light Blue','#7fc8ff'],['Teal','#1abc9c'],['Mint','#98ffcc'],['Green','#2e9e44'],['Light Green','#9be37a'],['Yellow','#ffd400'],['Gold','#d4af37'],['Orange','#ff8c1a'],['Peach','#ffb38a'],['Red','#e53935'],['Maroon','#800000'],['Brown','#8b5a2b'],['Gray','#7f8c8d'],['Silver','#c0c0c0'],['White','#ffffff'],['Black','#0b0b0b'],['Clear','#dff3f7']];
 let SLN=null,SLN0='';
@@ -775,7 +802,7 @@ async function nativeSave(blob,name,share){
   return {shared:true,fellBack:!share};
 }
 async function doBackup(share){
-  const ext=BKF==='json'?'json':'sqlite',name=`mtg-backup-${tsName()}.${ext}`;let blob;
+  const ext=BKF==='json'?'json':'sqlite',name=`${fxSlug(D.owner)}mtg-backup-${tsName()}.${ext}`;let blob;
   try{blob=BKF==='json'?new Blob([JSON.stringify(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
   if(isNative()){
@@ -796,7 +823,7 @@ async function importData(f){
     else j=JSON.parse(new TextDecoder().decode(buf));
     if(!j.cards||!j.decks)throw 0;
     if(!confirm(`Restore this backup? It replaces everything currently in the app (${D.cards.length} cards, ${D.decks.length} decks).`))return;
-    D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();save();stamp();toast('Backup restored');render();fetchArt()}
+    D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();save();stamp();toast('Backup restored');render();fetchArt()}
   catch(e){toast('That file is not a valid backup')}
 }
 async function startData(){try{const r=await fetch('data.json',{cache:'reload'});if(r.ok)return await r.json()}catch(e){}return JSON.parse(JSON.stringify(EMPTY))}
@@ -841,7 +868,7 @@ async function autoRefresh(){const el=$('#autolist');if(!el)return;
 async function autoRevert(name){
   let j;try{j=JSON.parse(await autoGet(name));if(!j.cards||!j.decks)throw 0}catch(e){return toast('That auto-backup could not be read')}
   if(!confirm(`Revert everything to how it was at ${autoWhen(name)}?\n\nThis replaces what is in the app now (${D.cards.length} titles, ${D.decks.length} decks) with that copy (${j.cards.length} titles, ${j.decks.length} decks). Your other auto-backups and manual backups are not changed.`))return;
-  AUTO_PAUSE=true;D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();save();AUTO_PAUSE=false;AUTO_LAST=JSON.stringify(D);IDX=null;
+  AUTO_PAUSE=true;D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();save();AUTO_PAUSE=false;AUTO_LAST=JSON.stringify(D);IDX=null;
   toast('Reverted to '+autoWhen(name));render();fetchArt()}
 
 /* ---------- back button (shared logic; Android uses @capacitor/app, the web version uses the browser history) ---------- */
@@ -853,14 +880,16 @@ const DISCARD='Discard your changes?\n\nOK = discard them\nCancel = keep editing
 function modalDirty(){return !!((SLD&&SLN&&JSON.stringify(SLN)!==SLN0)||CR||($('#nd')&&$('#nd').value.trim()))}
 function tryClose(){if(modalDirty()&&!confirm(DISCARD))return false;closeM();return true}
 function navBack(){
+  if(fxBack())return true;
   const ap=$('#apfull');if(ap){ap.remove();return true}
   const z=$('#zoom');if(z){z.remove();return true}
   if($('#modal').classList.contains('open')){if(modalDirty()&&!confirm(DISCARD))return true;if(MBACK){const b=MBACK;MBACK=null;b()}else closeM();return true}
   if(V.view==='add'){
     if(A.step==='done'||A.step==='reading'||A.step==='fail'){A={step:'start'};render();return true}
     if(A.step!=='start'){if(!confirm('Leave this card without adding it?\n\nOK = discard what you entered\nCancel = keep going'))return true;A={step:'start'};render();return true}}
-  if(V.view==='decks'&&V.deck!=null){V.deck=null;render();scrollTo(0,0);return true}
+  if(V.view==='decks'&&V.deck!=null){fxLeaveDeck();return true}
   if(V.view!=='collection'){SCR[V.view]=scrollY;showTab(HIST.length?HIST.pop():'collection');return true}
+  if(RO){roExit();return true}
   if(Date.now()-EXIT_T<2500)return 'exit';
   EXIT_T=Date.now();toast('To close the app, hit the back button again');return true}
 (function(){

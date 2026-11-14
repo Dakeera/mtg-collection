@@ -18,12 +18,13 @@ A Magic: The Gathering collection and deck tracker, shipped as TWO versions from
 - Never commit the owner's personal collection data anywhere in the repo or the APK. Their data is loaded only by restoring their own backup file; keep the backup format (.sqlite/.json) restorable on both versions.
 - The owner's real data lives on their phone. Updates must never overwrite or reset existing user data (storage keys stay stable; the app only ever starts empty or from a restored backup).
 - The owner is not very familiar with GitHub: explain steps plainly and carefully.
-- Existing app behaviors to preserve: confirm before +/- in deck viewer, verified-artwork gold checkmark, source dropdown with "add new", sleeve palette/photo crop, AI deck builder (Option A copy/paste, Option B own API key held in memory only), backup to share sheet / .sqlite / .json.
+- Existing app behaviors to preserve: deck edits are staged (+/−/add) and only applied by “Save changes” with a confirmation, followed by a pull-list popup grouped by set source or deck, verified-artwork gold checkmark, source dropdown with "add new", sleeve palette/photo crop, AI deck builder (Option A copy/paste, Option B own API key held in memory only), backup to share sheet / .sqlite / .json.
 
 ## Build & release
 - Web: GitHub Pages serves the repo root (index.html, sw.js, manifest, icons). Android: `.github/workflows/android.yml` wraps the same files with Capacitor (appId com.dakeera.mtgdeckmaster, name "MtG DeckMaster") and publishes a signed APK to Releases on every push to main.
 - The APK must always be signed with the same key (GitHub secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS) so updates install over the old app and keep the user's data. Never change the appId or the key.
 - Auto-backup (More → Backup, off by default): newest 5 JSON copies; Android writes files to Documents/MtG-DeckMaster/autosave, web keeps them in IndexedDB. Never touches manual backups.
 - Back button: one shared `navBack()` in index.html (modals → in-tab steps → tab history → double-back to exit). Android hooks it to `@capacitor/app`; the web version uses a history sentinel.
-- Android-only code goes behind `window.Capacitor?.isNativePlatform()`; the shared index.html stays the single source for both.
+- Android-only code goes behind `window.Capacitor?.isNativePlatform()`. The shared code is `index.html` (core app) plus `features.js` (deck draft editing, in-app camera, bulk import, other people's collections viewer, formats guide, battle simulator); both versions load the same two files. A new shared file must also be added to `scripts/build-www.js` and the `SHELL` list in `sw.js`.
+- Other people's collections are view-only: while one is open (`RO` set) `persist()`/`save()`/`saveArt()` do nothing, so the owner's own data can never be overwritten. Keep that guard.
 - When a scan or printing change reveals that an existing entry's data is wrong, the app asks for approval and UPDATES THE EXISTING CARD. It must never create a duplicate card for that.
