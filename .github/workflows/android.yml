@@ -43,12 +43,12 @@ jobs:
           "$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
           "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.keystore" \
             --ks-pass pass:"${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
-            --out "$RUNNER_TEMP/MtG-DeckMaster.apk" "$RUNNER_TEMP/aligned.apk"
-          "$BT/apksigner" verify "$RUNNER_TEMP/MtG-DeckMaster.apk"
+            --out "$RUNNER_TEMP/MtG-DeckMaster-v1.${{ github.run_number }}.apk" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify "$RUNNER_TEMP/MtG-DeckMaster-v1.${{ github.run_number }}.apk"
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v1.${{ github.run_number }}
           name: MtG DeckMaster Android 1.${{ github.run_number }}
           body: "Android app 1.${{ github.run_number }} — built with the same code as the website at commit ${{ github.sha }}."
-          files: ${{ runner.temp }}/MtG-DeckMaster.apk
+          files: ${{ runner.temp }}/MtG-DeckMaster-v1.${{ github.run_number }}.apk

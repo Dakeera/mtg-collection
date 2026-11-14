@@ -657,9 +657,9 @@ function vMore(m){
   <label>Backup file type</label><select onchange="BKF=this.value"><option value="sqlite" ${BKF==='sqlite'?'selected':''}>SQLite database (.sqlite)</option><option value="json" ${BKF==='json'?'selected':''}>JSON (.json)</option></select>
   <div class="row"><button class="pri" onclick="doBackup(true)">📤 Back up to Drive / Files…</button><button onclick="doBackup(false)">⬇ Download to phone</button></div>
   <p class="mut">The first button opens your phone’s share sheet so you can save the file to Google Drive or Files, or send it to yourself. The .sqlite file opens in any database viewer and can be restored here too.</p>
-  <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>${autoBox()}`;
+  <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>${autoBox()}<p class="mut" id="ver" style="margin-top:18px"></p>`;
   m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
-  if(V.sub==='backup'){checkPersist();autoRefresh()}
+  if(V.sub==='backup'){checkPersist();autoRefresh();appVersion()}
 }
 const PAL=[['Pink','#ff5fa2'],['Light Pink','#ffc2dd'],['Magenta','#d6249f'],['Purple','#8e44ad'],['Lavender','#b9a3e3'],['Navy','#1b2a6b'],['Blue','#2f6df6'],['Light Blue','#7fc8ff'],['Teal','#1abc9c'],['Mint','#98ffcc'],['Green','#2e9e44'],['Light Green','#9be37a'],['Yellow','#ffd400'],['Gold','#d4af37'],['Orange','#ff8c1a'],['Peach','#ffb38a'],['Red','#e53935'],['Maroon','#800000'],['Brown','#8b5a2b'],['Gray','#7f8c8d'],['Silver','#c0c0c0'],['White','#ffffff'],['Black','#0b0b0b'],['Clear','#dff3f7']];
 let SLN=null,SLN0='';
@@ -804,6 +804,7 @@ async function autoRevert(name){
   toast('Reverted to '+autoWhen(name));render();fetchArt()}
 
 /* ---------- back button (shared logic; Android uses @capacitor/app, the web version uses the browser history) ---------- */
+async function appVersion(){let v='web version';try{if(isNative()){const i=await window.Capacitor.Plugins.App.getInfo();v='Android app version '+i.version+' (build '+i.build+')'}}catch(e){}const e=$('#ver');if(e)e.textContent='MtG DeckMaster · '+v}
 let HIST=[],EXIT_T=0,LEAVING=false;
 const DISCARD='Discard your changes?\n\nOK = discard them\nCancel = keep editing';
 function modalDirty(){return !!((SLD&&SLN&&JSON.stringify(SLN)!==SLN0)||CR||($('#nd')&&$('#nd').value.trim()))}
