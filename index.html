@@ -495,10 +495,29 @@ async function sqliteBytes(){
   ins('sleeves',D.sleeves.map(s=>[noEmoji(s.color),s.total,noEmoji(s.deck||''),s.inUse]));
   const out=db.export();db.close();return out;
 }
+const isNative=()=>!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+const blobB64=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(b)});
+// Android app: the built-in browser can't download or use the web share sheet, so use the native file + share plugins.
+async function nativeSave(blob,name,share){
+  const P=window.Capacitor.Plugins;if(!P||!P.Filesystem)throw new Error('The phone file tools are missing from this app build.');
+  const data=await blobB64(blob);
+  if(!share){try{const r=await P.Filesystem.writeFile({path:'MtG-DeckMaster/'+name,data,directory:'DOCUMENTS',recursive:true});return {where:'Documents/MtG-DeckMaster/'+name,uri:r.uri}}catch(e){}}
+  if(!P.Share)throw new Error('The share tool is missing from this app build.');
+  const r=await P.Filesystem.writeFile({path:name,data,directory:'CACHE'});
+  try{await P.Share.share({title:'MtG DeckMaster backup',files:[r.uri],dialogTitle:'Save your backup'})}
+  catch(e){if(/cancel/i.test(String(e&&e.message||e)))return {cancelled:true};throw e}
+  return {shared:true,fellBack:!share};
+}
 async function doBackup(share){
   const ext=BKF==='json'?'json':'sqlite',name=`mtg-collection-${today()}.${ext}`;let blob;
   try{blob=BKF==='json'?new Blob([JSON.stringify(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
+  if(isNative()){
+    try{const r=await nativeSave(blob,name,share);
+      if(r.cancelled)return toast('Backup cancelled — nothing was saved');
+      stamp();toast(r.where?'Saved to '+r.where:r.fellBack?'Couldn’t save straight to the phone, so pick where to save it from the list':'Backup shared');return render()}
+    catch(e){return toast('Backup failed: '+String(e&&e.message||e).slice(0,90))}
+  }
   const f=new File([blob],name,{type:blob.type});
   if(share&&navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'MTG collection backup'});stamp();toast('Backup shared');return render()}catch(e){if(e.name==='AbortError')return}}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();stamp();
