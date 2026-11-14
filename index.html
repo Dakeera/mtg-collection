@@ -447,11 +447,11 @@ async function importData(f){
     else j=JSON.parse(new TextDecoder().decode(buf));
     if(!j.cards||!j.decks)throw 0;
     if(!confirm(`Restore this backup? It replaces everything currently in the app (${D.cards.length} cards, ${D.decks.length} decks).`))return;
-    D=j;D.acq=D.acq||[];save();stamp();toast('Backup restored');render()}
+    D=j;D.acq=D.acq||[];save();stamp();toast('Backup restored');render();fetchArt()}
   catch(e){toast('That file is not a valid backup')}
 }
 async function startData(){try{const r=await fetch('data.json',{cache:'reload'});if(r.ok)return await r.json()}catch(e){}return JSON.parse(JSON.stringify(EMPTY))}
 async function resetData(){if(!confirm('Replace everything with the starting data (a blank collection if the app has no starting data file)? Changes made in the app will be lost — back up first.'))return;
-  D=await startData();D.acq=[];save();render();toast('Reset complete')}
+  D=await startData();D.acq=[];save();render();fetchArt();toast('Reset complete')}
 init();
 </script></body></html>
