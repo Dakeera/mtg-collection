@@ -525,7 +525,7 @@ async function runDataCheck(){
     const d=fullDiff(e,c,fuzzy.has(k));if(d.length&&!D.kept[dcKey(e.name,d)])flags.push({name:e.name,diffs:d})});
   D.flags=flags;D.unmatched=unmatched;D.lastCheck=today();save();DC.running=false;DC.msg='';render();
 }
-function dcFix(i){const f=D.flags[i];if(!f)return;const e=findCard(f.name);if(e){applyDiffs(e,f.diffs);toast('Card fixed')}D.flags.splice(i,1);save();render()}
+function dcFix(i){const f=D.flags[i];if(!f)return;if(!confirm(`Update your existing “${f.name}” entry to match the official card?\n\n${f.diffs.map(x=>`• ${x.label}: ${String(x.old).slice(0,40)} → ${String(x.now).slice(0,40)}`).join('\n')}\n\nQuantity, finish, sources and decks are not touched. No new card is created.`))return;const e=findCard(f.name);if(e){applyDiffs(e,f.diffs);toast('Card fixed')}D.flags.splice(i,1);save();render()}
 function dcKeep(i){const f=D.flags[i];if(!f)return;D.kept=D.kept||{};D.kept[dcKey(f.name,f.diffs)]=1;D.flags.splice(i,1);save();render();toast('Kept as is')}
 async function dcDetail(i){const f=D.flags[i];if(!f)return;const e=findCard(f.name);if(!e)return;
   const nmD=f.diffs.find(x=>x.f==='name'),dif=new Set(f.diffs.map(x=>x.f));
@@ -537,7 +537,7 @@ async function dcDetail(i){const f=D.flags[i];if(!f)return;const e=findCard(f.na
     return [(d?'⚠ ':'')+l,mark(e[k]),c?mark(off[k]):'—']});
   openM(`<h3>Compare: ${esc(f.name)}</h3><div class="cmp"><div><div class="mut">Your entry</div>${imgTag(f.name)||`<div class="ph">${esc(f.name)}</div>`}</div><div><div class="mut">Official (Scryfall)</div>${c?`<img src="${esc(sImg(c))}" alt="">`:'<div class="ph">Not found online</div>'}</div></div>
   <p class="mut">Highlighted rows are what differs. Fixing changes only these fields on your existing card — quantity, finish, sources and decks stay as they are.</p><div class="cmpt">${tbl(['Field','Yours','Official'],rows)}</div>
-  <div class="row"><button onclick="closeM()">← Back</button><button onclick="closeM();dcKeep(${i})">Keep mine</button><button class="pri" onclick="closeM();dcFix(${i})">Fix to official</button></div>`);
+  <div class="row"><button onclick="closeM()">← Back</button><button onclick="closeM();dcKeep(${i})">Keep mine</button><button class="pri" onclick="dcFix(${i});closeM()">Fix to official</button></div>`);
 }
 function mergeFinish(old,qty,add,n){const o={};if(/\(\d+\)/.test(old))old.split(',').forEach(p=>{const m=p.match(/(.+?)\s*\((\d+)\)/);if(m)o[m[1].trim()]=+m[2]});else if(old&&old!=='None')o[old]=qty;o[add]=(o[add]||0)+n;
   const k=Object.keys(o);return k.length===1?k[0]:k.map(x=>`${x} (${o[x]})`).join(', ')}
@@ -781,8 +781,9 @@ function navBack(){
   if(isNative()){document.documentElement.classList.add('native');
     const CApp=window.Capacitor.Plugins&&window.Capacitor.Plugins.App;
     if(CApp&&CApp.addListener)CApp.addListener('backButton',()=>{if(navBack()==='exit'){try{CApp.exitApp()}catch(e){}}})}
-  else{try{history.replaceState({mtg:0},'');history.pushState({mtg:1},'');
-    addEventListener('popstate',()=>{if(LEAVING)return;const r=navBack();if(r==='exit'){LEAVING=true;history.back();return}history.pushState({mtg:1},'')})}catch(e){}}
+  else{try{let ARM=false;const arm=()=>{if(!ARM){try{history.pushState({mtg:1},'');ARM=true}catch(e){}}};
+    history.replaceState({mtg:0},'');addEventListener('pointerdown',arm,{passive:true});addEventListener('keydown',arm);
+    addEventListener('popstate',()=>{if(LEAVING)return;ARM=false;const r=navBack();if(r==='exit'){LEAVING=true;history.back();return}arm()})}catch(e){}}
 })();
 init();
 </script></body></html>
