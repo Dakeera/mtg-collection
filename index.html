@@ -60,6 +60,10 @@ ol.st{padding-left:20px;margin:6px 0;color:var(--mut)}ol.st li{margin:3px 0}a{co
 #prog{font-size:12px;color:var(--mut);padding:4px 12px}
 html.native{--st:calc(env(safe-area-inset-top,0px) + 10px)}
 #totop{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(72px + env(safe-area-inset-bottom));z-index:21;padding:8px 18px;border-radius:20px;background:#000d;border:1px solid #fff5;display:none;box-shadow:0 2px 10px #0008}
+input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.bar{flex-direction:column;gap:8px}.brow{display:flex;gap:8px;width:100%}.brow>*{min-width:0}
+.qw{position:relative;flex:0 0 calc(65% - 4px)}.qw input{width:100%;min-width:0;padding-right:38px}.qx2{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:30px;height:30px;padding:0;border-radius:50%;background:none;border:0;color:var(--mut)}
+#clr{flex:1;padding:10px 6px}.brow select{flex:1 1 0}
 #stcover{position:fixed;top:0;left:0;right:0;height:var(--st);background:var(--bg);z-index:25;pointer-events:none}
 .sym{height:1.15em;width:1.15em;vertical-align:-.22em;margin:0 1px}
 .zflip{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);padding:12px 22px;background:#000c;border:1px solid #fff5}
@@ -179,8 +183,8 @@ const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><d
 function vCollection(m){
   const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
   m.innerHTML=`<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div></div>
-  <div class="bar"><input id="q" type="search" placeholder="Search name or rules text…" value="${esc(V.q)}"><select id="ft"><option value="">All types</option>${types.map(t=>opt('type',t)).join('')}</select><select id="fc"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(t=>opt('color',t)).join('')}</select></div><div id="list" class="grid"></div>`;
-  $('#q').oninput=e=>{V.q=e.target.value;drawList(true)};$('#ft').onchange=e=>{V.type=e.target.value;drawList(true)};$('#fc').onchange=e=>{V.color=e.target.value;drawList(true)};drawList();
+  <div class="bar"><div class="brow"><span class="qw"><input id="q" type="search" placeholder="Search name or rules text…" value="${esc(V.q)}"><button type="button" class="qx2" id="qx" aria-label="Clear search">✕</button></span><button type="button" id="clr">Clear filters</button></div><div class="brow"><select id="ft"><option value="">All types</option>${types.map(t=>opt('type',t)).join('')}</select><select id="fc"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(t=>opt('color',t)).join('')}</select></div></div><div id="list" class="grid"></div>`;
+  $('#q').oninput=e=>{V.q=e.target.value;drawList(true)};$('#qx').onclick=()=>{V.q='';$('#q').value='';drawList(true)};$('#clr').onclick=()=>{V.q=V.type=V.color='';$('#q').value=$('#ft').value=$('#fc').value='';drawList(true)};$('#ft').onchange=e=>{V.type=e.target.value;drawList(true)};$('#fc').onchange=e=>{V.color=e.target.value;drawList(true)};drawList();
 }
 function drawList(jump){
   if(V.view!=='collection'||!$('#list'))return;const q=V.q.toLowerCase();
@@ -822,7 +826,7 @@ async function autoRun(){AUTO_T=null;if(!autoOn()||AUTO_PAUSE)return;if(AUTO_BUS
   catch(e){if(!AUTO_ERR)toast('Auto-backup failed: '+String(e&&e.message||e).slice(0,80));AUTO_ERR=true}
   AUTO_BUSY=false}
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&AUTO_T){clearTimeout(AUTO_T);autoRun()}});
-function autoSet(on){try{localStorage.setItem(AUTO_KEY,on?'1':'0')}catch(e){return toast('Could not save that setting')}
+function autoSet(on){if(!on&&!confirm('Turn off automatic backups?\n\nChanges will no longer be saved automatically. Your existing auto-backup files stay in the list and can still be used to revert.\n\nOK = turn off\nCancel = keep it on')){render();return}try{localStorage.setItem(AUTO_KEY,on?'1':'0')}catch(e){return toast('Could not save that setting')}
   AUTO_LAST='';if(on)autoRun().then(()=>toast('Automatic backups are on'));else toast('Automatic backups are off — existing auto-backup files are kept');render()}
 const autoWhen=n=>{const m=n.match(/^auto-(\d\d)(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)/);return m?new Date(2000+ +m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'}):n};
 function autoBox(){return `<h3>Automatic backups</h3><p class="mut">Saves a fresh copy every time something changes, and keeps only the newest ${AUTO_KEEP} so you can step back if a change was a mistake. Your manual backups above are never touched. ${isNative()?'Files go in <b>Documents/MtG-DeckMaster/autosave</b> on this phone.':'On the web version they are kept inside this browser’s storage (a web page can’t write to a folder).'}</p>
