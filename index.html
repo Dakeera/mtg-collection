@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14121a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<title>MTG Collection</title>
+<style>
+:root{color-scheme:dark;--bg:#14121a;--card:#1f1b2a;--card2:#2a2438;--tx:#eee;--mut:#9a93ad;--ac:#8b6cf0;--gold:#f1c40f;--bad:#e5574f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,sans-serif;padding-bottom:calc(70px + env(safe-area-inset-bottom))}
+#main{max-width:1100px;margin:0 auto;padding:12px;padding-top:calc(12px + env(safe-area-inset-top))}
+h2{margin:.3em 0}h3{margin:1em 0 .4em}.mut{color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:10px}
+.tile{background:var(--card);border-radius:10px;overflow:hidden;cursor:pointer;position:relative}
+.art{aspect-ratio:488/680;background:var(--card2);position:relative}.art img{width:100%;height:100%;object-fit:cover;display:block}
+.ph{padding:10px;font-size:13px;color:var(--mut);display:flex;height:100%;align-items:center;justify-content:center;text-align:center}
+.badge{position:absolute;right:6px;top:6px;background:#000c;color:var(--gold);border-radius:8px;padding:1px 7px;font-weight:700}
+.nm{padding:6px 8px;font-size:13px}.ctl{display:flex;gap:6px;padding:0 8px 8px}.ctl button{flex:1}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.stats div{background:var(--card);border-radius:10px;padding:8px 12px;flex:1;min-width:90px;font-size:12px;color:var(--mut)}.stats b{display:block;font-size:20px;color:var(--tx)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:5}
+input,select,textarea,button,.btn{font:inherit;color:var(--tx);background:var(--card2);border:1px solid #3a3350;border-radius:10px;padding:10px 12px}
+input[type=search],.bar input{flex:2;min-width:160px}select{flex:1}textarea{width:100%}label{display:block;margin:10px 0 4px;color:var(--mut);font-size:13px}
+input:not([type=checkbox]),select{max-width:100%}.f input,.f select{width:100%}
+button,.btn{cursor:pointer;display:inline-block;text-align:center}.pri{background:var(--ac);border-color:var(--ac);font-weight:600}.danger{color:var(--bad)}.big{width:100%;padding:18px;font-size:17px;margin:8px 0}
+#nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0e0c13;border-top:1px solid #2a2438;padding-bottom:env(safe-area-inset-bottom);z-index:20}
+#nav button{flex:1;border:0;border-radius:0;background:none;color:var(--mut);padding:10px 4px;font-size:12px}#nav button span{display:block;font-size:20px}#nav .on{color:var(--gold)}
+.modal{position:fixed;inset:0;background:#000b;display:none;z-index:30;overflow:auto}.modal.open{display:block}
+.sheet{background:var(--bg);max-width:760px;margin:20px auto;border-radius:14px;padding:16px;min-height:100px;position:relative}.x{position:absolute;right:10px;top:10px}
+.cd{display:grid;grid-template-columns:minmax(140px,280px) 1fr;gap:16px}.cd img,.cmp img{width:100%;border-radius:12px}@media(max-width:520px){.cd{grid-template-columns:1fr}}
+.tags span{display:inline-block;background:var(--card2);border-radius:20px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px}
+pre{white-space:pre-wrap;font:inherit;background:var(--card);padding:10px;border-radius:10px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.row>*{flex:1}
+.deck{background:var(--card);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer}.deck:hover{background:var(--card2)}
+.curve{display:flex;gap:6px;align-items:flex-end;height:90px;margin:8px 0}.curve div{flex:1;text-align:center;font-size:11px;color:var(--mut)}.curve i{display:block;background:var(--ac);border-radius:4px 4px 0 0;margin-bottom:2px}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid #2a2438;text-align:left;vertical-align:top}th{color:var(--mut);position:sticky;top:0;background:var(--bg)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.chips button.on{background:var(--ac)}
+.sug div,.res{padding:10px;background:var(--card);border-radius:8px;margin:4px 0;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.warn{background:#4a2a10;border-radius:10px;padding:10px;margin:8px 0}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#000e;padding:10px 16px;border-radius:20px;z-index:50;display:none}
+#prog{font-size:12px;color:var(--mut);padding:4px 12px}
+</style></head><body>
+<div id="prog"></div><div id="main">Loading…</div><nav id="nav"></nav>
+<div id="modal" class="modal"><div class="sheet"><button class="x" onclick="closeM()">✕</button><div id="mbody"></div></div></div><div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS='mtg_state_v1',AS='mtg_art_v1';let D,A={step:'start'},PD='',ART={};try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}
+const V={view:'collection',q:'',type:'',color:'',deck:null,sub:'log'};
+const save=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
+const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART))}catch(e){}};
+const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
+const today=()=>new Date().toISOString().slice(0,10),sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
+const isReal=c=>!['Token','Accessory'].includes(c.type);
+const findCard=n=>D.cards.find(c=>norm(front(c.name))===norm(front(n)));
+const usage=n=>D.decks.map(d=>({d,q:sum(d.cards.filter(x=>norm(x.name)===norm(n)))})).filter(x=>x.q>0);
+const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600)};
+const openM=h=>{$('#mbody').innerHTML=h;$('#modal').classList.add('open')},closeM=()=>$('#modal').classList.remove('open');
+const imgErr=i=>{if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else i.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:i.alt}))};
+const imgTag=(n,cls='')=>ART[n]?`<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(ART[n])}" alt="${esc(n)}" onerror="imgErr(this)">`:'';
+const tbl=(h,rows)=>`<div class="tw"><table><thead><tr>${h.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+let last=0;async function scry(p){await new Promise(r=>setTimeout(r,Math.max(0,110-(Date.now()-last))));last=Date.now();
+  try{const r=await fetch(p.startsWith('http')?p:'https://api.scryfall.com'+p,{headers:{Accept:'application/json'}});return r.ok?await r.json():null}catch(e){return null}}
+const sImg=c=>c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
+
+/* ---------- startup ---------- */
+async function init(){
+  const s=localStorage.getItem(LS);
+  try{D=s?JSON.parse(s):await (await fetch('data.json')).json()}catch(e){$('#main').textContent='Could not load data.json';return}
+  D.acq=D.acq||[];if(!s)save();render();fetchArt();
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+async function fetchArt(){
+  const names=[...new Set([...D.cards.filter(isReal).map(c=>c.name),...D.decks.flatMap(d=>d.cards.map(c=>c.name))])].filter(n=>!(n in ART));
+  if(!names.length)return;let miss=[],done=0;
+  for(let i=0;i<names.length;i+=75){
+    const chunk=names.slice(i,i+75);$('#prog').textContent=`Fetching card artwork… ${done}/${names.length}`;
+    try{const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:chunk.map(name=>({name:front(name)}))})});
+      const j=await r.json(),m={};(j.data||[]).forEach(c=>m[norm(front(c.name))]=sImg(c));
+      chunk.forEach(n=>{const u=m[norm(front(n))];u?ART[n]=u:miss.push(n)})}catch(e){$('#prog').textContent='Artwork needs an internet connection — will retry next launch.';return}
+    done+=chunk.length;saveArt();if(V.view==='collection')drawList()}
+  for(const n of miss){const c=await scry('/cards/named?fuzzy='+encodeURIComponent(front(n)));ART[n]=c&&c.object==='card'?sImg(c):'';done++;$('#prog').textContent=`Matching odd names… ${done}/${names.length}`}
+  saveArt();$('#prog').textContent='';render();
+}
+
+/* ---------- shell ---------- */
+const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['more','⚙️','More']];
+function render(){
+  $('#nav').innerHTML=NAV.map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
+  ({collection:vCollection,decks:vDecks,add:vAdd,more:vMore})[V.view]($('#main'));
+}
+function go(k){V.view=k;V.deck=null;render();scrollTo(0,0)}
+document.addEventListener('click',e=>{const t=e.target;let b;
+  if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
+  if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return addToDeck(V.deck,b.dataset.adc,1),deckSearch();
+  if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
+  if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(t.id==='modal')closeM()});
+
+/* ---------- collection ---------- */
+const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art">${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
+function vCollection(m){
+  const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
+  m.innerHTML=`<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div></div>
+  <div class="bar"><input id="q" type="search" placeholder="Search name or rules text…" value="${esc(V.q)}"><select id="ft"><option value="">All types</option>${types.map(t=>opt('type',t)).join('')}</select><select id="fc"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(t=>opt('color',t)).join('')}</select></div><div id="list" class="grid"></div>`;
+  $('#q').oninput=e=>{V.q=e.target.value;drawList()};$('#ft').onchange=e=>{V.type=e.target.value;drawList()};$('#fc').onchange=e=>{V.color=e.target.value;drawList()};drawList();
+}
+function drawList(){
+  if(V.view!=='collection'||!$('#list'))return;const q=V.q.toLowerCase();
+  const cs=D.cards.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.text.toLowerCase().includes(q))&&(!V.type||c.type===V.type)&&(!V.color||c.colors.includes(V.color)));
+  $('#list').innerHTML=cs.map(c=>tile(c,'×'+c.qty)).join('')||'<p class="mut">No cards match.</p>';
+}
+function showCard(name){
+  const c=findCard(name)||{name,colors:'',type:'',subtype:'',text:'',qty:0,source:'',finish:''},u=usage(c.name),has=v=>v&&v!=='None';
+  const acq=D.acq.filter(a=>norm(a.name)===norm(c.name));
+  openM(`<div class="cd"><div>${imgTag(c.name)}</div><div><h2>${esc(c.name)}</h2><div class="tags">${[c.type,has(c.subtype)&&c.subtype,c.colors,has(c.cost)&&c.cost,has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</div>
+  ${has(c.text)?`<pre>${esc(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut">${esc(c.keywords)}</p>`:''}
+  <p><b>Owned:</b> ${c.qty} ${has(c.finish)?`<span class="mut">(${esc(c.finish)})</span>`:''}</p>${has(c.legal)&&!/^None/.test(c.legal)?`<p class="warn">${esc(c.legal)}</p>`:''}
+  <p><b>Pulled from:</b><br>${esc(c.source||'—').replace(/, /g,'<br>')}</p>
+  <p><b>In decks:</b> ${u.length?u.map(x=>`${esc(x.d.name)} ×${x.q}`).join(', '):'none'}</p>
+  ${acq.length?`<p><b>Added in app:</b> ${acq.map(a=>`${esc(a.date)} · ${esc(a.source)} ×${a.qty}`).join('; ')}</p>`:''}
+  ${isReal(c)?`<button class="pri" data-pd="${esc(c.name)}">Add to a deck…</button>`:''}</div></div>`);
+}
+function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}</span><span class="mut">${sum(d.cards)} cards</span></div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
+
+/* ---------- decks ---------- */
+const sleeveOf=d=>D.sleeves.find(s=>s.deck&&s.deck.toLowerCase().startsWith(d.name.toLowerCase()));
+const target=d=>d.format==='Commander'?100:d.format==='Casual'?60:0;
+function addToDeck(i,name,n){
+  const d=D.decks[i],c=findCard(name),used=sum(usage(name)),others=usage(name).filter(x=>x.d!==d);
+  if(c&&c.type!=='Basic Land'&&used+n>c.qty){
+    if(!confirm(`You own ${c.qty}× ${c.name} and ${used} ${used===1?'is':'are'} already in decks${others.length?' ('+others.map(x=>x.d.name).join(', ')+')':''}.\n\nAdd it to ${d.name} anyway and log it as borrowed?`))return;
+    D.swaps.push({deck:d.name,section:'Added in app — borrowed / pulled from other decks',header:['Card Name','Original Owner / Source Deck','Quantity','Date','Notes','Status'],row:[c.name,others.map(x=>x.d.name).join(', ')||'Collection',String(n),today(),'Logged automatically when added in app','In Deck / Active']})}
+  const e=d.cards.find(x=>norm(x.name)===norm(name));e?e.qty+=n:d.cards.push({name:c?c.name:name,qty:n,finish:c?.finish||'Normal'});save();toast('Added to '+d.name);if(V.view==='decks')render();
+}
+function chg(name,dl){const d=D.decks[V.deck],e=d.cards.find(x=>x.name===name);if(!e)return;if(dl>0)return addToDeck(V.deck,name,1);e.qty--;if(e.qty<=0)d.cards.splice(d.cards.indexOf(e),1);save();render()}
+function vDecks(m){
+  if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
+  m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" onclick="newDeck()">＋ New deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d);
+    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)"><b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${esc(s?s.color:d.sleeve||'—')}</span></div>`}).join('');
+}
+function vDeck(m,i){
+  const d=D.decks[i],ents=d.cards.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(d.cards),cv=Array(8).fill(0),ty={};
+  ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
+  const mx=Math.max(1,...cv);
+  m.innerHTML=`<button onclick="V.deck=null;render()">← Decks</button><h2>${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${esc(sleeveOf(d)?.color||d.sleeve||'—')}</span>${d.commander?`<span>Commander: ${esc(d.commander)}</span>`:''}</div>
+  ${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
+  <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
+  <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
+  <div class="row"><button class="pri" onclick="deckSearch(true)">＋ Add card from collection</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>
+  <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty,`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>
+  ${d.tokens.length?`<h3>Deck tokens (${sum(d.tokens)})</h3>${tbl(['Token','Qty','Details'],d.tokens.map(t=>[t.name,t.qty,t.text]))}`:''}`;
+}
+function deckSearch(first){
+  if(first)openM(`<h3>Add to ${esc(D.decks[V.deck].name)}</h3><input id="ds" type="search" placeholder="Search your collection…" style="width:100%" oninput="deckSearch()"><div id="dres"></div>`);
+  const q=($('#ds')?.value||'').toLowerCase(),d=D.decks[V.deck];if(!$('#dres'))return;
+  $('#dres').innerHTML=D.cards.filter(c=>isReal(c)&&(!q||c.name.toLowerCase().includes(q))).slice(0,30).map(c=>{const u=usage(c.name),free=c.qty-sum(u);
+    return `<div class="res" data-adc="${esc(c.name)}"><span>${esc(c.name)}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${free>0?free+' free':'<b style="color:#f39c12">all in decks</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span><b>＋</b></div>`}).join('');
+}
+function newDeck(){
+  openM(`<h3>New deck</h3><div class="f"><label>Name</label><input id="nd" placeholder="e.g. Mono-White Angels"><label>Format</label><select id="nf" onchange="sleeveOpts()"><option>Casual</option><option>Commander</option></select><label>Commander (optional)</label><input id="nc"><label>Sleeve color <span id="sl"></span></label><select id="ns"></select></div><br><button class="pri big" onclick="mkDeck()">Create deck</button>`);sleeveOpts();
+}
+function sleeveOpts(){const need=$('#nf').value==='Commander'?100:60,ok=D.sleeves.filter(s=>!s.deck&&s.total>=need);$('#ns').innerHTML=ok.map(s=>`<option>${esc(s.color)}</option>`).join('')||'<option value="">None available</option>';$('#sl').textContent=ok.length?'(first available auto-selected)':'(none free with enough sleeves)'}
+function mkDeck(){
+  const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=$('#ns').value,s=D.sleeves.find(x=>x.color===col);
+  D.decks.push({name,format:f,sleeve:col,commander:$('#nc').value.trim(),info:'',cards:[],tokens:[]});
+  if(s){s.deck=`${name} (${f==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;s.inUse=f==='Commander'?100:60}
+  save();closeM();V.deck=D.decks.length-1;render();
+}
+function delDeck(i){const d=D.decks[i];if(!confirm(`Delete ${d.name}? Cards stay in your collection and its sleeves return to the available pool.`))return;
+  const s=sleeveOf(d);if(s){s.deck='';s.inUse=0}D.decks.splice(i,1);V.deck=null;save();render()}
+
+/* ---------- add card (scan / search → verify → questions → confirm) ---------- */
+const finMap={nonfoil:'Normal',foil:'Foil',etched:'Etched Foil'};
+function vAdd(m){
+  const photo=A.photo?`<img src="${A.photo}" style="max-height:160px;border-radius:10px;margin:8px 0">`:'';
+  const retake=`<label class="btn">📷 Retake<input type="file" accept="image/*" capture="environment" hidden onchange="scanPhoto(this.files[0])"></label>`;
+  const manual=`<button onclick="A={step:'start'};render()">⌨ Enter manually</button>`;
+  if(A.step==='start')m.innerHTML=`<h2>Add a card</h2><p class="mut">Nothing is saved to your collection until you confirm at the end.</p>
+    <label class="btn big pri">📷 Scan card with camera<input type="file" accept="image/*" capture="environment" hidden onchange="scanPhoto(this.files[0])"></label>
+    <label class="btn big">🖼 Choose an existing photo<input type="file" accept="image/*" hidden onchange="scanPhoto(this.files[0])"></label>
+    <h3>…or search by name</h3><input id="ms" type="search" placeholder="Start typing a card name" style="width:100%" autocomplete="off"><div class="sug" id="sug"></div>`,
+    $('#ms').oninput=async e=>{const q=e.target.value.trim();if(q.length<2)return $('#sug').innerHTML='';const r=await scry('/cards/autocomplete?q='+encodeURIComponent(q));
+      if($('#sug')&&$('#ms').value.trim()===q)$('#sug').innerHTML=(r?.data||[]).map(n=>`<div data-pick="${esc(n)}">${esc(n)}</div>`).join('')};
+  else if(A.step==='reading')m.innerHTML=`<h2>Reading card…</h2>${photo}<p id="scanmsg" class="mut">${esc(A.msg||'')}</p>`;
+  else if(A.step==='fail')m.innerHTML=`<h2>Couldn't read that one</h2>${photo}<div class="warn">${esc(A.reason)} Photos can fail with glare, angles, or dark backgrounds — try a flat, well-lit shot with the card title filling the top of the frame.</div><div class="row">${retake}${manual}</div>`;
+  else if(A.step==='pick')m.innerHTML=`<h2>Is it one of these?</h2>${photo}<div class="grid">${A.cands.map((c,i)=>`<div class="tile" data-cand="${i}"><div class="art"><img src="${esc(sImg(c))}" alt="${esc(c.name)}"></div><div class="nm">${esc(c.name)}<br><span class="mut">${esc(c.set_name)}</span></div></div>`).join('')}</div><div class="row">${retake}${manual}</div>`;
+  else if(A.step==='verify'){const c=A.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f);
+    m.innerHTML=`<h2>Verify the match</h2><div class="${A.photo?'cmp':''}">${A.photo?`<div><div class="mut">Your photo</div><img src="${A.photo}"></div>`:''}<div><div class="mut">Matched card</div><img src="${esc(sImg(c))}" style="max-width:300px"></div></div>
+    <h3>${esc(c.name)}</h3><p class="mut">${esc(c.type_line)} ${esc(c.mana_cost||'')}</p>${c.oracle_text?`<pre>${esc(c.oracle_text)}</pre>`:''}
+    <div class="f"><label>Printing (check set &amp; number against your card)</label><select onchange="setPrint(this.value)">${(A.prints||[c]).map(p=>`<option value="${p.id}" ${p.id===c.id?'selected':''}>${esc(p.set.toUpperCase())} #${esc(p.collector_number)} · ${esc(p.set_name)}</option>`).join('')}</select>
+    <label>Finish</label><select onchange="A.finish=this.value">${fins.map(f=>`<option ${A.finish===f?'selected':''}>${f}</option>`).join('')}</select>
+    <label>Quantity</label><input type="number" min="1" value="${A.qty}" onchange="A.qty=Math.max(1,+this.value||1)"></div>
+    <div class="row"><button onclick="A.step=A.photo?'pick':'start';A.cands=A.cands||[];render()">✗ Wrong card</button><button class="pri" onclick="A.finish=A.finish||fins0();A.step='q';A.q=A.q||{};render()">✓ Correct — next</button></div>`;}
+  else if(A.step==='q'){const q=A.q,srcs=[...new Set([...D.cards.flatMap(c=>c.source.split(', ')),...D.acq.map(a=>a.source),'Booster pack','Bundle box','Prerelease kit','Commander deck','Singles order','Trade','Gift'])].filter(s=>s&&s!=='None').sort();
+    m.innerHTML=`<h2>A few questions</h2><p><b>${A.qty}× ${esc(A.card.name)}</b> <span class="mut">${esc(A.card.set.toUpperCase())} · ${esc(A.finish)}</span></p><div class="f">
+    <label>Where was it pulled from? *</label><input list="srcs" value="${esc(q.src||'')}" oninput="A.q.src=this.value" placeholder="Pick one or type a new source"><datalist id="srcs">${srcs.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+    <label>Date acquired</label><input type="date" value="${q.date||today()}" onchange="A.q.date=this.value">
+    <label>Price paid (optional)</label><input inputmode="decimal" value="${esc(q.price||'')}" oninput="A.q.price=this.value" placeholder="$0.00">
+    <label>Add straight to a deck?</label><select onchange="A.q.deck=this.value"><option value="">No — just the collection</option>${D.decks.map((d,i)=>`<option value="${i}" ${q.deck==i?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
+    <label>Notes</label><textarea rows="2" oninput="A.q.notes=this.value">${esc(q.notes||'')}</textarea></div>
+    <div class="row"><button onclick="A.step='verify';render()">← Back</button><button class="pri" onclick="commit()">Add to collection</button></div>`;}
+  else if(A.step==='done')m.innerHTML=`<h2>✓ Added</h2><p>${esc(A.msg)}</p><div class="row"><button class="pri" onclick="A={step:'start'};render()">Add another</button><button onclick="go('collection')">View collection</button></div>`;
+}
+const fins0=()=>finMap[(A.card.finishes||['nonfoil'])[0]]||'Normal';
+function setPrint(id){A.card=A.prints.find(p=>p.id===id)||A.card;A.finish=null;render()}
+async function pickName(n){const c=await scry('/cards/named?exact='+encodeURIComponent(n));if(!c)return toast('Lookup failed — check your connection');A.cands=[c];A.photo=null;pick(0)}
+async function pick(i){A.card=A.cands[i];A.step='verify';A.finish=fins0();A.qty=1;A.q=null;A.prints=null;render();
+  const p=await scry(A.card.prints_search_uri);if(p?.data&&A.step==='verify'){A.prints=p.data;render()}}
+const setMsg=t=>{const e=$('#scanmsg');if(e)e.textContent=t};
+const loadTess=()=>window.Tesseract?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+async function crop(file,frac,maxW){const b=await createImageBitmap(file),sc=Math.min(1,maxW/b.width),cv=document.createElement('canvas');cv.width=Math.round(b.width*sc);cv.height=Math.round(b.height*frac*sc);
+  const x=cv.getContext('2d');x.filter='grayscale(1) contrast(1.4)';x.drawImage(b,0,0,b.width,b.height*frac,0,0,cv.width,cv.height);return new Promise(r=>cv.toBlob(r,'image/png'))}
+async function scanPhoto(file){
+  if(!file)return;const photo=URL.createObjectURL(file);A={step:'reading',photo,msg:'Loading text reader…'};render();
+  const fail=r=>{A={step:'fail',photo,reason:r};render()};
+  try{await loadTess()}catch(e){return fail("The text reader couldn't load (are you online?).")}
+  const cands=[];
+  try{for(const frac of [0.22,1]){
+    setMsg(frac<1?'Reading the card title…':'Trying the whole photo…');
+    const {data}=await Tesseract.recognize(await crop(file,frac,frac<1?1800:1600),'eng',{logger:m=>m.status==='recognizing text'&&setMsg(`Reading… ${Math.round(m.progress*100)}%`)});
+    const lines=[...new Set(data.text.split('\n').map(l=>l.replace(/[^A-Za-z',\- ]/g,' ').replace(/\s+/g,' ').trim()).filter(l=>l.length>=4))].slice(0,5);
+    for(const l of lines){const c=await scry('/cards/named?fuzzy='+encodeURIComponent(l));if(c&&c.object==='card'&&!cands.some(x=>x.oracle_id===c.oracle_id))cands.push(c)}
+    if(cands.length)break}}catch(e){return fail('Something went wrong reading the photo.')}
+  if(!cands.length)return fail("I couldn't find a card name in that photo.");
+  A={step:'pick',photo,cands};render();
+}
+function mergeFinish(old,qty,add,n){const o={};if(/\(\d+\)/.test(old))old.split(',').forEach(p=>{const m=p.match(/(.+?)\s*\((\d+)\)/);if(m)o[m[1].trim()]=+m[2]});else if(old&&old!=='None')o[old]=qty;o[add]=(o[add]||0)+n;
+  const k=Object.keys(o);return k.length===1?k[0]:k.map(x=>`${x} (${o[x]})`).join(', ')}
+function commit(){
+  const c=A.card,q=A.q||{},src=(q.src||'').trim(),n=A.qty;if(!src)return toast('Please say where this card came from');
+  const nm=c.name,cat=(()=>{const t=c.type_line;return /Basic Land/.test(t)?'Basic Land':/Land/.test(t)?'Nonbasic Land':/Legendary Creature/.test(t)?'Legendary Creature':/Artifact Creature/.test(t)?'Artifact Creature':/Creature/.test(t)?'Creature':/Planeswalker/.test(t)?'Planeswalker':c.layout==='token'?'Token':t.split(/[ —]/)[0]})();
+  let e=findCard(nm);
+  if(e){e.finish=mergeFinish(e.finish,e.qty,A.finish,n);e.qty+=n;if(!e.source.split(', ').includes(src))e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src}
+  else{const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/');
+    D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(c.type_line)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:cat,subtype:(c.type_line.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
+      text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1]}
+  ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
+  D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||''});
+  if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n);save();
+  A={step:'done',msg:`${n}× ${nm} (${c.set.toUpperCase()}) added from “${src}”${q.deck?` and placed in ${D.decks[+q.deck].name}`:''}.`};render();
+}
+
+/* ---------- more ---------- */
+function vMore(m){
+  const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['sleeves','Sleeves'],['backup','Backup']];
+  let body='';
+  if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,a.name,a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
+  if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>[s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row]));
+  if(V.sub==='matchups')body=D.matchups.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0],s.rows.slice(1))}`).join('');
+  if(V.sub==='sleeves')body=tbl(['Color','Owned','Assigned deck','In use','Spare'],D.sleeves.map(s=>[s.color,s.total,s.deck||'Available',s.inUse,s.total-s.inUse]));
+  if(V.sub==='backup')body=`<p class="mut">Your changes live on this phone. Export a backup regularly.</p><div class="row"><button class="pri" onclick="exportData()">⬇ Export backup</button><label class="btn">⬆ Import backup<input type="file" accept=".json" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to spreadsheet data</button>`;
+  m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
+}
+function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(D)],{type:'application/json'}));a.download=`mtg-backup-${today()}.json`;a.click()}
+async function importData(f){if(!f)return;try{const j=JSON.parse(await f.text());if(!j.cards||!j.decks)throw 0;D=j;D.acq=D.acq||[];save();toast('Backup restored');render()}catch(e){toast('That file is not a valid backup')}}
+async function resetData(){if(!confirm('Replace everything with the original spreadsheet data? Changes made in the app will be lost (export a backup first).'))return;
+  D=await (await fetch('data.json',{cache:'reload'})).json();D.acq=[];save();render();toast('Reset complete')}
+init();
+</script></body></html>
