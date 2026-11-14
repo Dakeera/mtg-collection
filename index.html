@@ -67,7 +67,7 @@ const persist=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast
 const save=()=>{IDX=null;persist();try{localStorage.setItem(DY,'1')}catch(e){}};
 const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
-const today=()=>new Date().toISOString().slice(0,10),sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
+const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
 const isReal=c=>!['Token','Accessory'].includes(c.type);
 const findCard=n=>(IDX||(IDX=new Map([...D.cards].reverse().map(c=>[norm(front(c.name)),c])))).get(norm(front(n)));
 const usage=n=>D.decks.map(d=>({d,q:sum(d.cards.filter(x=>norm(x.name)===norm(n)))})).filter(x=>x.q>0);
@@ -509,7 +509,7 @@ async function nativeSave(blob,name,share){
   return {shared:true,fellBack:!share};
 }
 async function doBackup(share){
-  const ext=BKF==='json'?'json':'sqlite',name=`mtg-collection-${today()}.${ext}`;let blob;
+  const ext=BKF==='json'?'json':'sqlite',name=`mtg-backup-${tsName()}.${ext}`;let blob;
   try{blob=BKF==='json'?new Blob([JSON.stringify(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
   if(isNative()){
