@@ -138,14 +138,23 @@ async function fetchArt(){
 const FMTS=[['standard','Standard'],['pioneer','Pioneer'],['explorer','Explorer'],['modern','Modern'],['legacy','Legacy'],['vintage','Vintage'],['commander','Commander'],['oathbreaker','Oathbreaker'],['brawl','Brawl'],['standardbrawl','Standard Brawl'],['pauper','Pauper'],['paupercommander','Pauper Commander'],['historic','Historic'],['timeless','Timeless'],['alchemy','Alchemy'],['gladiator','Gladiator'],['penny','Penny Dreadful'],['duel','Duel Commander'],['oldschool','Old School'],['premodern','Premodern'],['predh','PreDH'],['future','Future Standard']];
 const legOf=l=>{const o={};FMTS.forEach(([k])=>{const v=l&&l[k];if(v==='legal')o[k]='l';else if(v==='banned')o[k]='b';else if(v==='restricted')o[k]='r'});return o};
 let LEGBUSY=false;
-async function fetchLegal(){
-  if(LEGBUSY||!D)return;const stale=c=>!c.leg||!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5,todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return;
-  LEGBUSY=true;const names=[...new Set(todo.map(c=>front(c.name)))];
-  try{for(let i=0;i<names.length;i+=75){
+async function fetchLegal(onProg,onlyMissing){
+  if(LEGBUSY||!D)return true;const stale=c=>!c.leg||(!onlyMissing&&(!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5)),todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return true;
+  LEGBUSY=true;const names=[...new Set(todo.map(c=>front(c.name)))];let ok=true;
+  try{for(let i=0;i<names.length;i+=75){onProg&&onProg(i,names.length);
     const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:names.slice(i,i+75).map(name=>({name}))})});
-    const j=await r.json(),m=new Map((j.data||[]).map(c=>[norm(front(c.name)),legOf(c.legalities)]));
-    todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today()}});persist()}}catch(e){}
-  LEGBUSY=false}
+    if(!r.ok)throw 0;const j=await r.json(),m=new Map((j.data||[]).map(c=>[norm(front(c.name)),legOf(c.legalities)]));
+    todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today()}});persist()}onProg&&onProg(names.length,names.length)}catch(e){ok=false}
+  LEGBUSY=false;return ok}
+// Before building a legality-filtered deck: load any missing legality data right now, with a progress screen, so no card is left out.
+async function ensureLegal(){
+  const miss=()=>D.cards.filter(c=>isReal(c)&&!c.leg).length;if(!miss())return true;
+  const ov=document.createElement('div');ov.id='legload';ov.style.cssText='position:fixed;inset:0;background:#000d;z-index:90;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML='<div class="sheet" style="margin:0;width:100%;max-width:420px"><h3 style="margin-top:0">Loading format legality…</h3><p class="mut" id="lgt">Getting ban lists for your cards so none are left out.</p><div style="height:12px;background:var(--card2);border-radius:8px;overflow:hidden"><div id="lgb" style="height:100%;width:3%;background:var(--ac);transition:width .3s"></div></div></div>';document.body.appendChild(ov);
+  while(LEGBUSY)await new Promise(r=>setTimeout(r,300));
+  const ok=await fetchLegal((d,t)=>{const b=$('#lgb'),x=$('#lgt');if(b)b.style.width=Math.max(3,Math.round(d/t*100))+'%';if(x)x.textContent=`Checked ${d} of ${t} card names…`},true);
+  ov.remove();const m=miss();if(!ok){toast("Couldn't load format legality — check your internet connection and try again");return false}
+  if(m)toast(`${m} card${m>1?'s':''} couldn't be matched online and will be left out`);return true}
 function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
   if(!L)return '<div class="sec"><h4>Format legality</h4><span class="mut">Loads from Scryfall when you are online — reopen this card in a moment.</span></div>';
   const g=(code,neg)=>FMTS.filter(([k])=>neg?!L[k]:L[k]===code).map(([,n])=>n),b=g('b'),r=g('r'),l=g('l'),n=g(null,true),row=(t,a,col)=>a.length?`<div class="kv"><span>${t}</span><b style="${col?'color:'+col:''}">${esc(a.join(', '))}</b></div>`:'';
@@ -597,8 +606,8 @@ function vAI(m){
   const n=G.fmt==='Commander'?100:60;
   m.innerHTML=`<h2>✨ AI deck builder</h2><p class="mut">Describe a deck and an AI drafts it from your collection. You review the list before anything is created. This app never stores logins or keys.</p>
   <div class="f"><label>Deck type</label><div class="chips"><button class="${G.fmt==='Commander'?'on':''}" onclick="G.fmt='Commander';render()">Commander · 100 cards</button><button class="${G.fmt==='Casual'?'on':''}" onclick="G.fmt='Casual';render()">Casual · 60 cards</button></div>
-  <label>Card legality</label><select onchange="G.legal=this.value;if(G.legal)fetchLegal();render()"><option value="">Any card — casual, no restrictions</option><optgroup label="Only cards that can be played in…">${FMTS.map(([k,n])=>`<option value="${k}" ${G.legal===k?'selected':''}>${n} (no banned or unplayable cards)</option>`).join('')}</optgroup></select>
-  ${G.legal?`<p class="mut">${(()=>{const u=D.cards.filter(c=>isReal(c)&&!c.leg).length;return u?`${u} card${u>1?'s':''} still have no legality data (needs internet once) and are left out for now.`:'Legality data is loaded for every card.'})()} Cards restricted to one copy are included once.</p>`:''}
+  <label>Card legality</label><select onchange="G.legal=this.value;render();if(G.legal)ensureLegal().then(()=>render())"><option value="">Any card — casual, no restrictions</option><optgroup label="Only cards that can be played in…">${FMTS.map(([k,n])=>`<option value="${k}" ${G.legal===k?'selected':''}>${n} (no banned or unplayable cards)</option>`).join('')}</optgroup></select>
+  ${G.legal?`<p class="mut">${(()=>{const u=D.cards.filter(c=>isReal(c)&&!c.leg).length;return u?`${u} card${u>1?'s':''} don’t have legality data yet — the app will load it before building so none are left out.`:'Legality data is loaded for every card.'})()} Cards restricted to one copy are included once.</p>`:''}
   <label>Colors <span class="mut">(none selected = any colors)</span></label><div class="chips">${CLR.map(k=>`<button class="pipb ${G.colors.includes(k)?'on':''}" title="${CLRN[k]}" onclick="aiColor('${k}')">${symImg(k)}</button>`).join('')}<button class="${G.rand?'on':''}" onclick="aiRand()">🎲 Random</button></div>
   ${G.rand?`<p class="mut">The app picks 1–3 colors at random each time you build${G.rc?' — this time: '+G.rc.map(symImg).join(''):''}.</p>`:''}
   <label>Where may cards come from?</label>
@@ -629,9 +638,10 @@ OUTPUT FORMAT: one card per line as "<quantity> <card name>", commander first. N
 
 MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
 ${rows.join('\n')}`}
-async function copyPrompt(){const p=buildPrompt();try{await navigator.clipboard.writeText(p);toast('Prompt copied — paste it into your AI')}catch(e){openM(`<h3>Copy this prompt</h3><textarea rows="12" readonly style="width:100%" onfocus="this.select()">${esc(p)}</textarea>`)}}
+async function copyPrompt(){if(G.legal&&!(await ensureLegal()))return;const p=buildPrompt();try{await navigator.clipboard.writeText(p);toast('Prompt copied — paste it into your AI')}catch(e){openM(`<h3>Copy this prompt</h3><textarea rows="12" readonly style="width:100%" onfocus="this.select()">${esc(p)}</textarea>`)}}
 async function aiGenerate(){
   const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)return toast('Enter a model and your API key first');
+  if(G.legal&&!(await ensureLegal()))return;
   G.busy=true;G.err='';render();const p=buildPrompt();let txt='',r,j;
   try{
     if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:4000,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
