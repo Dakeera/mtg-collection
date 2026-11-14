@@ -59,6 +59,7 @@ ol.st{padding-left:20px;margin:6px 0;color:var(--mut)}ol.st li{margin:3px 0}a{co
 .flipbtn{display:block;margin:10px auto 0}
 #prog{font-size:12px;color:var(--mut);padding:4px 12px}
 html.native{--st:calc(env(safe-area-inset-top,0px) + 10px)}
+#totop{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(72px + env(safe-area-inset-bottom));z-index:21;padding:8px 18px;border-radius:20px;background:#000d;border:1px solid #fff5;display:none;box-shadow:0 2px 10px #0008}
 #stcover{position:fixed;top:0;left:0;right:0;height:var(--st);background:var(--bg);z-index:25;pointer-events:none}
 .sym{height:1.15em;width:1.15em;vertical-align:-.22em;margin:0 1px}
 .zflip{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);padding:12px 22px;background:#000c;border:1px solid #fff5}
@@ -69,7 +70,7 @@ html.native{--st:calc(env(safe-area-inset-top,0px) + 10px)}
 .pipb{padding:8px 12px}.pipb .sym{height:1.6em;width:1.6em}.pipb.on{background:var(--ac);box-shadow:0 0 0 2px var(--gold)}
 .dif{color:#f39c12;font-weight:600}.cmpt td{white-space:pre-wrap}
 </style></head><body>
-<div id="prog"></div><div id="stcover"></div><div id="main">Loading…</div><nav id="nav"></nav>
+<div id="prog"></div><div id="stcover"></div><button id="totop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button><div id="main">Loading…</div><nav id="nav"></nav>
 <div id="modal" class="modal"><div class="sheet"><button class="x" onclick="tryClose()">✕</button><div id="mbody"></div></div></div><div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -139,7 +140,8 @@ function render(){
   ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
   const due=backupDue();if(due&&!(V.view==='more'&&V.sub==='backup'))$('#main').insertAdjacentHTML('afterbegin',`<div class="warn">💾 ${esc(due)} <button style="margin-left:8px;padding:6px 10px" onclick="go('more');V.sub='backup';render()">Back up now</button></div>`);
 }
-function go(k){if(k!==V.view){HIST.push(V.view);if(HIST.length>20)HIST.shift()}V.view=k;V.deck=null;render();scrollTo(0,0)}
+const SCR={};const showTab=k=>{V.view=k;V.deck=null;render();scrollTo(0,k==='collection'?(SCR.collection||0):0);topBtn()};
+function go(k){if(k!==V.view){SCR[V.view]=scrollY;HIST.push(V.view);if(HIST.length>20)HIST.shift()}showTab(k)}
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
   if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return confirm(`Add ${b.dataset.adc} to ${D.decks[V.deck].name}?`)&&(addToDeck(V.deck,b.dataset.adc,1),deckSearch());
@@ -805,6 +807,8 @@ async function autoRevert(name){
 
 /* ---------- back button (shared logic; Android uses @capacitor/app, the web version uses the browser history) ---------- */
 async function appVersion(){let v='web version';try{if(isNative()){const i=await window.Capacitor.Plugins.App.getInfo();v='Android app version '+i.version+' (build '+i.build+')'}}catch(e){}const e=$('#ver');if(e)e.textContent='MtG DeckMaster · '+v}
+function topBtn(){const b=$('#totop');if(!b)return;const t=document.querySelector('#main .tile'),h=t?t.offsetHeight:400;b.style.display=scrollY>h?'block':'none'}
+addEventListener('scroll',topBtn,{passive:true});
 let HIST=[],EXIT_T=0,LEAVING=false;
 const DISCARD='Discard your changes?\n\nOK = discard them\nCancel = keep editing';
 function modalDirty(){return !!((SLD&&SLN&&JSON.stringify(SLN)!==SLN0)||CR||($('#nd')&&$('#nd').value.trim()))}
@@ -817,7 +821,7 @@ function navBack(){
     if(A.step==='done'||A.step==='reading'||A.step==='fail'){A={step:'start'};render();return true}
     if(A.step!=='start'){if(!confirm('Leave this card without adding it?\n\nOK = discard what you entered\nCancel = keep going'))return true;A={step:'start'};render();return true}}
   if(V.view==='decks'&&V.deck!=null){V.deck=null;render();scrollTo(0,0);return true}
-  if(V.view!=='collection'){const p=HIST.length?HIST.pop():'collection';V.view=p;V.deck=null;render();scrollTo(0,0);return true}
+  if(V.view!=='collection'){SCR[V.view]=scrollY;showTab(HIST.length?HIST.pop():'collection');return true}
   if(Date.now()-EXIT_T<2500)return 'exit';
   EXIT_T=Date.now();toast('To close the app, hit the back button again');return true}
 (function(){
