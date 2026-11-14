@@ -154,12 +154,13 @@ function vCollection(m){
   const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
   m.innerHTML=`<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div></div>
   <div class="bar"><input id="q" type="search" placeholder="Search name or rules text…" value="${esc(V.q)}"><select id="ft"><option value="">All types</option>${types.map(t=>opt('type',t)).join('')}</select><select id="fc"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(t=>opt('color',t)).join('')}</select></div><div id="list" class="grid"></div>`;
-  $('#q').oninput=e=>{V.q=e.target.value;drawList()};$('#ft').onchange=e=>{V.type=e.target.value;drawList()};$('#fc').onchange=e=>{V.color=e.target.value;drawList()};drawList();
+  $('#q').oninput=e=>{V.q=e.target.value;drawList(true)};$('#ft').onchange=e=>{V.type=e.target.value;drawList(true)};$('#fc').onchange=e=>{V.color=e.target.value;drawList(true)};drawList();
 }
-function drawList(){
+function drawList(jump){
   if(V.view!=='collection'||!$('#list'))return;const q=V.q.toLowerCase();
   const cs=D.cards.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.text.toLowerCase().includes(q))&&(!V.type||c.type===V.type)&&(!V.color||c.colors.includes(V.color)));
   $('#list').innerHTML=cs.map(c=>tile(c,'×'+c.qty)).join('')||`<p class="mut">${D.cards.length?'No cards match.':'Your collection is empty. Use the Add card tab to scan or search for your first card, or restore a backup in More → Backup.'}</p>`;
+  if(jump){const l=$('#list'),bar=document.querySelector('.bar');if(l&&bar){const top=bar.getBoundingClientRect().bottom+6,r=l.getBoundingClientRect().top;if(r<top)scrollTo(0,Math.max(0,scrollY+r-top))}}
 }
 function zoom(n){const cur=()=>(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/'),u=cur();if(!u)return;const d=document.createElement('div');d.id='zoom';
   d.innerHTML=`<img src="${esc(u)}" alt="${esc(n)}" onerror="if(this.src.includes('/large/'))this.src=this.src.replace('/large/','/normal/')">${backUrl(n)?`<button class="zflip">${FACE?'↻ Show front':'↻ Show back'}</button>`:''}`;d.onclick=()=>d.remove();
