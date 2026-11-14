@@ -56,6 +56,7 @@ ol.st{padding-left:20px;margin:6px 0;color:var(--mut)}ol.st li{margin:3px 0}a{co
 #zoom{position:fixed;inset:0;background:#000e;z-index:80;display:flex;align-items:center;justify-content:center;padding:12px;cursor:zoom-out}#zoom img{max-width:100%;max-height:100%;object-fit:contain;border-radius:14px}
 .strip{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 12px}.sp{flex:0 0 96px;border:2px solid transparent;border-radius:10px;padding:3px;background:var(--card);cursor:pointer}.sp.on{border-color:var(--gold);box-shadow:0 0 0 2px #f1c40f55}.sp img{width:100%;border-radius:6px;display:block;aspect-ratio:488/680;background:var(--card2)}.spl{font-size:11px;text-align:center;padding-top:3px}
 .qb{width:42px;height:42px;padding:0;font-size:22px}
+.flipbtn{display:block;margin:10px auto 0}
 #prog{font-size:12px;color:var(--mut);padding:4px 12px}
 </style></head><body>
 <div id="prog"></div><div id="main">Loading…</div><nav id="nav"></nav>
@@ -63,11 +64,11 @@ ol.st{padding-left:20px;margin:6px 0;color:var(--mut)}ol.st li{margin:3px 0}a{co
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const NS='';const LS='mtg_state_v1'+NS,AS='mtg_art_v1'+NS,BK='mtg_backup_v1'+NS,DY='mtg_dirty_v1'+NS;const EMPTY={cards:[],decks:[],swaps:[],matchups:[],sleeves:['Pink','Purple','Light Pink','Light Blue','Blue','Red','Light Green','Green','Yellow','Orange','White','Black'].map(color=>({color,total:0,deck:'',inUse:0}))};
-let IDX=null,D,A={step:'start'},PD='',ART={};try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}
+let IDX=null,D,A={step:'start'},PD='',ART={},ART2={},FACE=false;try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}try{ART2=JSON.parse(localStorage.getItem(AS+'_b')||'{}')}catch(e){}
 const V={view:'collection',q:'',type:'',color:'',deck:null,sub:'log'};
 const persist=()=>{try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
 const save=()=>{IDX=null;persist();try{localStorage.setItem(DY,'1')}catch(e){}};
-const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART))}catch(e){}};
+const saveArt=()=>{try{localStorage.setItem(AS,JSON.stringify(ART));localStorage.setItem(AS+'_b',JSON.stringify(ART2))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
 const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
 const isReal=c=>!['Token','Accessory'].includes(c.type);
@@ -89,25 +90,27 @@ const sl=n=>{const c=noEmoji(n);if(!c||c==='—')return '—';const s=D.sleeves.
 let last=0;async function scry(p){await new Promise(r=>setTimeout(r,Math.max(0,110-(Date.now()-last))));last=Date.now();
   try{const r=await fetch(p.startsWith('http')?p:'https://api.scryfall.com'+p,{headers:{Accept:'application/json'}});return r.ok?await r.json():null}catch(e){return null}}
 const sImg=c=>c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
+const sImg2=c=>(c.card_faces&&c.card_faces[0]&&c.card_faces[0].image_uris&&c.card_faces[1]&&c.card_faces[1].image_uris&&c.card_faces[1].image_uris.normal)||'';
+const backUrl=n=>{const c=findCard(n);return (c&&c.art2)||ART2[n]||''};
 
 /* ---------- startup ---------- */
 async function init(){
   const s=localStorage.getItem(LS);
   try{D=s?JSON.parse(s):await startData()}catch(e){$('#main').textContent='Could not load your data.';return}
-  D.acq=D.acq||[];D.edits=D.edits||[];normSources();if(!s)persist();render();fetchArt();
+  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};normSources();if(!s)persist();render();fetchArt();
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 async function fetchArt(){
-  const names=[...new Set([...D.cards.filter(isReal).map(c=>c.name),...D.decks.flatMap(d=>d.cards.map(c=>c.name))])].filter(n=>!(n in ART));
+  const names=[...new Set([...D.cards.filter(isReal).map(c=>c.name),...D.decks.flatMap(d=>d.cards.map(c=>c.name))])].filter(n=>!(n in ART)||!(n in ART2));
   if(!names.length)return;let miss=[],done=0;
   for(let i=0;i<names.length;i+=75){
     const chunk=names.slice(i,i+75);$('#prog').textContent=`Fetching card artwork… ${done}/${names.length}`;
     try{const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:chunk.map(name=>({name:front(name)}))})});
-      const j=await r.json(),m={};(j.data||[]).forEach(c=>m[norm(front(c.name))]=sImg(c));
-      chunk.forEach(n=>{const u=m[norm(front(n))];u?ART[n]=u:miss.push(n)})}catch(e){$('#prog').textContent='Artwork needs an internet connection — will retry next launch.';return}
+      const j=await r.json(),m={},m2={};(j.data||[]).forEach(c=>{m[norm(front(c.name))]=sImg(c);m2[norm(front(c.name))]=sImg2(c)});
+      chunk.forEach(n=>{const k=norm(front(n)),u=m[k];if(u){ART[n]=u;ART2[n]=m2[k]||''}else miss.push(n)})}catch(e){$('#prog').textContent='Artwork needs an internet connection — will retry next launch.';return}
     done+=chunk.length;saveArt();if(V.view==='collection')drawList()}
-  for(const n of miss){const c=await scry('/cards/named?fuzzy='+encodeURIComponent(front(n)));ART[n]=c&&c.object==='card'?sImg(c):'';done++;$('#prog').textContent=`Matching odd names… ${done}/${names.length}`}
+  for(const n of miss){const c=await scry('/cards/named?fuzzy='+encodeURIComponent(front(n)));ART[n]=(c&&c.object==='card'?sImg(c):'')||ART[n]||'';ART2[n]=(c&&c.object==='card'?sImg2(c):'')||'';done++;$('#prog').textContent=`Matching odd names… ${done}/${names.length}`}
   saveArt();$('#prog').textContent='';render();
 }
 
@@ -122,7 +125,7 @@ function go(k){V.view=k;V.deck=null;render();scrollTo(0,0)}
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
   if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return confirm(`Add ${b.dataset.adc} to ${D.decks[V.deck].name}?`)&&(addToDeck(V.deck,b.dataset.adc,1),deckSearch());
-  if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return vfAsk(b.dataset.vf);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
+  if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return vfAsk(b.dataset.vf);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(t.id==='modal')closeM()});
 
 /* ---------- collection ---------- */
@@ -138,15 +141,17 @@ function drawList(){
   const cs=D.cards.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.text.toLowerCase().includes(q))&&(!V.type||c.type===V.type)&&(!V.color||c.colors.includes(V.color)));
   $('#list').innerHTML=cs.map(c=>tile(c,'×'+c.qty)).join('')||`<p class="mut">${D.cards.length?'No cards match.':'Your collection is empty. Use the Add card tab to scan or search for your first card, or restore a backup in More → Backup.'}</p>`;
 }
-function zoom(n){const u=artOf(n).replace('/normal/','/large/');if(!u)return;const d=document.createElement('div');d.id='zoom';
+function zoom(n){const u=(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/');if(!u)return;const d=document.createElement('div');d.id='zoom';
   d.innerHTML=`<img src="${esc(u)}" alt="${esc(n)}" onerror="if(this.src.includes('/large/'))this.src=this.src.replace('/large/','/normal/')">`;d.onclick=()=>d.remove();document.body.appendChild(d)}
+function flip(n){FACE=!FACE;const im=document.querySelector('.frame img[data-zoom]');if(im)im.src=(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/');const b=document.querySelector('[data-flip]');if(b)b.textContent=FACE?'↻ Show front':'↻ Show back'}
 function showCard(name){
+  FACE=false;
   const c=findCard(name)||{name,colors:'',type:'',subtype:'',text:'',qty:0,source:'',finish:''},u=usage(c.name),has=v=>v&&v!=='None';
   const acq=D.acq.filter(a=>norm(a.name)===norm(c.name)),real=isReal(c)&&findCard(c.name),kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   const btn=real?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
   const tags=[c.type,has(c.subtype)&&c.subtype,c.colors,has(c.cost)&&c.cost,has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean);
   openM(`<div class="cp"><div class="frame">${imgTag(c.name,`data-zoom="${esc(c.name)}"`,true)||`<div class="ph">${esc(c.name)}</div>`}${btn}</div>
-  <p class="hint mut">${artOf(c.name)?'Tap the card to view it full screen':''}</p>
+  <p class="hint mut">${artOf(c.name)?'Tap the card to view it full screen':''}</p>${backUrl(c.name)?`<button class="flipbtn" data-flip="${esc(c.name)}">↻ Show back</button>`:''}
   <h2>${esc(c.name)}</h2><div class="tags">${tags.map(x=>`<span>${esc(x)}</span>`).join('')}</div>
   ${has(c.legal)&&!/^None/.test(c.legal)?`<div class="warn">${esc(c.legal)}</div>`:''}
   ${has(c.text)||has(c.keywords)?`<div class="sec"><h4>Rules</h4>${has(c.text)?`<pre>${esc(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut" style="margin:8px 0 0">${esc(c.keywords)}</p>`:''}</div>`:''}
@@ -206,7 +211,7 @@ async function apScan(file){
 function useArt(id){
   const p=AP.list.find(x=>x.id===id),c=findCard(AP.name);if(!p||!c)return;
   if(!confirm(`Use ${p.set_name} (${p.set.toUpperCase()}) #${p.collector_number} for ${c.name}?\n\nYour “pulled from” source stays the same.`))return;
-  logEdit(c.name,'Printing',c.set?`${c.setName} #${c.cn}`:'(not set)',`${p.set_name} #${p.collector_number}`);Object.assign(c,{art:sImg(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:true});save();render();toast('Artwork and set info updated');if(!verifyEntry(c,p,()=>showCard(c.name)))showCard(c.name);
+  logEdit(c.name,'Printing',c.set?`${c.setName} #${c.cn}`:'(not set)',`${p.set_name} #${p.collector_number}`);Object.assign(c,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:true});save();render();toast('Artwork and set info updated');if(!verifyEntry(c,p,()=>showCard(c.name)))showCard(c.name);
 }
 
 /* ---------- decks ---------- */
@@ -392,17 +397,48 @@ function diffEntry(e,c){
 }
 const logEdit=(card,field,o,n)=>{D.edits=D.edits||[];const d=new Date();D.edits.push({when:`${today()} ${p2(d.getHours())}:${p2(d.getMinutes())}`,card,field,old:String(o??''),now:String(n??'')})};
 function normSources(){let ch=false;D.cards.forEach(c=>{if(!c.source)return;const out=[];c.source.split(', ').forEach(p=>{const x=canonSrc(p);if(!out.some(o=>o.toLowerCase()===x.toLowerCase()))out.push(x)});const n=out.join(', ');if(n!==c.source){c.source=n;ch=true}});D.acq.forEach(a=>{const x=canonSrc(a.source);if(x!==a.source){a.source=x;ch=true}});if(ch)persist()}
+function nameDiff(e,c,fuzzy){const off=c.name,target=String(e.name).includes(' // ')?off:front(off);if(e.name===target)return [];
+  const same=norm(front(e.name))===norm(front(off));if(!same&&!(fuzzy&&sim(front(e.name),front(off))>=0.85))return [];
+  return [{f:'name',label:'Card name',old:e.name,now:target,val:target}]}
+const fullDiff=(e,c,fuzzy)=>isReal(e)?[...nameDiff(e,c,fuzzy),...diffEntry(e,c)]:[];
+function renameCard(old,nw){const k=norm(front(old));
+  D.cards.forEach(c=>{if(norm(front(c.name))===k)c.name=nw});
+  D.decks.forEach(d=>{d.cards.forEach(x=>{if(norm(front(x.name))===k)x.name=nw});if(d.commander&&norm(front(d.commander))===k)d.commander=nw});
+  D.acq.forEach(a=>{if(norm(front(a.name))===k)a.name=nw});D.swaps.forEach(w=>{if(w.row&&norm(front(w.row[0]))===k)w.row[0]=nw});
+  [ART,ART2].forEach(M=>{Object.keys(M).forEach(n=>{if(norm(front(n))===k&&n!==nw){M[nw]=M[n];delete M[n]}})});IDX=null;saveArt()}
+function applyDiffs(e,d){const nm=d.find(x=>x.f==='name'),old=e.name;
+  d.forEach(x=>{logEdit(old,x.label,x.old,x.now);if(x.f!=='name')e[x.f]=x.val});if(nm)renameCard(old,nm.val)}
 let VF=null;
 function verifyEntry(e,c,after){
-  const d=diffEntry(e,c);if(!d.length)return false;
+  const d=fullDiff(e,c,false);if(!d.length)return false;
   VF={name:e.name,d,after:after||closeM};
   openM(`<h3>⚠ Your saved info doesn’t match this card</h3><p>I read <b>${esc(c.name)}</b> (${esc((c.set||'').toUpperCase())} #${esc(c.collector_number||'')}) and compared it with your database entry. These fields differ:</p>${tbl(['Field','In your database','On the real card'],d.map(x=>[x.label,x.old,x.now]))}
   <p class="mut">Approving updates your <b>existing</b> “${esc(e.name)}” entry only — no new card is created. Quantity, finish, pulled-from sources, and your decks are not touched.</p>
   <div class="row"><button onclick="vfSkip()">Keep my entry</button><button class="pri" onclick="vfApply()">Update this card</button></div>`);
   return true;
 }
-function vfApply(){const e=findCard(VF.name);if(e){VF.d.forEach(x=>{logEdit(e.name,x.label,x.old,x.now);e[x.f]=x.val});save();toast('Card updated')}const a=VF.after;VF=null;a()}
+function vfApply(){const e=findCard(VF.name);if(e){applyDiffs(e,VF.d);save();toast('Card updated')}const a=VF.after;VF=null;a()}
 function vfSkip(){const a=VF.after;VF=null;a()}
+/* ---- Data check: compare every card with Scryfall; list mismatches for one-by-one approval ---- */
+let DC={running:false,msg:''};
+const dcKey=(n,d)=>norm(front(n))+'|'+d.map(x=>x.f+':'+x.val).join('|');
+const dcMsg=t=>{DC.msg=t;const e=$('#dcmsg');if(e)e.textContent=t};
+async function runDataCheck(){
+  if(DC.running)return;DC.running=true;D.kept=D.kept||{};render();
+  const items=D.cards.filter(isReal),names=[...new Set(items.map(c=>front(c.name)))],official=new Map(),miss=[],fuzzy=new Set();
+  try{for(let i=0;i<names.length;i+=75){dcMsg(`Comparing with Scryfall… ${i}/${names.length}`);
+      const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:names.slice(i,i+75).map(name=>({name}))})});
+      const j=await r.json();(j.data||[]).forEach(c=>official.set(norm(front(c.name)),c));(j.not_found||[]).forEach(x=>miss.push(x.name))}
+    for(let i=0;i<miss.length;i++){dcMsg(`Matching misspelled names… ${i+1}/${miss.length}`);const c=await scry('/cards/named?fuzzy='+encodeURIComponent(miss[i]));
+      if(c&&c.object==='card'&&sim(miss[i],front(c.name))>=0.82){official.set(norm(miss[i]),c);fuzzy.add(norm(miss[i]))}}
+  }catch(e){DC.running=false;DC.msg='The check needs an internet connection.';return render()}
+  const flags=[],unmatched=[];
+  items.forEach(e=>{const k=norm(front(e.name)),c=official.get(k);if(!c){unmatched.push(e.name);return}
+    const d=fullDiff(e,c,fuzzy.has(k));if(d.length&&!D.kept[dcKey(e.name,d)])flags.push({name:e.name,diffs:d})});
+  D.flags=flags;D.unmatched=unmatched;D.lastCheck=today();save();DC.running=false;DC.msg='';render();
+}
+function dcFix(i){const f=D.flags[i];if(!f)return;const e=findCard(f.name);if(e){applyDiffs(e,f.diffs);toast('Card fixed')}D.flags.splice(i,1);save();render()}
+function dcKeep(i){const f=D.flags[i];if(!f)return;D.kept=D.kept||{};D.kept[dcKey(f.name,f.diffs)]=1;D.flags.splice(i,1);save();render();toast('Kept as is')}
 function mergeFinish(old,qty,add,n){const o={};if(/\(\d+\)/.test(old))old.split(',').forEach(p=>{const m=p.match(/(.+?)\s*\((\d+)\)/);if(m)o[m[1].trim()]=+m[2]});else if(old&&old!=='None')o[old]=qty;o[add]=(o[add]||0)+n;
   const k=Object.keys(o);return k.length===1?k[0]:k.map(x=>`${x} (${o[x]})`).join(', ')}
 function commit(){
@@ -413,7 +449,7 @@ function commit(){
   else{const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/');
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(c.type_line)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:cat,subtype:(c.type_line.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
-  const pr={art:sImg(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
+  const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
   if(A.printOK&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
   ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||''});
@@ -488,11 +524,12 @@ function mkAIDeck(){
 
 /* ---------- more ---------- */
 function vMore(m){
-  const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['sleeves','Sleeves'],['edits','Edit log'],['backup','Backup']];
+  const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup']];
   let body='';
   if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
   if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>(r=>(r[2]={h:cl(r[2])},r))([s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji))));
   if(V.sub==='matchups')body=D.matchups.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0].map(noEmoji),s.rows.slice(1).map(r=>r.map(noEmoji)))}`).join('');
+  if(V.sub==='check')body=`<p class="mut">Compares every card in your collection with the official Scryfall data (name, mana cost, type, power/toughness, rules text). Nothing changes until you approve each card. Last check: <b>${esc(D.lastCheck||'never')}</b></p><div class="row"><button class="pri" onclick="runDataCheck()" ${DC.running?'disabled':''}>${DC.running?'Checking…':'🔍 Run data check'}</button></div><p id="dcmsg" class="mut">${esc(DC.msg)}</p>`+(D.lastCheck&&!(D.flags||[]).length&&!DC.running?'<div class="sec">✓ No mismatches waiting for review.</div>':'')+(D.flags||[]).slice(0,25).map((f,i)=>`<div class="sec"><h4>Needs review · ${i+1} of ${D.flags.length}</h4><b>${cl(f.name)}</b>${tbl(['Field','Yours','Official'],f.diffs.map(x=>[x.label,x.old,x.now]))}<div class="row"><button data-dcf="${i}">Keep mine</button><button class="pri" data-dck="${i}">Fix to official</button></div></div>`).join('')+((D.flags||[]).length>25?`<p class="mut">Showing the first 25 of ${D.flags.length}. The rest appear as you finish these.</p>`:'')+((D.unmatched||[]).length?`<div class="sec"><h4>Couldn’t find on Scryfall (${D.unmatched.length})</h4><p class="mut" style="margin:0">${esc(D.unmatched.join(', '))}</p></div>`:'');
   if(V.sub==='edits')body=(D.edits||[]).length?'<p class="mut">Every change the app made to an existing card (data fixes, printing changes, quantity changes).</p>'+tbl(['When','Card','Field','Was','Now'],[...D.edits].reverse().slice(0,300).map(x=>[x.when,{h:cl(x.card)},x.field,x.old,x.now])):'<p class="mut">No changes yet.</p>';
   if(V.sub==='sleeves')body='<div class="row"><button class="pri" onclick="slEdit(null)">＋ Add sleeves</button></div><p class="mut">Set how many you own in each color. New decks pick from sleeves that have enough free.</p>'+tbl(['Sleeves','Owned','Assigned deck','In use','Spare',''],D.sleeves.map((s,i)=>[{h:sl(s.color)},{h:`<input type="number" min="0" value="${s.total}" style="width:84px;padding:6px" onchange="setSleeve(${i},this.value)">`},s.deck||'Available',s.inUse,s.total-s.inUse,{h:`<button style="padding:4px 8px" onclick="slEdit(${i})">Edit</button> <button class="danger" style="padding:4px 8px" onclick="slDel(${i})">✕</button>`}]));
   if(V.sub==='backup')body=`<p class="mut">Your collection is stored on this phone. Last backup: <b>${esc(localStorage.getItem(BK)||'never')}</b><br>Storage protection: <b id="pst">checking…</b></p>
@@ -597,7 +634,7 @@ async function importData(f){
     else j=JSON.parse(new TextDecoder().decode(buf));
     if(!j.cards||!j.decks)throw 0;
     if(!confirm(`Restore this backup? It replaces everything currently in the app (${D.cards.length} cards, ${D.decks.length} decks).`))return;
-    D=j;D.acq=D.acq||[];D.edits=D.edits||[];normSources();save();stamp();toast('Backup restored');render();fetchArt()}
+    D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};normSources();save();stamp();toast('Backup restored');render();fetchArt()}
   catch(e){toast('That file is not a valid backup')}
 }
 async function startData(){try{const r=await fetch('data.json',{cache:'reload'});if(r.ok)return await r.json()}catch(e){}return JSON.parse(JSON.stringify(EMPTY))}
