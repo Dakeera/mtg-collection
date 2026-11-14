@@ -121,6 +121,7 @@ async function init(){
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 async function fetchArt(){
+  fetchLegal();
   const names=[...new Set([...D.cards.filter(isReal).map(c=>c.name),...D.decks.flatMap(d=>d.cards.map(c=>c.name))])].filter(n=>!(n in ART)||!(n in ART2));
   if(!names.length)return;let miss=[],done=0;
   for(let i=0;i<names.length;i+=75){
@@ -133,6 +134,22 @@ async function fetchArt(){
   saveArt();$('#prog').textContent='';render();
 }
 
+/* ---------- format legality (from Scryfall, which follows Wizards' official banned/restricted lists) ---------- */
+const FMTS=[['standard','Standard'],['pioneer','Pioneer'],['explorer','Explorer'],['modern','Modern'],['legacy','Legacy'],['vintage','Vintage'],['commander','Commander'],['oathbreaker','Oathbreaker'],['brawl','Brawl'],['standardbrawl','Standard Brawl'],['pauper','Pauper'],['paupercommander','Pauper Commander'],['historic','Historic'],['timeless','Timeless'],['alchemy','Alchemy'],['gladiator','Gladiator'],['penny','Penny Dreadful'],['duel','Duel Commander'],['oldschool','Old School'],['premodern','Premodern'],['predh','PreDH'],['future','Future Standard']];
+const legOf=l=>{const o={};FMTS.forEach(([k])=>{const v=l&&l[k];if(v==='legal')o[k]='l';else if(v==='banned')o[k]='b';else if(v==='restricted')o[k]='r'});return o};
+let LEGBUSY=false;
+async function fetchLegal(){
+  if(LEGBUSY||!D)return;const stale=c=>!c.leg||!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5,todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return;
+  LEGBUSY=true;const names=[...new Set(todo.map(c=>front(c.name)))];
+  try{for(let i=0;i<names.length;i+=75){
+    const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:names.slice(i,i+75).map(name=>({name}))})});
+    const j=await r.json(),m=new Map((j.data||[]).map(c=>[norm(front(c.name)),legOf(c.legalities)]));
+    todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today()}});persist()}}catch(e){}
+  LEGBUSY=false}
+function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
+  if(!L)return '<div class="sec"><h4>Format legality</h4><span class="mut">Loads from Scryfall when you are online — reopen this card in a moment.</span></div>';
+  const g=(code,neg)=>FMTS.filter(([k])=>neg?!L[k]:L[k]===code).map(([,n])=>n),b=g('b'),r=g('r'),l=g('l'),n=g(null,true),row=(t,a,col)=>a.length?`<div class="kv"><span>${t}</span><b style="${col?'color:'+col:''}">${esc(a.join(', '))}</b></div>`:'';
+  return `<div class="sec"><h4>Format legality</h4>${b.length||r.length?'':'<div style="margin-bottom:6px">Not banned or restricted in any format.</div>'}${row('Banned in',b,'#ff6b6b')}${row('Restricted to 1 copy in',r,'#f39c12')}${row('Legal in',l)}${row('Not legal in',n,'var(--mut)')}<p class="mut" style="margin:8px 0 0;font-size:12px">From Scryfall, which follows Wizards’ official lists. Checked ${esc(c.legAt||'')}.</p></div>`}
 /* ---------- shell ---------- */
 const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','✨','AI deck'],['more','⚙️','More']];
 function render(){
@@ -175,8 +192,9 @@ function showCard(name,keep){
   openM(`<div class="cp"><div class="frame">${imgTag(c.name,`data-zoom="${esc(c.name)}"`,true)||`<div class="ph">${esc(c.name)}</div>`}${btn}</div>
   <p class="hint mut">${artOf(c.name)?'Tap the card to view it full screen':''}</p>${backUrl(c.name)?`<button class="flipbtn" data-flip="${esc(c.name)}">↻ Show back</button>`:''}
   <h2>${esc(c.name)}</h2><div class="tags">${tags.map(x=>`<span>${x.h!==undefined?x.h:esc(x)}</span>`).join('')}</div>
-  ${has(c.legal)&&!/^None/.test(c.legal)?`<div class="warn">${esc(c.legal)}</div>`:''}
+  ${c.leg||!has(c.legal)||/^None/.test(c.legal)?'':`<div class="warn">${esc(c.legal)}</div>`}
   ${has(c.text)||has(c.keywords)?`<div class="sec"><h4>Rules</h4>${has(c.text)?`<pre>${symHtml(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut" style="margin:8px 0 0">${esc(c.keywords)}</p>`:''}</div>`:''}
+  ${legalBox(c)}
   <div class="sec"><h4>My collection</h4>${kv('Owned',c.qty)}${has(c.finish)?kv('Finish',esc(c.finish)):''}${kv('Printing',c.set?`${esc(c.setName||'')} · ${esc(c.set.toUpperCase())} #${esc(c.cn||'')}${c.verified?' <span style="color:var(--gold)">✓ verified</span>':''}`:'<span class="mut">not set — tap 🎨</span>')}</div>
   <div class="sec"><h4>Pulled from</h4>${c.source&&c.source!=='None'?`<ul>${c.source.split(', ').map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<span class="mut">—</span>'}</div>
   <div class="sec"><h4>In decks</h4>${u.length?u.map(x=>kv(esc(x.d.name),'×'+x.q)).join(''):'<span class="mut">Not in any deck</span>'}</div>
@@ -554,6 +572,7 @@ function commit(){
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
   if(A.printOK&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
+  if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}
   ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||'',shared:had});
   if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n);save();
@@ -562,7 +581,7 @@ function commit(){
 }
 
 /* ---------- AI deck builder (no accounts, no stored keys) ---------- */
-let G={fmt:'Commander',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY='';
+let G={fmt:'Commander',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY='';
 const MODELS={anthropic:'claude-sonnet-5-5',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
 const CLR=['W','U','B','R','G'],CLRN={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},N2L={White:'W',Blue:'U',Black:'B',Red:'R',Green:'G'};
 const aiAllowed=()=>G.noDecks?[]:D.decks.filter(d=>G.from[d.name]).map(d=>d.name);
@@ -571,12 +590,15 @@ function aiColor(k){G.rand=false;G.rc=null;G.colors=G.colors.includes(k)?G.color
 function aiRand(){G.rand=!G.rand;if(G.rand)G.colors=[];G.rc=null;render()}
 function aiFrom(i,v){G.from[D.decks[i].name]=v}
 function randColors(){const n=[1,2,2,2,3,3][Math.floor(Math.random()*6)],pool=[...CLR],out=[];while(out.length<n){out.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0])}return CLR.filter(x=>out.includes(x))}
+const okLegal=c=>!G.legal||!!(c.leg&&(c.leg[G.legal]==='l'||c.leg[G.legal]==='r'));
 const okColor=(c,cols)=>String(c.colors||'').split(/[\/,\s]+/).filter(Boolean).every(t=>!N2L[t]||cols.includes(N2L[t]));
 function aiAvail(c,al){return freeCopies(c)+(c.type==='Basic Land'?0:sum(al,n=>takeable(c,n)))}
 function vAI(m){
   const n=G.fmt==='Commander'?100:60;
   m.innerHTML=`<h2>✨ AI deck builder</h2><p class="mut">Describe a deck and an AI drafts it from your collection. You review the list before anything is created. This app never stores logins or keys.</p>
   <div class="f"><label>Deck type</label><div class="chips"><button class="${G.fmt==='Commander'?'on':''}" onclick="G.fmt='Commander';render()">Commander · 100 cards</button><button class="${G.fmt==='Casual'?'on':''}" onclick="G.fmt='Casual';render()">Casual · 60 cards</button></div>
+  <label>Card legality</label><select onchange="G.legal=this.value;if(G.legal)fetchLegal();render()"><option value="">Any card — casual, no restrictions</option><optgroup label="Only cards that can be played in…">${FMTS.map(([k,n])=>`<option value="${k}" ${G.legal===k?'selected':''}>${n} (no banned or unplayable cards)</option>`).join('')}</optgroup></select>
+  ${G.legal?`<p class="mut">${(()=>{const u=D.cards.filter(c=>isReal(c)&&!c.leg).length;return u?`${u} card${u>1?'s':''} still have no legality data (needs internet once) and are left out for now.`:'Legality data is loaded for every card.'})()} Cards restricted to one copy are included once.</p>`:''}
   <label>Colors <span class="mut">(none selected = any colors)</span></label><div class="chips">${CLR.map(k=>`<button class="pipb ${G.colors.includes(k)?'on':''}" title="${CLRN[k]}" onclick="aiColor('${k}')">${symImg(k)}</button>`).join('')}<button class="${G.rand?'on':''}" onclick="aiRand()">🎲 Random</button></div>
   ${G.rand?`<p class="mut">The app picks 1–3 colors at random each time you build${G.rc?' — this time: '+G.rc.map(symImg).join(''):''}.</p>`:''}
   <label>Where may cards come from?</label>
@@ -595,9 +617,10 @@ function vAI(m){
 }
 function buildPrompt(){
   const n=G.fmt==='Commander'?100:60,al=aiAllowed();if(G.rand)G.rc=randColors();const cols=aiColors();
-  const rows=D.cards.filter(c=>isReal(c)&&(!cols.length||okColor(c,cols))).map(c=>({c,a:aiAvail(c,al)})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${c.type} | ${c.colors} | MV ${c.cmc} | available ${a}`);
+  const rows=D.cards.filter(c=>isReal(c)&&okLegal(c)&&(!cols.length||okColor(c,cols))).map(c=>({c,a:aiAvail(c,al)})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${c.type} | ${c.colors} | MV ${c.cmc} | available ${a}`);
   return `You are an expert Magic: The Gathering deck builder. Build a ${G.fmt} deck of exactly ${n} cards${G.fmt==='Commander'?' (the commander counts toward the 100; singleton except basic lands; stay inside the commander\'s color identity)':''}.
 Theme / strategy: ${G.theme||'your choice — make it fun and coherent'}
+Format legality: ${G.legal?'only cards legal in '+(FMTS.find(x=>x[0]===G.legal)||[])[1]+' (the list below is already filtered; a card marked restricted may appear only once)':'none — any card is fine (casual)'}
 Colors: ${cols.length?cols.map(x=>CLRN[x]).join(', ')+' only (colorless cards and lands are fine)':'your choice'}
 ${G.cmd?'Commander: '+G.cmd:G.fmt==='Commander'?'Choose the commander from my collection.':''}
 ${G.own?'Use ONLY cards from my collection list below, spelled exactly as listed, and never more copies than "available".':'Prefer cards from my collection, but you may add a few cards I do not own — put * at the end of those lines.'}
@@ -624,6 +647,7 @@ function readReply(){
   G.reply.split(/^\s*---+\s*$/m)[0].split('\n').forEach(l=>{l=l.replace(/^[\s\-•*]+/,'').replace(/^commander:\s*/i,'1 ');const m=l.match(/^(\d+)\s*x?\s+(.+?)\s*$/i);if(!m)return;
     const nm=m[2].replace(/\*+$/,'').trim(),c=findCard(nm),k=norm(nm);if(by[k])return by[k].want+=+m[1];by[k]={name:c?c.name:nm,want:+m[1],c};ents.push(by[k])});
   ents.forEach(e=>{if(!e.c||!isReal(e.c)){e.add=0;e.st='✗ not in collection (skipped)';return}
+    if(!okLegal(e.c)){e.add=0;e.st=`✗ not legal in ${(FMTS.find(x=>x[0]===G.legal)||[])[1]} (skipped)`;return}
     const pl=planCard(e.c,e.want,al);e.add=pl.got;
     e.st=pl.got<e.want?`⚠ only ${pl.got} available (using ${pl.got})`:pl.from.length?'↪ '+pl.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(pl.free?` + ${pl.free} free`:''):'✓ free in your collection'});
   G.res={ents};drawPrev();
