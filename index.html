@@ -447,12 +447,9 @@ function vAdd(m){
     <label>Quantity</label><input type="number" min="1" value="${A.qty}" onchange="A.qty=Math.max(1,+this.value||1)"></div>
     <div class="row"><button onclick="A.step=A.photo?'pick':'start';A.cands=A.cands||[];render()">✗ Wrong card</button><button class="pri" onclick="A.finish=A.finish||fins0();A.step='q';A.q=A.q||{};render()">✓ Correct — next</button></div>`;
     const on=m.querySelector('.sp.on');if(on)on.scrollIntoView({inline:'center',block:'nearest'});}
-  else if(A.step==='q'){const q=A.q,G=srcData(),gs=Object.keys(G).filter(k=>k!=='Singles Orders'&&k!=='Other').sort(),isNewG=q.grp==='__newgrp__',showItems=q.grp&&!isNewG&&q.grp!=='Singles Orders',showNew=q.sel==='__new__'||isNewG;
+  else if(A.step==='q'){const q=A.q,showNew=q.sel==='__new__'||q.grp==='__newgrp__';
     m.innerHTML=`<h2>A few questions</h2><p><b>${A.qty}× ${esc(A.card.name)}</b> <span class="mut">${esc(A.card.set.toUpperCase())} · ${esc(A.finish)}</span></p>${A.printNote&&!A.printOK?`<p class="mut">${esc(A.printNote)}</p>`:''}<div class="f">
-    <label>Where was it pulled from? *</label>
-    <select onchange="grpSel(this.value)"><option value="">Select a set or source…</option>${G['Singles Orders']?`<option ${q.grp==='Singles Orders'?'selected':''}>Singles Orders</option>`:''}${gs.map(k=>`<option value="${esc(k)}" ${q.grp===k?'selected':''}>${esc(k)}</option>`).join('')}${G.Other?`<option value="Other" ${q.grp==='Other'?'selected':''}>Trade, Gift &amp; other</option>`:''}<option value="__newgrp__" ${isNewG?'selected':''}>＋ Add a new set / source</option></select>
-    ${showItems?`<select style="margin-top:8px" onchange="srcSel(this.value)"><option value="">Select a source…</option>${(G[q.grp]||[]).map(x=>`<option value="${esc(x)}" ${q.sel===x?'selected':''}>${esc(x)}</option>`).join('')}<option value="__new__" ${q.sel==='__new__'?'selected':''}>＋ Add a new source</option></select>`:''}
-    ${showNew?`<input id="newsrc" style="margin-top:8px" value="${esc(q.newSrc||'')}" oninput="newSrcIn(this.value)" placeholder="Type the new source name" autocomplete="off"><div id="srcsug"></div><p id="srcnote" class="mut" style="margin:4px 0 0"></p>`:''}
+    ${srcFields(q)}
     <label>Date acquired</label><input type="date" value="${q.date||today()}" onchange="A.q.date=this.value">
     <label>Price paid (optional)</label><input inputmode="decimal" value="${esc(q.price||'')}" oninput="A.q.price=this.value" placeholder="$0.00">
     <label>Add straight to a deck?</label><select onchange="A.q.deck=this.value"><option value="">No — just the collection</option>${D.decks.map((d,i)=>`<option value="${i}" ${q.deck==i?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
@@ -460,12 +457,19 @@ function vAdd(m){
     <div class="row"><button onclick="A.step='verify';render()">← Back</button><button class="pri" onclick="commit()">Add to collection</button></div>`;if(showNew)newSrcIn(q.newSrc||'');}
   else if(A.step==='done')m.innerHTML=`<h2>✓ Added</h2><p>${esc(A.msg)}</p><div class="row"><button class="pri" onclick="A={step:'start'};render()">Add another</button><button onclick="go('collection')">View collection</button></div>`;
 }
-const resolveSrc=()=>{const q=A.q||{};if(q.sel==='__new__'||q.grp==='__newgrp__')return autoNumber(canonSrc(q.newSrc||''));return canonSrc(q.sel||'')};
+/* Shared “where did it come from” picker: single add (A.q) and the end of bulk / several-cards imports (IMP.sq). SQ() says which one is on screen. */
+const SQ=()=>IMP.stage==='preview'&&IMP.kind==='collection'&&IMP.sq&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')?IMP.sq:A.q;
+function srcFields(q,label){const G=srcData(),gs=Object.keys(G).filter(k=>k!=='Singles Orders'&&k!=='Other').sort(),isNewG=q.grp==='__newgrp__',showItems=q.grp&&!isNewG&&q.grp!=='Singles Orders',showNew=q.sel==='__new__'||isNewG;
+  return `<label>${label||'Where was it pulled from? *'}</label>
+    <select onchange="grpSel(this.value)"><option value="">Select a set or source…</option>${G['Singles Orders']?`<option ${q.grp==='Singles Orders'?'selected':''}>Singles Orders</option>`:''}${gs.map(k=>`<option value="${esc(k)}" ${q.grp===k?'selected':''}>${esc(k)}</option>`).join('')}${G.Other?`<option value="Other" ${q.grp==='Other'?'selected':''}>Trade, Gift &amp; other</option>`:''}<option value="__newgrp__" ${isNewG?'selected':''}>＋ Add a new set / source</option></select>
+    ${showItems?`<select style="margin-top:8px" onchange="srcSel(this.value)"><option value="">Select a source…</option>${(G[q.grp]||[]).map(x=>`<option value="${esc(x)}" ${q.sel===x?'selected':''}>${esc(x)}</option>`).join('')}<option value="__new__" ${q.sel==='__new__'?'selected':''}>＋ Add a new source</option></select>`:''}
+    ${showNew?`<input id="newsrc" style="margin-top:8px" value="${esc(q.newSrc||'')}" oninput="newSrcIn(this.value)" placeholder="Type the new source name" autocomplete="off"><div id="srcsug"></div><p id="srcnote" class="mut" style="margin:4px 0 0"></p>`:''}`}
+const resolveSrc=()=>{const q=SQ()||{};if(q.sel==='__new__'||q.grp==='__newgrp__')return autoNumber(canonSrc(q.newSrc||''));return canonSrc(q.sel||'')};
 const focusSrc=()=>{const i=$('#newsrc');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}};
-function autoPrint(src){if(A.printOK||!A.prints)return;const r=printBySource(A.prints,src);if(r&&r.id!==A.card.id){A.card=r;A.printNote='Printing matched to “'+src+'” — go Back to change it if it looks wrong.'}}
-function grpSel(v){const q=A.q;q.grp=v;q.sel=v==='Singles Orders'?'Singles Orders':'';q.newSrc='';if(q.sel)autoPrint(q.sel);render();if(v==='__newgrp__')focusSrc()}
-function srcSel(v){const q=A.q;q.sel=v;if(v==='__new__')q.newSrc=q.grp&&q.grp!=='Other'?q.grp+' ':'';else if(v)autoPrint(v);render();if(v==='__new__')focusSrc()}
-function newSrcIn(v){A.q.newSrc=v;fxSrcSuggest(v);const n=$('#srcnote');if(n){const r=resolveSrc();n.textContent=r&&r!==v.trim()?`Will be saved as: ${r} — numbered so each pull stays separate. To add to an earlier one, pick it from the list instead.`:''}}
+function autoPrint(src){if(SQ()!==A.q||A.printOK||!A.prints)return;const r=printBySource(A.prints,src);if(r&&r.id!==A.card.id){A.card=r;A.printNote='Printing matched to “'+src+'” — go Back to change it if it looks wrong.'}}
+function grpSel(v){const q=SQ();q.grp=v;q.sel=v==='Singles Orders'?'Singles Orders':'';q.newSrc='';if(q.sel)autoPrint(q.sel);render();if(v==='__newgrp__')focusSrc()}
+function srcSel(v){const q=SQ();q.sel=v;if(v==='__new__')q.newSrc=q.grp&&q.grp!=='Other'?q.grp+' ':'';else if(v)autoPrint(v);render();if(v==='__new__')focusSrc()}
+function newSrcIn(v){SQ().newSrc=v;fxSrcSuggest(v);const n=$('#srcnote');if(n){const r=resolveSrc();n.textContent=r&&r!==v.trim()?`Will be saved as: ${r} — numbered so each pull stays separate. To add to an earlier one, pick it from the list instead.`:''}}
 const fins0=()=>finMap[(A.card.finishes||['nonfoil'])[0]]||'Normal';
 function setPrint(id){A.card=A.prints.find(p=>p.id===id)||A.card;A.finish=null;A.printOK=true;A.printNote='You chose this printing.';render()}
 async function pickName(n){const c=await scry('/cards/named?exact='+encodeURIComponent(n));if(!c)return toast('Lookup failed — check your connection');A.cands=[c];A.photo=null;pick(0)}

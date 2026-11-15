@@ -196,7 +196,7 @@ function fxFormatsView(){const k=V.fmt||'casual',f=FXFMT.find(x=>x.k===k)||FXFMT
   <p class="mut" style="font-size:12px">Banned and restricted cards change a few times a year. Open any card in your collection to see where it is legal right now.</p>`}
 
 /* ---------- bulk import (collection + decks) ---------- */
-let IMP={stage:'idle',mode:'set',src:'Bulk import',text:'',dname:'',dfmt:'Casual',dtext:'',dadd:false};
+let IMP={stage:'idle',sq:null,text:'',dname:'',dfmt:'Casual',dtext:'',dadd:false};
 const FXCOL={name:['name','card name','card','cardname'],qty:['count','quantity','qty','amount','copies','owned'],setc:['set code','edition code','setcode','set_code'],setn:['set name','edition name','expansion','edition','set'],num:['collector number','card number','collector_number','number','cn'],foil:['foil','finish','printing'],price:['purchase price','my price','price paid','price'],src:['source','pulled from','binder name','location'],notes:['notes','note'],sid:['scryfall id','scryfall_id','scryfallid']};
 function fxCSV(text){text=String(text).replace(/^﻿/,'');const first=text.split(/\r?\n/)[0]||'',delim=['\t',';',','].sort((a,b)=>first.split(b).length-first.split(a).length)[0],rows=[];let row=[],cur='',q=false;
   for(let i=0;i<text.length;i++){const ch=text[i];
@@ -263,14 +263,16 @@ async function fxImpFile(f){if(!f)return;let t;try{t=await fxFileText(f)}catch(e
 function fxImpText(){fxImpStart(fxParseAny(IMP.text||''),'collection')}
 function fxImpDeck(){if(!(IMP.dname||'').trim())return toast('Give the deck a name first');if(D.decks.some(d=>d.name.toLowerCase()===IMP.dname.trim().toLowerCase()))return toast('You already have a deck with that name');
   const it=fxParseAny(IMP.dtext||'').filter(x=>!/sideboard|maybeboard|considering/.test(x.section||''));fxImpStart(it,'deck')}
-function fxImpCancel(){IMP.stage='idle';IMP.items=null;IMP.qa=false;render()}
-function fxImpSrc(x){const s=(x.src||'').trim()||(IMP.mode==='one'?(IMP.src||'').trim()||'Bulk import':x.card.set_name);return isCustomSrc(s)?'Bulk import':s}
+function fxImpCancel(){IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.qa=false;render()}
+/* Bulk imports are always one source, asked on the final check screen (IMP.sq, same picker as single add). */
+function fxImpSrc(){const r=resolveSrc();return r&&!isCustomSrc(r)?r:''}
 function fxImpCommit(){
   const it=IMP.items||[];
-  if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty);
-    if(!confirm(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nCards you already own get their quantity increased — no duplicates are created.`))return;
-    ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];fxAddCard(x.card,x.qty,fin,canonSrc(fxImpSrc(x)),x.price,x.notes)});
-    saveArt();save();IMP.stage='idle';IMP.items=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);return}
+  if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty),src=fxImpSrc();
+    if(!src){toast(IMP.sq&&isCustomSrc((IMP.sq.newSrc||IMP.sq.sel||'').trim())?'“Custom Cards” is only for custom cards — pick another source':'Choose where these cards came from first');document.getElementById('impsrc')?.scrollIntoView({block:'center'});return}
+    if(!confirm(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nSource: ${src}\n\nCards you already own get their quantity increased — no duplicates are created.`))return;
+    ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];fxAddCard(x.card,x.qty,fin,src,x.price,x.notes)});
+    saveArt();save();IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
   if(!cards.length)return toast('None of those cards could be matched');
@@ -279,7 +281,7 @@ function fxImpCommit(){
   const cm=it.find(x=>x.section==='commander'&&(x.own||x.card));
   D.decks.push({name,format:IMP.dfmt,sleeve:'',commander:isCmdFmt(IMP.dfmt)?(cm?cm.name:cards[0].name):'',info:'Imported deck list',cards,tokens:[]});
   save();IMP.stage='idle';IMP.items=null;IMP.dtext='';IMP.dname='';go('decks');V.deck=D.decks.length-1;render();scrollTo(0,0);toast(`Deck created${added?` — ${fxPl(added,'card')} added to your collection`:''}`);fetchArt()}
-function fxTemplate(){fxDownload('Name,Quantity,Set code,Collector number,Finish,Source,Price,Notes\r\nLightning Bolt,4,m11,146,Normal,Singles Orders,,\r\nSol Ring,1,c21,263,Foil,Trade,2.50,From Sam\r\nLlanowar Elves,2,,,,,,Only the name is required\r\n','mtg-import-template.csv','text/csv')}
+function fxTemplate(){fxDownload('Name,Quantity,Set code,Collector number,Finish,Price,Notes\r\nLightning Bolt,4,m11,146,Normal,,\r\nSol Ring,1,c21,263,Foil,2.50,From Sam\r\nLlanowar Elves,2,,,,,Only the name is required\r\n','mtg-import-template.csv','text/csv')}
 function fxGuide(){fxDownload(`MtG DeckMaster — bulk import guide
 
 1. Open mtg-import-template.csv in Excel, Google Sheets or Numbers.
@@ -289,7 +291,6 @@ function fxGuide(){fxDownload(`MtG DeckMaster — bulk import guide
      Set code          The 3-5 letter set code printed at the bottom-left of the card (e.g. M11). Optional.
      Collector number  The number printed next to the set code (e.g. 146). Optional, but with the set code it picks the exact artwork.
      Finish            Normal, Foil or Etched Foil (blank = Normal)
-     Source            Where the card came from (e.g. Lorwyn Eclipsed Play Booster 3, Singles Orders, Trade). Blank = the choice you make on the import screen.
      Price             What you paid. Optional.
      Notes             Anything you like. Optional.
 3. Delete the three example rows, then save or download the sheet as CSV (.csv). Excel files (.xlsx) also work.
@@ -312,17 +313,17 @@ function fxImportView(){
   if(IMP.stage==='preview'){const it=IMP.items,deck=IMP.kind==='deck',ok=it.filter(x=>x.card||x.own),bad=it.filter(x=>!x.card&&!x.own),own=it.filter(x=>x.own);
     return `<h3>Check before importing</h3><div class="sec"><b>${fxPl(sum(ok,x=>x.qty),'card')}</b> matched on ${fxPl(ok.length,'line')}${ok.filter(x=>x.fuzzy).length?` · <b style="color:#f39c12">${ok.filter(x=>x.fuzzy).length} spelling corrected — check them below</b>`:''}${deck?` · ${own.length} already in your collection · ${ok.length-own.length} you don’t own`:''}${bad.filter(x=>!x.skip).length?` · <b style="color:#ff6b6b">${bad.filter(x=>!x.skip).length} not found</b>`:''}${bad.filter(x=>x.skip).length?` · ${bad.filter(x=>x.skip).length} skipped`:''}</div>
     ${bad.filter(x=>x.skip).length?`<div class="sec"><b>Skipped by you:</b> ${esc(bad.filter(x=>x.skip).map(x=>x.name).join(', '))}</div>`:''}${bad.filter(x=>!x.skip).length?`<div class="warn"><b>Not found (these will be skipped):</b> ${esc(bad.filter(x=>!x.skip).map(x=>x.name).slice(0,60).join(', '))}${bad.length>60?'…':''}</div>`:''}
-    ${tbl(deck?['Qty','Card','Status']:['Qty','Card','Printing','Finish','Source'],ok.slice(0,200).map(x=>deck?[x.qty,x.name,x.own?'✓ in your collection':'not owned'+(IMP.dadd?' — will be added':'')]:[x.qty,{h:esc(x.card.name)+(x.fuzzy?`<br><span style="color:#f39c12;font-size:12px">you typed “${esc(x.typed)}”</span>`:'')},`${x.card.set_name} · ${x.card.set.toUpperCase()} #${x.card.collector_number}`,x.fin,canonSrc(fxImpSrc(x))]))}
+    ${tbl(deck?['Qty','Card','Status']:['Qty','Card','Printing','Finish'],ok.slice(0,200).map(x=>deck?[x.qty,x.name,x.own?'✓ in your collection':'not owned'+(IMP.dadd?' — will be added':'')]:[x.qty,{h:esc(x.card.name)+(x.fuzzy?`<br><span style="color:#f39c12;font-size:12px">you typed “${esc(x.typed)}”</span>`:'')},`${x.card.set_name} · ${x.card.set.toUpperCase()} #${x.card.collector_number}`,x.fin]))}
     ${ok.length>200?`<p class="mut">Showing the first 200 of ${ok.length} lines.</p>`:''}
+    ${deck?'':`<div class="f" id="impsrc">${srcFields(IMP.sq=IMP.sq||{},'Where did these cards come from? * (one source for all of them)')}<p class="mut" style="margin:4px 0 0;font-size:12px">The set of each card comes from the artwork you chose — this is where you got them (a box, an order, a trade…).</p></div>`}
     <div class="row"><button onclick="fxImpCancel()">Cancel</button>${IMP.qa&&!deck?`<button onclick="IMP.stage='pick';IMP.pi=IMP.items.length-1;render()">‹ Change printings</button>`:''}<button class="pri" onclick="fxImpCommit()" ${ok.length?'':'disabled'}>${deck?'Create deck':'Add to my collection'}</button></div>`}
   const site=(n,u,t)=>`<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
   return `<h3>Import cards into your collection</h3><p class="mut">Add many cards at once from a file or a pasted list. You see a preview first — nothing is added until you confirm.</p>
-  <div class="f"><label>Where should imported cards say they came from?</label><select onchange="IMP.mode=this.value;render()"><option value="set" ${IMP.mode==='set'?'selected':''}>Each card’s own set (e.g. “Lorwyn Eclipsed”)</option><option value="one" ${IMP.mode==='one'?'selected':''}>One source for everything…</option></select>
-  ${IMP.mode==='one'?`<input style="margin-top:8px" value="${esc(IMP.src)}" oninput="IMP.src=this.value" placeholder="e.g. Bulk import, Gift from Sam">`:''}<p class="mut" style="margin:4px 0 0;font-size:12px">A “Source” column in your file always wins over this choice.</p></div>
+  <p class="mut" style="font-size:12px">You’ll choose where the cards came from (one source for the whole import) on the last screen, before anything is added.</p>
   <div class="row"><label class="btn pri">📄 Choose a file (CSV, text or Excel)<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls,text/*" hidden onchange="fxImpFile(this.files[0]);this.value=''"></label></div>
   <div class="f"><label>…or paste a list (one card per line)</label><textarea rows="5" placeholder="4 Lightning Bolt&#10;1 Sol Ring (C21) 263&#10;2x Llanowar Elves *F*" oninput="IMP.text=this.value">${esc(IMP.text)}</textarea></div><div class="row"><button onclick="fxImpText()">Read pasted list</button></div>
   <details class="g"><summary>📝 Template and guide for building your own file</summary><p class="mut">Download the template, fill in one card per row in Excel or Google Sheets, save it as CSV, then choose it above. Only the card name is required; set code + collector number pick the exact artwork.</p><div class="row"><button onclick="fxTemplate()">⬇ CSV template</button><button onclick="fxGuide()">⬇ Guide (text file)</button></div>
-  ${tbl(['Column','What goes in it'],[['Name','Card name (required)'],['Quantity','Copies — blank means 1'],['Set code','3–5 letters at the bottom-left of the card, e.g. M11'],['Collector number','The number next to the set code'],['Finish','Normal, Foil or Etched Foil'],['Source','Where it came from, e.g. “Lorwyn Eclipsed Play Booster 3”'],['Price / Notes','Optional']])}</details>
+  ${tbl(['Column','What goes in it'],[['Name','Card name (required)'],['Quantity','Copies — blank means 1'],['Set code','3–5 letters at the bottom-left of the card, e.g. M11'],['Collector number','The number next to the set code'],['Finish','Normal, Foil or Etched Foil'],['Price / Notes','Optional']])}</details>
   <details class="g"><summary>🌐 Import from another website or app</summary><p class="mut">These let you build a collection (several by scanning with your camera) and export it as a CSV file. Export there, then use “Choose a file” above — the columns are recognised automatically.</p><ul style="padding-left:18px;margin:6px 0">
   ${site('Moxfield','https://moxfield.com','collection and decks; export the collection as CSV')}${site('Archidekt','https://archidekt.com','collection and decks; CSV export')}${site('ManaBox','https://manabox.app','phone app with a fast card scanner; Collection → top-right menu → export CSV')}${site('Deckbox','https://deckbox.org','inventory export as CSV')}${site('MTGGoldfish','https://www.mtggoldfish.com','collection export as CSV')}</ul><p class="mut" style="font-size:12px">Other scanner apps (Delver Lens, Dragon Shield, TCGplayer) also export CSV files with a card-name column, which is all this import needs. Their menus change over time, so look for “Export” or “Download CSV”.</p></details>
   <h3>Import a deck list</h3><p class="mut">Paste a deck exported as text from Moxfield, Archidekt, MTG Arena or most deck sites (lines like “1 Sol Ring”). A line that says “Commander” before a card marks the commander; sideboard and maybeboard sections are skipped.</p>
@@ -690,7 +691,7 @@ function fxSrcSuggest(v){const el=document.getElementById('srcsug');if(!el)retur
     return `<div class="res" style="padding:8px 10px;cursor:default;gap:6px;flex-wrap:wrap"><span><b>${esc(o.b)}</b> <span class="mut" style="font-size:12px">${o.items.length} so far</span></span><span style="display:flex;gap:6px;flex-wrap:wrap">
       ${nx!==o.b||!o.items.includes(o.b)?`<button style="padding:5px 9px;font-size:12px" class="pri" onclick="fxSrcPick('new','${esc(o.b).replace(/'/g,"\\'")}')">New pull: ${esc(nx)}</button>`:''}
       <button style="padding:5px 9px;font-size:12px" onclick="fxSrcPick('old','${esc(last).replace(/'/g,"\\'")}')">Add to ${esc(last)}</button></span></div>`}).join('')}
-function fxSrcPick(kind,x){const q=A.q;if(kind==='new'){q.newSrc=x;const i=document.getElementById('newsrc');if(i)i.value=x;newSrcIn(x);document.getElementById('srcsug').innerHTML='';return}
+function fxSrcPick(kind,x){const q=SQ();if(kind==='new'){q.newSrc=x;const i=document.getElementById('newsrc');if(i)i.value=x;newSrcIn(x);document.getElementById('srcsug').innerHTML='';return}
   const g=srcGroup(x);q.grp=g==='Singles Orders'?'Singles Orders':g;q.sel=x;q.newSrc='';autoPrint(x);render()}
 
 /* ---------- send my collection to my other device ---------- */
