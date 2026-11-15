@@ -637,8 +637,8 @@ function commit(){
 }
 
 /* ---------- Deck Generator (no accounts, no stored keys) ---------- */
-let G={fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY=fxKeyGet('anthropic');
-const MODELS={anthropic:'claude-sonnet-5-5',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
+let G={fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY=fxKeyGet('anthropic');fxModelLoad();
+const MODELS={anthropic:'claude-sonnet-5-5',openai:'gpt-4o',gemini:'gemini-3.6-flash'};
 const CLR=['W','U','B','R','G'],CLRN={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},N2L={White:'W',Blue:'U',Black:'B',Red:'R',Green:'G'};
 const aiAllowed=()=>G.noDecks?[]:D.decks.filter(d=>G.from[d.name]).map(d=>d.name);
 const aiColors=()=>G.rand?(G.rc||[]):G.colors;
@@ -667,9 +667,9 @@ function vAI(m){
   <label><input type="checkbox" ${G.own?'checked':''} onchange="G.own=this.checked">Only use cards I own</label></div>
   <h3>Option A — use your own AI chat (no key needed)</h3><p class="mut">Works with any AI account: copy the prompt, paste it into your AI app, then paste its answer below.</p><ol class="st"><li>Choose the deck type, colors and where cards may come from above.</li><li>Tap <b>Copy prompt</b>.</li><li>Open your AI app or website (Gemini, ChatGPT, Claude, etc.), paste into a new chat, and send.</li><li>Copy the deck list it gives you (lines like “1 Sol Ring”).</li><li>Come back here, paste it into the <b>AI reply</b> box at the bottom, and tap <b>Read reply</b>.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><button class="pri" onclick="copyPrompt()">📋 Copy prompt</button>
   <h3>Option B — generate here (needs an API key)</h3><ol class="st"><li>Get an API key from your AI provider: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> (Gemini), <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a>, or <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a>. Sign in and choose “Create API key”.</li><li>Pick that provider below, paste the key, and leave the model as is (change it only if you get a model error).</li><li>Tap <b>Generate deck</b>. It can take up to a minute; the AI’s list fills the reply box and a preview appears.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><p class="mut">Gemini offers a free tier with limits; OpenAI and Anthropic bill per use. Your key is saved on this device only (untick below to keep it for this session only) and sent only to the provider you pick. It is never put in share files; backups ask before including it. API usage is billed separately from chat subscriptions.</p>
-  <div class="f"><label>Provider</label><select onchange="G.prov=this.value;G.model=MODELS[G.prov];AIKEY=fxKeyGet(G.prov);render()">${[['anthropic','Anthropic (Claude)'],['openai','OpenAI'],['gemini','Google Gemini']].map(([k,l])=>`<option value="${k}" ${G.prov===k?'selected':''}>${l}</option>`).join('')}</select>
-  <label>Model (edit if your provider has renamed it)</label><input value="${esc(G.model)}" oninput="G.model=this.value"><label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value;fxKeySave()"><label style="margin:6px 0 0;font-weight:400"><input type="checkbox" ${fxKeyRem()?'checked':''} onchange="fxKeyRemSet(this.checked)">Remember my API key on this device</label>${fxKeyAny()?`<p class="mut" style="font-size:12px;margin:4px 0 0">Saved on this device: ${esc(fxKeyList())}. <button style="padding:2px 8px" onclick="fxKeyForget()">Forget saved keys</button></p>`:''}</div>
-  <br><button class="pri" onclick="aiGenerate()" ${G.busy?'disabled':''}>${G.busy?'Thinking…':'✨ Generate deck'}</button>${G.err?`<div class="warn">${esc(G.err)}</div>`:''}
+  <div class="f"><label>Provider</label><select onchange="G.prov=this.value;G.model=MODELS[G.prov];fxModelLoad();G.models=null;G.mmsg='';AIKEY=fxKeyGet(G.prov);render()">${[['anthropic','Anthropic (Claude)'],['openai','OpenAI'],['gemini','Google Gemini']].map(([k,l])=>`<option value="${k}" ${G.prov===k?'selected':''}>${l}</option>`).join('')}</select>
+  <label>Model</label><div class="brow"><input value="${esc(G.model)}" list="gml" oninput="G.model=this.value;fxModelSave()" style="flex:2"><button onclick="fxLoadModels()" style="flex:1" ${G.mload?'disabled':''}>${G.mload?'Loading…':'↻ My models'}</button></div><datalist id="gml">${(G.models||[]).map(m=>`<option value="${esc(m)}">`).join('')}</datalist>${G.mmsg?`<p class="mut" style="font-size:12px;margin:4px 0 0">${esc(G.mmsg)}</p>`:'<p class="mut" style="font-size:12px;margin:4px 0 0">Tap “My models” to load the models your key can use and pick one.</p>'}<label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value;fxKeySave()"><label style="margin:6px 0 0;font-weight:400"><input type="checkbox" ${fxKeyRem()?'checked':''} onchange="fxKeyRemSet(this.checked)">Remember my API key on this device</label>${fxKeyAny()?`<p class="mut" style="font-size:12px;margin:4px 0 0">Saved on this device: ${esc(fxKeyList())}. <button style="padding:2px 8px" onclick="fxKeyForget()">Forget saved keys</button></p>`:''}</div>
+  <br>${G.busy?`<div class="sec"><b id="gbusy">Waiting for the AI… ${fxElapsed()}</b><p class="mut" style="margin:4px 0 8px">Building a deck from a big collection usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel()">Cancel</button></div>`:'<button class="pri" onclick="aiGenerate()">✨ Generate deck</button>'}${G.err?`<div class="warn">${esc(G.err)}</div>`:''}
   <h3>AI reply</h3><textarea id="greply" rows="6" oninput="G.reply=this.value" placeholder="Paste the AI's decklist here (Option B fills this in for you)">${esc(G.reply)}</textarea><br><br><button onclick="readReply()">Read reply</button><div id="gprev"></div>`;
   if(G.res)drawPrev();
 }
@@ -693,16 +693,13 @@ async function aiGenerate(){
   if(!aiNeedFmt())return;
   const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)return toast('Enter a model and your API key first');
   if(G.legal&&!(await ensureLegal()))return;
-  G.busy=true;G.err='';render();const p=buildPrompt();let txt='',r,j;
-  try{
-    if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:4000,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
-    else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({model,messages:[{role:'user',content:p}]})});j=await r.json();txt=j.choices?.[0]?.message?.content||''}
-    else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();txt=(j.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('')}
-    if(!r.ok)G.err=(j.error?.message||'The provider returned an error ('+r.status+').')+' Check the model name and key.';
-  }catch(e){G.err="Couldn't reach the provider — check your connection."}
-  G.busy=false;if(txt&&!G.err){G.reply=txt;G.res=null}else if(!G.err)G.err='The AI sent back an empty reply.';
-  render();if(G.reply&&!G.err)readReply();
+  G.busy=true;G.err='';G.t0=Date.now();G.ctl=new AbortController();render();const p=buildPrompt(),tick=setInterval(()=>{const b=$('#gbusy');if(b)b.textContent='Waiting for the AI… '+fxElapsed()},1000);let txt='';
+  try{txt=await fxCallAI(p,{signal:G.ctl.signal,timeout:180000,maxTokens:6000})}
+  catch(e){G.err=e&&e.name==='AbortError'?(G.cancelled?'Cancelled.':'The AI took longer than 3 minutes, so I stopped waiting. Try again, or pick a faster model (names with “flash”, “mini”, “haiku” or “sonnet” are usually quicker).'):String(e&&e.message||e)}
+  clearInterval(tick);G.busy=false;G.cancelled=false;G.ctl=null;if(txt&&!G.err){G.reply=txt;G.res=null}
+  render();if(G.reply&&!G.err&&txt)readReply();
 }
+function aiCancel(){if(G.ctl){G.cancelled=true;G.ctl.abort()}}
 function readReply(){
   if(!aiNeedFmt())return;const F=dfmt(G.fmt);
   G.reply=$('#greply')?.value??G.reply;const ents=[],by={},al=aiAllowed();

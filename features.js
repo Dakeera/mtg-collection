@@ -477,11 +477,18 @@ ${s.lb||'(list not saved)'}`}
 const simGet=id=>(D.sims||[]).find(s=>s.id===id);
 function fxSimCopy(id){const s=simGet(id);if(!s)return;navigator.clipboard.writeText(fxSimPrompt(s)).then(()=>toast('Prompt copied — paste it into your AI app, then paste its answer back here'),()=>toast('Could not copy'))}
 function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
-async function fxCallAI(p){const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the Deck Generator tab first (Option B). It is kept in memory only.');let r,j,txt='';
-  if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:1500,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
-  else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({model,messages:[{role:'user',content:p}]})});j=await r.json();txt=j.choices?.[0]?.message?.content||''}
-  else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();txt=(j.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('')}
-  if(!r.ok)throw new Error(j.error?.message||'The provider returned an error ('+r.status+').');if(!txt)throw new Error('The AI sent back an empty reply.');return txt}
+// One place that talks to the AI providers. Times out (default 3 min) and can be cancelled; gives a clear message for every failure.
+async function fxCallAI(p,o){o=o||{};const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the Deck Generator tab first (Option B).');
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),o.timeout||180000);if(o.signal)o.signal.addEventListener('abort',()=>ctl.abort());let r,j,txt='';
+  try{
+    if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{signal:ctl.signal,method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:o.maxTokens||1500,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
+    else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/chat/completions',{signal:ctl.signal,method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({model,messages:[{role:'user',content:p}]})});j=await r.json();txt=j.choices?.[0]?.message?.content||''}
+    else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{signal:ctl.signal,method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();
+      txt=(j.candidates?.[0]?.content?.parts||[]).filter(x=>!x.thought).map(x=>x.text||'').join('');if(!txt&&j.candidates?.[0]?.finishReason)txt='';if(!txt&&j.promptFeedback?.blockReason)throw new Error('Gemini blocked the request ('+j.promptFeedback.blockReason+').')}}
+  catch(e){clearTimeout(to);if(e.name==='AbortError')throw e;if(e instanceof TypeError)throw new Error('Couldn’t reach '+(FXPN[G.prov]||'the provider')+' — check your internet connection.');throw e}
+  clearTimeout(to);
+  if(!r.ok){const m=j&&j.error&&(j.error.message||j.error.type)||('error '+r.status);throw new Error(`${FXPN[G.prov]||'The provider'} said: ${m}${r.status===404||/model/i.test(m)?' — tap “My models” to pick a model your key can use.':r.status===401||r.status===403?' — check the API key.':r.status===429?' — you’ve hit a usage or rate limit; wait a minute or check your plan.':''}`)}
+  if(!txt)throw new Error('The AI sent back an empty reply'+(j.candidates?.[0]?.finishReason?` (${j.candidates[0].finishReason})`:j.stop_reason?` (${j.stop_reason})`:'')+'. Try again or pick another model.');return txt}
 async function fxSimAsk(id){const s=simGet(id);if(!s)return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
 
 /* ---------- card prices (Scryfall, USD) and collection sorting ---------- */
@@ -911,3 +918,20 @@ function fxKeySave(){if(!fxKeyRem())return;const o=fxKeys0();o[G.prov]=(AIKEY||'
 function fxKeyRemSet(on){try{localStorage.setItem(FXKEYREM,on?'1':'0')}catch(e){}if(on){fxKeySave();toast('Your API key will be remembered on this device')}else{fxKeyWrite({});toast('Saved keys removed — the key is kept only until you close the app')}render()}
 function fxKeyForget(){if(!confirm(`Forget the API keys saved on this device (${fxKeyList()})?`))return;fxKeyWrite({});AIKEY='';render();toast('Saved API keys forgotten')}
 function fxKeysIn(j,adopt){const k=j&&j.aiKeys;if(j)delete j.aiKeys;if(!k||!adopt||!fxKeyRem())return;const o=fxKeys0();let n=0;Object.keys(k).forEach(p=>{if(k[p]&&!o[p]){o[p]=k[p];n++}});if(n){fxKeyWrite(o);if(!AIKEY)AIKEY=fxKeyGet(G.prov);toast(`API key${n>1?'s':''} restored on this device`)}}
+
+/* ---------- models: list the ones this API key can use ---------- */
+const fxElapsed=()=>{const s=Math.round((Date.now()-(G.t0||Date.now()))/1000);return s<60?s+' s':Math.floor(s/60)+' min '+(s%60)+' s'};
+const FXMODELPREF={anthropic:[/sonnet/,/haiku/,/opus/],openai:[/^gpt-[\d.]+-mini/,/^gpt-[\d.]+$/,/^gpt/,/^o\d/],gemini:[/flash(?!-lite)/,/flash-lite/,/pro/]};
+function fxModelSave(){try{const o=JSON.parse(localStorage.getItem('mtg_aimodel_v1')||'{}');o[G.prov]=G.model.trim();localStorage.setItem('mtg_aimodel_v1',JSON.stringify(o))}catch(e){}}
+function fxModelLoad(){try{const o=JSON.parse(localStorage.getItem('mtg_aimodel_v1')||'{}');if(o[G.prov])G.model=o[G.prov]}catch(e){}}
+async function fxLoadModels(){const key=AIKEY.trim();if(!key)return toast('Type your API key first');G.mload=true;G.mmsg='';render();let ids=[];
+  try{let r,j;
+    if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/models?limit=100',{headers:{'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}});j=await r.json();ids=(j.data||[]).map(m=>m.id)}
+    else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:'Bearer '+key}});j=await r.json();ids=(j.data||[]).map(m=>m.id).filter(x=>/^(gpt|o\d|chatgpt)/.test(x)&&!/(audio|realtime|tts|transcribe|image|embedding|search|instruct|codex|moderation)/.test(x)).sort().reverse()}
+    else{r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':key}});j=await r.json();ids=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>m.name.replace(/^models\//,'')).filter(x=>/^gemini/.test(x)&&!/(embedding|image|tts|audio|live|vision|banana)/.test(x)).sort().reverse()}
+    if(!r.ok)throw new Error((j.error&&j.error.message)||('error '+r.status))}
+  catch(e){G.mload=false;G.mmsg='Couldn’t load your models: '+String(e&&e.message||e).slice(0,120);return render()}
+  G.models=ids;G.mload=false;
+  if(!ids.includes(G.model.trim())){const pick=(FXMODELPREF[G.prov]||[]).map(re=>ids.find(x=>re.test(x)&&!/preview|exp/.test(x))||ids.find(x=>re.test(x))).find(Boolean)||ids[0];
+    G.mmsg=ids.length?`“${G.model||'(none)'}” isn’t available for your key, so I picked ${pick}. Tap the model box to choose another (${ids.length} available).`:'Your key has no chat models available.';if(pick){G.model=pick;fxModelSave()}}
+  else G.mmsg=`✓ ${G.model} is available for your key (${ids.length} models in the list).`;render()}
