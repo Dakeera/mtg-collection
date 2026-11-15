@@ -809,3 +809,51 @@ function fxOverrideAsk(i,name,pr){const d=D.decks[i],F=dfmt(d.format);
 function fxOverrideOff(i,inModal){const d=D.decks[i],n=deckIssues(i).length;
   if(!confirm(`Turn the rule override off for “${d.name}”?\n\n${n?`The ${fxPl(n,'card or rule issue')} already in the deck stay, and stay flagged. `:''}New rule-breaking cards will need two approvals again.`))return;
   d.override=false;delete d.overrideAt;save();render();if(inModal)fxIssues(i);toast('Override turned off')}
+
+/* ---------- app updates ----------
+   Android app: checks GitHub Releases (at most once a day, or by hand in More → App updates), downloads the new APK inside the app
+   with the local ApkUpdater plugin, then opens Android's own Install screen (Android always asks the user to tap Install).
+   Web version: the site updates itself; the app compares the live index.html / features.js with what it loaded and offers a reload. */
+const FX_REL='https://api.github.com/repos/Dakeera/mtg-collection/releases?per_page=10',FX_UPDK='mtg_updchk_v1';
+let UPD=null,UPDST={checked:0,msg:'',busy:false,cur:null,hide:''},WEBUPD=false,WEBH=null;
+const fxUpdP=()=>window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.ApkUpdater;
+async function fxUpdCur(){if(UPDST.cur)return UPDST.cur;try{const i=await window.Capacitor.Plugins.App.getInfo();UPDST.cur={v:i.version,b:parseInt(i.build)||0}}catch(e){UPDST.cur={v:'?',b:0}}return UPDST.cur}
+async function fxUpdCheck(manual){if(!isNative())return;UPDST.busy=true;UPDST.msg='Checking GitHub for a newer version…';if(V.sub==='updates')render();
+  try{const cur=await fxUpdCur(),r=await fetch(FX_REL,{headers:{Accept:'application/vnd.github+json'},cache:'no-store'});if(!r.ok)throw new Error('GitHub answered '+r.status);
+    const rels=(await r.json()).filter(x=>!x.draft&&!x.prerelease&&/^android-v1\.\d+$/.test(x.tag_name)).map(x=>({n:+x.tag_name.split('.')[1],x})).sort((a,b)=>b.n-a.n),top=rels[0];
+    const a=top&&(top.x.assets||[]).find(a=>/\.apk$/i.test(a.name));
+    UPD=top&&a&&top.n>cur.b?{n:top.n,url:a.browser_download_url,name:a.name,size:a.size,date:(top.x.published_at||'').slice(0,10),notes:top.x.body||''}:null;
+    UPDST.checked=Date.now();try{localStorage.setItem(FX_UPDK,String(UPDST.checked))}catch(e){}
+    UPDST.msg=UPD?`Version 1.${UPD.n} is available (you have ${cur.v}).`:`You’re up to date (version ${cur.v}).`;if(manual&&!UPD)toast('You’re up to date')}
+  catch(e){UPDST.msg='Couldn’t check for updates — '+(navigator.onLine?String(e&&e.message||e).slice(0,80):'you’re offline')+'.';if(manual)toast(UPDST.msg)}
+  UPDST.busy=false;render()}
+function fxUpdBanner(){if(RO)return '';
+  if(isNative()&&UPD&&UPDST.hide!==String(UPD.n)&&V.sub!=='updates')return `<div class="sec" id="updban" style="border:1px solid var(--ac)"><b>⬆ Update 1.${UPD.n} is available</b><p class="mut" style="margin:4px 0">Your collection stays on the phone — updating doesn’t touch it.</p><div class="row" style="margin:0"><button class="pri" onclick="fxUpdRun()">Update now</button><button onclick="UPDST.hide='${UPD.n}';render()">Later</button></div><p class="mut" style="margin:8px 0 0;font-size:12px">Tip: make a backup first, just in case. <button style="padding:3px 9px" onclick="fxUpdBackup()">💾 Back up now</button></p></div>`;
+  if(!isNative()&&WEBUPD&&UPDST.hide!=='web')return `<div class="sec" id="updban" style="border:1px solid var(--ac)"><b>⬆ A new version of MtG DeckMaster is ready</b><p class="mut" style="margin:4px 0">Reload to start using it. Your collection is kept.</p><div class="row" style="margin:0"><button class="pri" onclick="fxWebReload()">Reload now</button><button onclick="UPDST.hide='web';render()">Later</button></div><p class="mut" style="margin:8px 0 0;font-size:12px">Tip: make a backup first, just in case. <button style="padding:3px 9px" onclick="fxUpdBackup()">💾 Back up now</button></p></div>`;
+  return ''}
+// Backup that doesn't leave the update banner: saves straight away and the banner stays where it is.
+async function fxUpdBackup(){try{await doBackup(false)}catch(e){toast('Backup failed')}}
+function fxWebReload(){try{navigator.serviceWorker&&navigator.serviceWorker.getRegistration().then(r=>r&&r.update()).finally(()=>location.reload())}catch(e){location.reload()}}
+async function fxUpdRun(){const P=fxUpdP();if(!UPD)return;if(!P)return toast('This app build can’t update itself yet — download the new version from GitHub Releases once, and later updates will work from here');
+  const ov=document.createElement('div');ov.id='updov';ov.style.cssText='position:fixed;inset:0;background:#000d;z-index:96;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=`<div class="sheet" style="margin:0;width:100%;max-width:420px"><h3 style="margin-top:0">Downloading update 1.${UPD.n}…</h3><p class="mut" id="updt">Starting…</p><div class="pbar"><i id="updb" style="width:2%"></i></div><div class="row" id="updbtns"></div></div>`;document.body.appendChild(ov);
+  const set=(t,w)=>{const x=$('#updt'),b=$('#updb');if(x)x.textContent=t;if(b&&w!=null)b.style.width=w+'%'},btns=h=>{const b=$('#updbtns');if(b)b.innerHTML=h};
+  let lis=null;try{lis=await P.addListener('progress',p=>{const tot=p.total>0?p.total:UPD.size||0;set(`${(p.done/1048576).toFixed(1)} of ${tot?(tot/1048576).toFixed(1):'?'} MB`,tot?Math.max(2,Math.round(p.done/tot*100)):null)})}catch(e){}
+  let f;try{f=await P.download({url:UPD.url,name:UPD.name})}catch(e){if(lis)lis.remove();set(String(e&&e.message||e));return btns('<button class="pri" onclick="this.closest(\'#updov\').remove();fxUpdRun()">Try again</button><button onclick="this.closest(\'#updov\').remove()">Close</button>')}
+  if(lis)lis.remove();set('Downloaded. Opening Android’s install screen…',100);window.FXUPDF=f.path;fxUpdInstall()}
+async function fxUpdInstall(){const P=fxUpdP(),ov=$('#updov');if(!P||!ov)return;const x=$('#updt'),b=$('#updbtns');let r;
+  try{r=await P.install({path:window.FXUPDF})}catch(e){x.textContent=String(e&&e.message||e);b.innerHTML='<button onclick="this.closest(\'#updov\').remove()">Close</button>';return}
+  if(r&&r.needsPermission){x.innerHTML='Android needs your permission first (only once):<br>1. Tap <b>Open settings</b>.<br>2. Turn on <b>Allow from this source</b>.<br>3. Come back here and tap <b>Install</b>.';
+    b.innerHTML='<button onclick="fxUpdP().openInstallSettings()">Open settings</button><button class="pri" onclick="fxUpdInstall()">Install</button><button onclick="this.closest(\'#updov\').remove()">Cancel</button>';return}
+  x.innerHTML='Android’s install screen is open — tap <b>Install</b> (or <b>Update</b>). The app restarts on the new version with your collection kept.<br><br>If nothing appeared, tap Install again.';
+  b.innerHTML='<button class="pri" onclick="fxUpdInstall()">Install</button><button onclick="this.closest(\'#updov\').remove()">Close</button>'}
+function fxUpdView(){const c=UPDST.cur;if(!c)fxUpdCur().then(()=>{if(V.sub==='updates')render()});const last=+(localStorage.getItem(FX_UPDK)||0);
+  return `<div class="sec"><div class="kv"><span>Installed version</span><b>${c?esc(c.v):'…'}</b></div><div class="kv"><span>Last checked</span><b>${last?esc(new Date(last).toLocaleString()):'never'}</b></div></div>
+  <p class="mut">${esc(UPDST.msg||'The app checks for updates once a day when you open it.')}</p>
+  <div class="row"><button class="pri" onclick="fxUpdCheck(true)" ${UPDST.busy?'disabled':''}>${UPDST.busy?'Checking…':'🔄 Check for updates'}</button>${UPD?`<button class="pri" onclick="fxUpdRun()">⬆ Update to 1.${UPD.n}</button>`:''}</div>
+  ${UPD?`<p class="mut" style="font-size:12px">Released ${esc(UPD.date)} · ${UPD.size?(UPD.size/1048576).toFixed(1)+' MB':''}. <button style="padding:3px 9px" onclick="fxUpdBackup()">💾 Back up first</button></p>`:''}
+  <details class="g"><summary>How updating works</summary><p class="mut">The app downloads the new version from this project’s GitHub page and opens Android’s install screen — Android always asks you to tap Install; no app can update itself silently. The first time, Android also asks you to allow “Install unknown apps” for MtG DeckMaster. Updates are signed with the same key as your current app, so your collection stays where it is.</p></details>`}
+async function fxWebHash(){const h=[];for(const f of ['index.html','features.js']){const r=await fetch(f,{cache:'no-store'});if(!r.ok)throw 0;h.push(await r.text())}const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(h.join('\u0000')));return fxB64(d)}
+async function fxWebCheck(){if(isNative()||WEBUPD||!/^https?:/.test(location.protocol))return;try{const h=await fxWebHash();if(WEBH==null){WEBH=h;return}if(h!==WEBH){WEBUPD=true;render()}}catch(e){}}
+function fxUpdStart(){if(isNative()){const last=+(localStorage.getItem(FX_UPDK)||0);if(Date.now()-last>20*3600e3)setTimeout(()=>fxUpdCheck(false),4000);return}
+  fxWebCheck();setInterval(fxWebCheck,30*60e3);document.addEventListener('visibilitychange',()=>{if(!document.hidden)fxWebCheck()})}

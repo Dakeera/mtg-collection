@@ -151,6 +151,7 @@ async function init(){
   D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();if(!s)persist();render();fetchArt();fxCheckLink();fxNativeLinks();fxImgLoad().then(n=>{if(n)render()});
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+  fxUpdStart();
 }
 async function fetchArt(){
   fetchLegal();fetchPrices();
@@ -202,6 +203,7 @@ function render(){
   if(V.view==='add'&&!RO&&IMP.qa&&IMP.stage!=='idle'){$('#main').innerHTML=`<button onclick="fxImpCancel()">← Back to Add card</button>`+fxImportView();return}
   if(V.view==='add'&&A.step==='start'&&!RO)$('#main').insertAdjacentHTML('beforeend',fxQuickAdd());
   if(RO){$('#main').insertAdjacentHTML('afterbegin',roBar());return}
+  $('#main').insertAdjacentHTML('afterbegin',fxUpdBanner());
   const due=backupDue();if(due&&!(V.view==='more'&&V.sub==='backup'))$('#main').insertAdjacentHTML('afterbegin',`<div class="warn">💾 ${esc(due)} <button style="margin-left:8px;padding:6px 10px" onclick="go('more');V.sub='backup';render()">Back up now</button></div>`);
 }
 const SCR={};const showTab=k=>{V.view=k;V.deck=null;render();scrollTo(0,k==='collection'?(SCR.collection||0):0);topBtn()};
@@ -733,11 +735,12 @@ function mkAIDeck(){
 
 /* ---------- more ---------- */
 function vMore(m){
-  const tabs=[['me','My profile'],['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup']];
+  const tabs=[['me','My profile'],['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup'],...(isNative()?[['updates','App updates']]:[])];
   let body='';
   if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},String(a.set||'').toUpperCase()+' '+(a.cn||''),a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
   if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>(r=>(r[2]={h:cl(r[2])},r))([s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji))));
   if(V.sub==='me')body=fxProfileView();
+  if(V.sub==='updates')body=fxUpdView();
   if(V.sub==='matchups')body=fxMatchups();
   if(V.sub==='import')body=fxImportView();
   if(V.sub==='others')body=fxOthersView();
