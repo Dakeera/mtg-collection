@@ -726,10 +726,10 @@ async function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
 function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const d=D.decks[V.deck];if(dl>0&&!confirm(`Pull 1× ${n} from your collection into ${d.name}?\n\n(It’s staged — tap Save changes on the deck to apply.)`))return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
 /* Builder with “Only add cards that are in my collection” switched off: search Scryfall for cards you don't own and add them to the collection + this deck */
 let BSC={q:'',list:null,t:0,busy:false};
-function fxBScry(q){const el=document.getElementById('bscry');if(!el)return;if(V.bown){el.innerHTML='';return}
+function fxBScry(q){const el=document.getElementById('bscry');if(V.bown||!el){clearTimeout(BSC.t);if(el)el.innerHTML='';return}
   if(q.length<3){el.innerHTML='<p class="mut">Type at least 3 letters to also search cards you don’t own.</p>';return}
   if(BSC.q===q&&BSC.list)return fxBScryDraw();el.innerHTML='<p class="mut">Searching Scryfall…</p>';clearTimeout(BSC.t);
-  BSC.t=setTimeout(async()=>{const r=await scry('/cards/search?order=name&unique=cards&q='+encodeURIComponent(q));if((V.bq||'').toLowerCase()!==q)return;
+  BSC.t=setTimeout(async()=>{if(V.bown)return;const r=await scry('/cards/search?order=name&unique=cards&q='+encodeURIComponent(q));if((V.bq||'').toLowerCase()!==q)return;
     BSC={q,list:r&&r.data?r.data.filter(c=>!findCard(c.name)).slice(0,25):[],err:!r&&scry.st!==404,t:0};fxBScryDraw()},500)}
 function fxBScryDraw(){const el=document.getElementById('bscry');if(!el)return;const L=BSC.list||[];
   el.innerHTML=`<h4 style="margin:12px 0 4px">Not in your collection — from Scryfall</h4>`+(BSC.err?'<p class="mut">Couldn’t reach Scryfall — check your internet connection.</p>':L.length?L.map((c,k)=>`<div class="res" style="cursor:default;flex-wrap:wrap"><span style="flex:1;min-width:0">${esc(c.name)} ${costHtml(c.mana_cost||c.card_faces?.[0]?.mana_cost||'')}<br><span class="mut" style="font-size:12px">${esc(c.type_line||'')} · you don’t own it</span></span>
