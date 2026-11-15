@@ -637,7 +637,7 @@ function commit(){
 }
 
 /* ---------- Deck Generator (no accounts, no stored keys) ---------- */
-let G={fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY='';
+let G={fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''},AIKEY=fxKeyGet('anthropic');
 const MODELS={anthropic:'claude-sonnet-5-5',openai:'gpt-4o',gemini:'gemini-2.0-flash'};
 const CLR=['W','U','B','R','G'],CLRN={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},N2L={White:'W',Blue:'U',Black:'B',Red:'R',Green:'G'};
 const aiAllowed=()=>G.noDecks?[]:D.decks.filter(d=>G.from[d.name]).map(d=>d.name);
@@ -666,9 +666,9 @@ function vAI(m){
   ${F&&F.cmd?`<label>${esc(F.cmdLabel)} (optional)</label><input value="${esc(G.cmd)}" oninput="G.cmd=this.value" list="gcl" placeholder="Leave blank to let the AI choose"><datalist id="gcl">${aiCmdChoices(F).map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist>`:''}
   <label><input type="checkbox" ${G.own?'checked':''} onchange="G.own=this.checked">Only use cards I own</label></div>
   <h3>Option A — use your own AI chat (no key needed)</h3><p class="mut">Works with any AI account: copy the prompt, paste it into your AI app, then paste its answer below.</p><ol class="st"><li>Choose the deck type, colors and where cards may come from above.</li><li>Tap <b>Copy prompt</b>.</li><li>Open your AI app or website (Gemini, ChatGPT, Claude, etc.), paste into a new chat, and send.</li><li>Copy the deck list it gives you (lines like “1 Sol Ring”).</li><li>Come back here, paste it into the <b>AI reply</b> box at the bottom, and tap <b>Read reply</b>.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><button class="pri" onclick="copyPrompt()">📋 Copy prompt</button>
-  <h3>Option B — generate here (needs an API key)</h3><ol class="st"><li>Get an API key from your AI provider: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> (Gemini), <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a>, or <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a>. Sign in and choose “Create API key”.</li><li>Pick that provider below, paste the key, and leave the model as is (change it only if you get a model error).</li><li>Tap <b>Generate deck</b>. It can take up to a minute; the AI’s list fills the reply box and a preview appears.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><p class="mut">Gemini offers a free tier with limits; OpenAI and Anthropic bill per use. You type your own key each visit. It is held in memory only (gone when you close the app) and sent only to the provider you pick. API usage is billed separately from chat subscriptions.</p>
-  <div class="f"><label>Provider</label><select onchange="G.prov=this.value;G.model=MODELS[G.prov];render()">${[['anthropic','Anthropic (Claude)'],['openai','OpenAI'],['gemini','Google Gemini']].map(([k,l])=>`<option value="${k}" ${G.prov===k?'selected':''}>${l}</option>`).join('')}</select>
-  <label>Model (edit if your provider has renamed it)</label><input value="${esc(G.model)}" oninput="G.model=this.value"><label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value"></div>
+  <h3>Option B — generate here (needs an API key)</h3><ol class="st"><li>Get an API key from your AI provider: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> (Gemini), <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a>, or <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a>. Sign in and choose “Create API key”.</li><li>Pick that provider below, paste the key, and leave the model as is (change it only if you get a model error).</li><li>Tap <b>Generate deck</b>. It can take up to a minute; the AI’s list fills the reply box and a preview appears.</li><li>Check the preview, name the deck, and tap <b>Create deck</b>.</li></ol><p class="mut">Gemini offers a free tier with limits; OpenAI and Anthropic bill per use. Your key is saved on this device only (untick below to keep it for this session only) and sent only to the provider you pick. It is never put in share files; backups ask before including it. API usage is billed separately from chat subscriptions.</p>
+  <div class="f"><label>Provider</label><select onchange="G.prov=this.value;G.model=MODELS[G.prov];AIKEY=fxKeyGet(G.prov);render()">${[['anthropic','Anthropic (Claude)'],['openai','OpenAI'],['gemini','Google Gemini']].map(([k,l])=>`<option value="${k}" ${G.prov===k?'selected':''}>${l}</option>`).join('')}</select>
+  <label>Model (edit if your provider has renamed it)</label><input value="${esc(G.model)}" oninput="G.model=this.value"><label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value;fxKeySave()"><label style="margin:6px 0 0;font-weight:400"><input type="checkbox" ${fxKeyRem()?'checked':''} onchange="fxKeyRemSet(this.checked)">Remember my API key on this device</label>${fxKeyAny()?`<p class="mut" style="font-size:12px;margin:4px 0 0">Saved on this device: ${esc(fxKeyList())}. <button style="padding:2px 8px" onclick="fxKeyForget()">Forget saved keys</button></p>`:''}</div>
   <br><button class="pri" onclick="aiGenerate()" ${G.busy?'disabled':''}>${G.busy?'Thinking…':'✨ Generate deck'}</button>${G.err?`<div class="warn">${esc(G.err)}</div>`:''}
   <h3>AI reply</h3><textarea id="greply" rows="6" oninput="G.reply=this.value" placeholder="Paste the AI's decklist here (Option B fills this in for you)">${esc(G.reply)}</textarea><br><br><button onclick="readReply()">Read reply</button><div id="gprev"></div>`;
   if(G.res)drawPrev();
@@ -807,7 +807,7 @@ async function sqliteBytes(){
   CREATE TABLE swap_log(deck TEXT,section TEXT,card TEXT,from_to TEXT,quantity TEXT,date TEXT,notes TEXT,status TEXT);
   CREATE TABLE sleeves(color TEXT,total INTEGER,assigned_deck TEXT,in_use INTEGER);`);
   const ins=(t,rows)=>{if(!rows.length)return;const st=db.prepare(`INSERT INTO ${t} VALUES(${rows[0].map(()=>'?').join(',')})`);rows.forEach(r=>st.run(r.map(v=>v??'')));st.free()};
-  ins('app_state',[['backup_json',fxWithImgs(D)],['exported',new Date().toISOString()]]);
+  ins('app_state',[['backup_json',fxWithImgs(D,FXBKKEYS)],['exported',new Date().toISOString()]]);
   ins('cards',D.cards.map(c=>[c.name,c.source,c.colors,c.cost,+c.cmc||0,c.type,c.subtype,c.power,c.toughness,c.text,c.keywords,c.legal,c.qty,c.finish,c.set,c.setName,c.cn,c.scryId,c.art,c.verified?1:0]));
   ins('decks',D.decks.map((d,i)=>[i+1,d.name,d.format,d.commander,noEmoji(sleeveOf(d)?.color||d.sleeve||'')]));
   ins('deck_cards',D.decks.flatMap((d,i)=>[...d.cards.map(c=>[i+1,c.name,c.qty,c.finish,0]),...d.tokens.map(c=>[i+1,c.name,c.qty,c.finish,1])]));
@@ -830,8 +830,9 @@ async function nativeSave(blob,name,share){
   return {shared:true,fellBack:!share};
 }
 async function doBackup(share){
+  FXBKKEYS=fxKeyAny()?confirm(`Include your saved API key${Object.keys(fxKeys0()).length>1?'s':''} (${fxKeyList()}) in this backup?\n\nOK = include them, so restoring this backup on a new device brings them back\nCancel = leave them out (safer if you’ll store or send the file somewhere others can see)`):false;
   const ext=BKF==='json'?'json':'sqlite',name=`${fxPrefix()}backup_${tsName()}.${ext}`;let blob;
-  try{blob=BKF==='json'?new Blob([fxWithImgs(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
+  try{blob=BKF==='json'?new Blob([fxWithImgs(D,FXBKKEYS)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
   if(isNative()){
     try{const r=await nativeSave(blob,name,share);
@@ -867,7 +868,7 @@ async function autoDel(name){if(isNative())await FS().deleteFile({path:AUTO_DIR+
 function autoSchedule(){if(!autoOn()||AUTO_PAUSE||typeof D==='undefined'||!D)return;clearTimeout(AUTO_T);AUTO_T=setTimeout(autoRun,2000)}
 async function autoRun(){AUTO_T=null;if(!autoOn()||AUTO_PAUSE)return;if(AUTO_BUSY)return autoSchedule();
   const txt=JSON.stringify(D);if(txt===AUTO_LAST)return;AUTO_BUSY=true;
-  try{const d=new Date(),name=`auto-${tsName()}${p2(d.getSeconds())}.json`;await autoPut(name,fxWithImgs(D));AUTO_LAST=txt;
+  try{const d=new Date(),name=`auto-${tsName()}${p2(d.getSeconds())}.json`;await autoPut(name,fxWithImgs(D,true));AUTO_LAST=txt;
     for(const old of (await autoNames()).slice(AUTO_KEEP))await autoDel(old);AUTO_ERR=false;autoRefresh()}
   catch(e){if(!AUTO_ERR)toast('Auto-backup failed: '+String(e&&e.message||e).slice(0,80));AUTO_ERR=true}
   AUTO_BUSY=false}

@@ -546,7 +546,7 @@ async function fxOpenFile(f,hint){if(!f)return;let j;try{j=await fxReadBackup(f)
 function fxRestoreAsk(j){let m=`Restore this backup? It replaces everything currently in the app (${D.cards.length} card titles, ${fxPl(D.decks.length,'deck')}).`;
   if(j.updated&&D.updated&&j.updated<D.updated-60000&&D.cards.length)m+=`\n\n⚠ This backup is OLDER than what is in the app now.\nBackup last changed: ${new Date(j.updated).toLocaleString()}\nApp last changed: ${new Date(D.updated).toLocaleString()}\nAnything you changed since then will be lost.`;
   if(confirm(m))fxRestore(j)}
-function fxRestore(j){fxImgsIn(j);D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();DRAFT=null;V.noWelcome=0;save();stamp();closeM();toast('Backup restored');render();fetchArt()}
+function fxRestore(j){fxKeysIn(j,(j.uid&&D&&j.uid===D.uid)||(D&&!D.cards.length&&!D.decks.length));fxImgsIn(j);D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();DRAFT=null;V.noWelcome=0;save();stamp();closeM();toast('Backup restored');render();fetchArt()}
 function fxGotBackup(j,f,hint){const empty=!D.cards.length&&!D.decks.length,same=j.uid&&D.uid&&j.uid===D.uid;
   const asFriend=()=>fxSaveFriend({uid:j.uid||('old-'+fxUuid()),name:j.owner||String(f.name||'Collection').replace(/\.[^.]+$/,'').replace(/[_-]?(mtg-)?backup.*$/i,'').replace(/_[0-9A-Z]{4}-[0-9A-Z]{4}$/,'')||'Collection',updated:j.updated||f.lastModified||Date.now(),pub:j.keys?j.keys.pub:null,cards:j.cards,decks:j.decks,customImgs:j.customImgs,scope:'all'},'unverified',{});
   if(same||(empty&&hint!=='view'))return fxRestoreAsk(j);
@@ -682,8 +682,9 @@ function fxSrcPick(kind,x){const q=A.q;if(kind==='new'){q.newSrc=x;const i=docum
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
   if(!confirm('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.'))return;
+  const keys=fxKeyAny()&&confirm(`Also send your saved API key${Object.keys(fxKeys0()).length>1?'s':''} (${fxKeyList()})?\n\nOK = yes, so you don’t have to type it on the other device\nCancel = no`);
   const j=Object.assign(JSON.parse(JSON.stringify(D)),{xfer:{from:isNative()?'Android app':(/iPhone|iPad/i.test(navigator.userAgent)?'iPhone / iPad':'web browser'),at:Date.now()}});
-  await fxSend(fxWithImgs(j),`${fxPrefix()}to-my-device_${tsName()}.json`);try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}}
+  await fxSend(fxWithImgs(j,keys),`${fxPrefix()}to-my-device_${tsName()}.json`);try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}}
 function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!D.decks.length,newer=!D.updated||(j.updated||0)>=D.updated,when=x=>x?new Date(x).toLocaleString():'unknown';
   const body=`<div class="sec">${fxWho(j.owner,j.uid)}<br><span class="mut">Sent from your ${esc(j.xfer.from)} · ${esc(when(j.xfer.at))}</span></div>
   ${tbl(['','On this device','In the file'],[['Card titles',D.cards.length,j.cards.length],['Decks',D.decks.length,j.decks.length],['Last changed',when(D.updated),when(j.updated)]])}
@@ -786,8 +787,8 @@ const fxIdbDo=(mode,fn)=>fxIdb().then(db=>new Promise((ok,no)=>{const t=db.trans
 async function fxImgLoad(){try{const keys=await fxIdbDo('readonly',st=>st.getAllKeys()),vals=await fxIdbDo('readonly',st=>st.getAll());keys.forEach((k,n)=>{CIMG[k]=vals[n]});return keys.length}catch(e){return 0}}
 const fxImgPut=(k,v)=>{if(!RO)fxIdbDo('readwrite',st=>st.put(v,k)).catch(()=>toast('Couldn’t save the photo (storage full?)'))};
 const fxImgDel=k=>{if(!RO)fxIdbDo('readwrite',st=>st.delete(k)).catch(()=>{})};
-function fxWithImgs(o){const im={};(o.cards||[]).forEach(c=>{if(c.custom&&CIMG[c.name])im[c.name]=CIMG[c.name]});return JSON.stringify(Object.keys(im).length?Object.assign({},o,{customImgs:im}):o)}
-function fxImgsIn(j){const im=j&&j.customImgs;if(!im)return;Object.keys(im).forEach(k=>{if(/^data:image\//.test(im[k])){CIMG[k]=im[k];fxImgPut(k,im[k])}});delete j.customImgs}
+function fxWithImgs(o,keys){const im={},add={};(o.cards||[]).forEach(c=>{if(c.custom&&CIMG[c.name])im[c.name]=CIMG[c.name]});if(Object.keys(im).length)add.customImgs=im;if(keys&&fxKeyAny())add.aiKeys=fxKeys0();return JSON.stringify(Object.keys(add).length?Object.assign({},o,add):o)}
+function fxImgsIn(j){if(j&&j.aiKeys)fxKeysIn(j,true);const im=j&&j.customImgs;if(!im)return;Object.keys(im).forEach(k=>{if(/^data:image\//.test(im[k])){CIMG[k]=im[k];fxImgPut(k,im[k])}});delete j.customImgs}
 function fxCompress(blob){return new Promise((ok,no)=>{const u=URL.createObjectURL(blob),im=new Image();im.onerror=()=>{URL.revokeObjectURL(u);no(new Error('image'))};
   im.onload=()=>{URL.revokeObjectURL(u);const R=63/88;let sx=0,sy=0,sw=im.naturalWidth,sh=im.naturalHeight;
     if(!blob.cropped){if(sw/sh>R){const w=sh*R;sx=(sw-w)/2;sw=w}else{const h=sw/R;sy=(sh-h)/2;sh=h}}
@@ -894,3 +895,19 @@ function fxCustomSave(){const nm=($('#cn_n').value||'').trim();if(!nm)return toa
     power:($('#cn_p').value||'').trim()||'None',toughness:($('#cn_h').value||'').trim()||'None',text:txt,keywords:'None',legal:'Custom card',qty:q,finish:fin,status:'Added in app',custom:true,ci});
   IDX=null;D.acq.push({date:today(),name:nm,set:'',cn:'',finish:fin,qty:q,source:src,price:'',notes:'Custom card',shared:false});logEdit(nm,'Custom card','','created');save();closeM();render();showCard(nm);
   toast(`${nm} added to your Custom cards — tap “Take a photo of this card” to add its picture`)}
+
+/* ---------- API keys: saved on this device only, outside the collection data ----------
+   Stored in their own storage key, so they are never part of share files. Manual backups and device transfers ask before
+   including them; automatic backups always include them. Restoring brings them back only for your own collection
+   (same ID) or into an empty app, and never replaces a key already saved on this device. */
+const FXKEY='mtg_aikeys_v1',FXKEYREM='mtg_aikeyrem_v1';let FXBKKEYS=false;
+const fxKeys0=()=>{try{return JSON.parse(localStorage.getItem(FXKEY)||'{}')||{}}catch(e){return {}}};
+const fxKeyRem=()=>{try{return localStorage.getItem(FXKEYREM)!=='0'}catch(e){return false}};
+const fxKeyAny=()=>Object.values(fxKeys0()).some(Boolean);
+const FXPN={anthropic:'Anthropic',openai:'OpenAI',gemini:'Google Gemini'},fxKeyList=()=>Object.keys(fxKeys0()).filter(k=>fxKeys0()[k]).map(k=>FXPN[k]||k).join(', ');
+const fxKeyGet=p=>fxKeys0()[p]||'';
+function fxKeyWrite(o){try{Object.keys(o).forEach(k=>{if(!o[k])delete o[k]});Object.keys(o).length?localStorage.setItem(FXKEY,JSON.stringify(o)):localStorage.removeItem(FXKEY)}catch(e){}}
+function fxKeySave(){if(!fxKeyRem())return;const o=fxKeys0();o[G.prov]=(AIKEY||'').trim();fxKeyWrite(o)}
+function fxKeyRemSet(on){try{localStorage.setItem(FXKEYREM,on?'1':'0')}catch(e){}if(on){fxKeySave();toast('Your API key will be remembered on this device')}else{fxKeyWrite({});toast('Saved keys removed — the key is kept only until you close the app')}render()}
+function fxKeyForget(){if(!confirm(`Forget the API keys saved on this device (${fxKeyList()})?`))return;fxKeyWrite({});AIKEY='';render();toast('Saved API keys forgotten')}
+function fxKeysIn(j,adopt){const k=j&&j.aiKeys;if(j)delete j.aiKeys;if(!k||!adopt||!fxKeyRem())return;const o=fxKeys0();let n=0;Object.keys(k).forEach(p=>{if(k[p]&&!o[p]){o[p]=k[p];n++}});if(n){fxKeyWrite(o);if(!AIKEY)AIKEY=fxKeyGet(G.prov);toast(`API key${n>1?'s':''} restored on this device`)}}
