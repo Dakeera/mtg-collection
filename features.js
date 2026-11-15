@@ -811,10 +811,10 @@ async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){
   SV.running=false;const C=SV.cand;
   SV.msg=stopped?`Stopped (offline) — it continues next time.`:`Checked: ${fxPl(C.length,'card')} can be verified from their pull source, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
   if(!C.length){if(!stopped&&!errs){D.srcv2=today();save()}if(!auto)toast('No cards could be verified from their pull source');return}
-  /* nothing changes until the user approves the list */
-  fxAsk(`Verify ${fxPl(C.length,'card')} from their pull source?`,`<p class="mut">Each of these has a “pulled from” source that names a set with exactly one matching printing. Approving sets that printing and gives the card the gold ✓.</p><div style="max-height:45vh;overflow:auto;font-size:13px">${C.map(x=>`<div>${esc(x.name)} → <b>${esc(x.p.set_name)}</b> #${esc(x.p.collector_number)} <span class="mut">(${esc(x.src)})</span></div>`).join('')}</div>`,
-    [{t:`✓ Verify these ${C.length}`,cls:'pri',fn:()=>{C.forEach(x=>{if(fxVerifyPrint(x.name,x.p,'from pull source',true))SV.ok.push(x.name)});SV.cand=[];if(!stopped&&!errs)D.srcv2=today();saveArt();save();SV.msg=`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.`;render();toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')}`)}},
-     {t:'Not now',fn:()=>{if(!stopped&&!errs){D.srcv2=today();save()}SV.msg+=' Not applied — tap the button to check again.';render()}}])}
+  /* owner's choice: a card whose pull source points to exactly ONE printing is verified automatically; anything uncertain stays for the user to verify */
+  C.forEach(x=>{if(fxVerifyPrint(x.name,x.p,'from pull source',true))SV.ok.push(x.name)});SV.cand=[];if(!stopped&&!errs)D.srcv2=today();saveArt();save();
+  SV.msg=`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.`;render();
+  toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their pull source — details in More → Data check`)}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
 function fxSrcAuto(){setTimeout(()=>{if(!D.srcv2&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
 function fxSrcView(){return `<div class="sec"><h4>Verify artwork from pull sources</h4><p class="mut" style="margin:4px 0">For cards whose “pulled from” source names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a source that isn’t a set) the card is left unverified for you.${D.srcv2?` Last run: <b>${esc(D.srcv2)}</b>.`:''}</p>
