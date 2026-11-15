@@ -36,7 +36,7 @@ const fxPl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 function fxMigrate(){if(!D)return;D.matchups=D.matchups||[];D.sims=D.sims||[];D.swaps=D.swaps||[];D.sleeves=D.sleeves||[];
   // Matchup log: only matchups that have actually been run are listed (drops old "Template / Pending" rows).
   D.matchups.forEach(s=>{if(/MASTER MATCHUP/i.test(s.title||'')&&s.rows)s.rows=s.rows.filter((r,i)=>i===0||!(/template|pending/i.test(String(r[r.length-1]))||String(r[5]).trim()==='-'))})}
-function fxBack(){if(CAM){CAM.close();return true}return false}
+function fxBack(){if(CAM){CAM.close();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
 async function fxDownload(text,name,type){const blob=new Blob([text],{type:type||'text/plain'});
   if(isNative()){try{const r=await nativeSave(blob,name,false);return toast(r.where?'Saved to '+r.where:'File shared')}catch(e){return toast('Could not save the file: '+String(e&&e.message||e).slice(0,80))}}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();toast('Saved to Downloads')}
@@ -59,7 +59,9 @@ addEventListener('scroll',()=>{try{if(V.view!=='collection')return;const m=docum
 function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEach(e=>{const k=norm(e.name);m[k]=m[k]||{name:e.name,base:0,qty:0};m[k].base+=e.qty;m[k].qty+=e.qty});DRAFT={deck:i,m}}return DRAFT}
 const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base);
 function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,d:x.qty-x.base}))}
-function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0});
+function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
+  if(dl>0&&F&&sum(fxDeckCards(i))+dl>F.n){toast(`${F.k} decks hold ${F.n} cards — remove a card before adding another`);return}
+  const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0});
   x.qty=Math.max(0,x.qty+dl);if(!x.qty&&!x.base)delete d.m[k];render();
   if(fromSearch)fxBuilder()}
 function fxCanLeave(){if(fxDraftDirty()){if(!confirm('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing'))return false}DRAFT=null;return true}
@@ -255,14 +257,14 @@ async function fxImpFile(f){if(!f)return;let t;try{t=await fxFileText(f)}catch(e
 function fxImpText(){fxImpStart(fxParseAny(IMP.text||''),'collection')}
 function fxImpDeck(){if(!(IMP.dname||'').trim())return toast('Give the deck a name first');if(D.decks.some(d=>d.name.toLowerCase()===IMP.dname.trim().toLowerCase()))return toast('You already have a deck with that name');
   const it=fxParseAny(IMP.dtext||'').filter(x=>!/sideboard|maybeboard|considering/.test(x.section||''));fxImpStart(it,'deck')}
-function fxImpCancel(){IMP.stage='idle';IMP.items=null;render()}
+function fxImpCancel(){IMP.stage='idle';IMP.items=null;IMP.qa=false;render()}
 function fxImpSrc(x){return (x.src||'').trim()||(IMP.mode==='one'?(IMP.src||'').trim()||'Bulk import':x.card.set_name)}
 function fxImpCommit(){
   const it=IMP.items||[];
   if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty);
     if(!confirm(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nCards you already own get their quantity increased — no duplicates are created.`))return;
     ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];fxAddCard(x.card,x.qty,fin,canonSrc(fxImpSrc(x)),x.price,x.notes)});
-    saveArt();save();IMP.stage='idle';IMP.items=null;IMP.text='';render();toast(`${fxPl(n,'card')} added to your collection`);return}
+    saveArt();save();IMP.stage='idle';IMP.items=null;IMP.text='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
   if(!cards.length)return toast('None of those cards could be matched');
@@ -636,13 +638,14 @@ function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
     <input id="bq" type="search" placeholder="Search name or rules text…" style="width:100%" oninput="V.bq=this.value;fxBuilder()">
     <div class="brow" style="margin:8px 0"><select onchange="V.bt=this.value;fxBuilder()"><option value="">All types</option>${types.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select onchange="V.bc=this.value;fxBuilder()"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>`<option>${x}</option>`).join('')}</select></div>
     <label style="margin:0 0 8px"><input type="checkbox" onchange="V.bfree=this.checked;fxBuilder()">Only show cards with a copy that isn’t in another deck</label><div id="bres"></div><div class="row"><button class="pri" onclick="closeM()">Done</button></div>`)}
-  const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),t=target(d),n=sum(dl);
-  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this deck${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
+  const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),t=target(d),n=sum(dl),F=dfmt(d.format),cmdC=d.commander&&findCard(d.commander);
+  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?' <span style="color:#f39c12">· full</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
   const list=D.cards.filter(c=>isReal(c)&&(!q||c.name.toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q))&&(!V.bt||c.type===V.bt)&&(!V.bc||String(c.colors).includes(V.bc))&&(!V.bfree||freeCopies(c)>0||inDeck(c.name)>0)).sort((a,b)=>(inDeck(b.name)>0)-(inDeck(a.name)>0)||a.name.localeCompare(b.name));
   FXB=list.slice(0,60).map(c=>c.name);
   el.innerHTML=list.slice(0,60).map((c,k)=>{const u=usage(c.name).filter(x=>x.d!==d),fr=freeCopies(c),have=inDeck(c.name);
-    return `<div class="res" style="cursor:default"><span>${esc(c.name)} ${costHtml(c.cost)}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
-    <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span></div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
+    const iss=fxCardIssues(c,have,F,cmdC);
+    return `<div class="res" style="cursor:default;flex-wrap:wrap"><span style="flex:1;min-width:0">${esc(c.name)} ${costHtml(c.cost)}${iss.length?` <button class="isb" onclick="this.closest('.res').querySelector('.isd').hidden^=1">⚠ ${esc(iss[0].title)}${iss.length>1?' +'+(iss.length-1):''}</button>`:''}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
+    <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)" ${n>=t&&t?'disabled':''}>+</button></span>${iss.length?`<div class="isd" hidden>${iss.map(x=>`<p><b>${esc(x.title)}.</b> ${esc(x.msg)}</p>`).join('')}<p class="mut">You can still add it — this is just so you know.</p></div>`:''}</div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
 function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
 function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef">${fmtOptions(dfmt(d.format)?d.format:'Casual')}</select>
   <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
@@ -659,7 +662,7 @@ function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.n
 const fxQuickAdd=()=>`<div class="sec" style="margin-top:22px"><h4>Add several cards at once</h4><div class="f"><textarea id="qadd" rows="3" placeholder="Sol Ring, Llanowar Elves, 4 Lightning Bolt">${esc(V.qadd||'')}</textarea></div>
   <p class="mut" style="font-size:12px;margin:6px 0">Type the card names with a comma between each one. Don’t use commas inside a card’s name — they are only for separating cards. Put a number in front for more than one copy (“4 Lightning Bolt”). You’ll see a preview before anything is added.</p><div class="row"><button class="pri" onclick="fxQuickGo()">Look up these cards</button></div></div>`;
 function fxQuickGo(){const txt=(document.getElementById('qadd').value||'').trim();if(!txt)return toast('Type one or more card names first');const items=fxParseList(txt.split(/[,\n]+/).map(x=>x.trim()).filter(Boolean).join('\n'));if(!items.length)return toast('I couldn’t find any card names in that');
-  V.qadd='';go('more');V.sub='import';fxImpStart(items,'collection')}
+  V.qadd='';IMP.qa=true;fxImpStart(items,'collection')}
 
 /* ---------- new source name: suggest similar existing sources as you type ---------- */
 function fxSrcSuggest(v){const el=document.getElementById('srcsug');if(!el)return;v=String(v||'').trim();const lv=v.toLowerCase();if(lv.length<2){el.innerHTML='';return}
@@ -685,3 +688,30 @@ function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!
   ${tbl(['','On this device','In the file'],[['Card titles',D.cards.length,j.cards.length],['Decks',D.decks.length,j.decks.length],['Last changed',when(D.updated),when(j.updated)]])}
   ${empty?'':same?(newer?'<p>The file is <b>newer</b> than this device. Updating replaces what is here with it.</p>':'<p style="color:#ff6b6b"><b>⚠ This device has newer changes than the file.</b> Updating would lose them. Usually you want to send from <i>this</i> device to the other one instead.</p>'):`<p style="color:#f39c12">This device has a <b>different collection</b> (${fxWho(D.owner,D.uid)}). Updating replaces it with the one in the file — back it up first if you want to keep it.</p>`}`;
   fxAsk(empty?'Your collection from another device':'Update this device?',body,[{t:empty?'Use it on this device':'Update this device',cls:same&&!newer?'danger':'pri',fn:()=>{if(D.cards.length&&!same&&!confirm('Replace the collection on this device? It cannot be undone unless you have a backup.'))return;delete j.xfer;fxRestore(j)}},{t:'Cancel'}])}
+
+/* ---------- deck rules: legality, copy limits, commander colors, deck size ---------- */
+const fxIdCols=c=>String(c&&c.colors||'').split(/[\/,\s]+/).map(x=>N2L[x]).filter(Boolean);
+function fxCardIssues(c,qty,F,cmdC){if(!F||!c)return [];const out=[],st=F.leg&&c.leg?c.leg[F.leg]:undefined,cap=copyCap(c,F);
+  if(F.leg&&c.leg&&st==='b')out.push({kind:'banned',title:`Banned in ${F.k}`,msg:`${c.name} is on the ${F.k} banned list, so a deck that includes it can’t be played in ${F.k} games or events.`});
+  else if(F.leg&&c.leg&&!st)out.push({kind:'notlegal',title:`Not legal in ${F.k}`,msg:`${c.name} isn’t part of the ${F.k} card pool${/Standard|Alchemy/.test(F.k)?' — it has rotated out, or was never in a set that is legal there':/Pauper/.test(F.k)?' — it has never been printed at common':F.k==='Pioneer'?' — it was only printed before Return to Ravnica (2012)':F.k==='Modern'?' — it was only printed before Eighth Edition (2003)':F.k==='Premodern'?' — it wasn’t printed between Fourth Edition and Scourge':''}.`});
+  if(qty>cap&&cap<999)out.push(st==='r'?{kind:'restricted',title:`Restricted in ${F.k}`,msg:`${c.name} is on the ${F.k} restricted list: a deck may include only 1 copy. This deck has ${qty}.`,cap}:{kind:'copies',title:`Too many copies (${qty})`,msg:`${F.single?F.k+' is a singleton format: only 1 copy of each card, except basic lands.':F.k+' allows up to '+cap+' copies of a card, except basic lands.'} This deck has ${qty}.`,cap});
+  if(F.cmd&&cmdC&&norm(c.name)!==norm(cmdC.name)){const cc=fxIdCols(cmdC);if(!okColor(c,cc))out.push({kind:'color',title:'Outside the commander’s colors',msg:`${F.k} decks may only use cards inside the ${F.cmdLabel.toLowerCase()}’s color identity (${cc.length?cc.map(x=>CLRN[x]).join(', '):'colorless'}). ${c.name} is ${c.colors||'a different color'}.`})}
+  return out}
+function deckIssues(i){const d=D.decks[i],F=d&&dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),ign=d.ok||[],out=[],cmdC=d.commander&&findCard(d.commander),
+  add=(card,x,fixes)=>{if(!ign.includes(x.kind+'|'+norm(card||'')))out.push(Object.assign({card,fixes},x))};
+  if(tot>F.n)add('',{kind:'size',title:`${tot} cards — ${F.k} decks hold ${F.n}`,msg:`${F.single?F.k+' decks must have exactly '+F.n+' cards.':'This app keeps '+F.k+' decks at '+F.n+' cards.'} This deck has ${tot-F.n} too many.`},[{t:'Open the card picker',a:'pick'}]);
+  if(F.cmd){if(!d.commander)add('',{kind:'nocmd',title:`No ${F.cmdLabel.toLowerCase()} chosen`,msg:`${F.k} decks are built around a ${F.cmdLabel.toLowerCase()} (${F.cmdRule}). Choose one so the color rules can be checked.`},[{t:'Choose one',a:'edit'}]);
+    else if(cmdC&&!cmdOK(cmdC,F))add(d.commander,{kind:'badcmd',title:`${cmdC.name} can’t be the ${F.cmdLabel.toLowerCase()}`,msg:`In ${F.k} the ${F.cmdLabel.toLowerCase()} must be ${F.cmdRule}. ${cmdC.name} is a ${cmdC.type}.`},[{t:'Choose another',a:'edit'}])}
+  L.forEach(e=>{const c=findCard(e.name);if(!c)return;fxCardIssues(c,e.qty,F,cmdC).forEach(x=>add(c.name,x,x.cap?[{t:`Reduce to ${x.cap}`,a:'cut',n:e.qty-x.cap}]:[{t:'Remove from deck',a:'cut',n:e.qty}]))});
+  return out}
+function fxIssueTag(d){const i=D.decks.indexOf(d),n=deckIssues(i).length;return n?`<br><span style="color:#f39c12;font-size:12px">⚠ ${fxPl(n,'rule issue')} for ${esc(d.format)}</span>`:''}
+function fxIssueBox(i){const L=deckIssues(i);if(!L.length)return '';const d=D.decks[i];
+  return `<div class="warn" style="display:flex;gap:10px;align-items:center"><span style="flex:1">⚠ <b>${fxPl(L.length,'rule issue')}</b> for ${esc(d.format)}: ${esc(L.slice(0,3).map(x=>x.title+(x.card&&!x.title.includes(x.card)?' ('+x.card+')':'')).join('; '))}${L.length>3?'…':''}</span><button onclick="fxIssues(${i})">Inspect</button></div>`}
+function fxIssues(i){const d=D.decks[i],L=deckIssues(i);window.FXISS=L;if(!L.length){closeM();return toast('No rule issues left')}
+  openM(`<h3>⚠ ${esc(d.name)} — ${esc(d.format)} rules</h3><p class="mut">The deck can still be used as it is. Removing cards here is staged like any other edit: tap <b>Save changes</b> afterwards.</p>
+  ${L.map((x,k)=>`<div class="sec"><b>${esc(x.title)}</b>${x.card&&!x.title.includes(x.card)?` — ${cl(x.card)}`:''}<p style="margin:6px 0">${esc(x.msg)}</p><div class="row" style="margin:0">${x.fixes.map((f,j)=>`<button class="pri" style="padding:7px 12px" onclick="fxFix(${i},${k},${j})">${esc(f.t)}</button>`).join('')}<button style="padding:7px 12px" onclick="fxFix(${i},${k},-1)">Ignore this</button></div></div>`).join('')}
+  <div class="row"><button onclick="fxDeckEdit(${i})">Change deck type…</button><button class="pri" onclick="closeM()">Done</button></div>`)}
+function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
+  if(j<0){d.ok=d.ok||[];d.ok.push(x.kind+'|'+norm(x.card||''));save();render();return fxIssues(i)}
+  const f=x.fixes[j];if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
+  if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}

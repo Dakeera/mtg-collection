@@ -83,6 +83,7 @@ body.ro .bar{top:calc(var(--st) + 50px)}
 .pbar{height:12px;background:var(--card2);border-radius:8px;overflow:hidden;margin:8px 0}.pbar i{display:block;height:100%;background:var(--ac);transition:width .2s}
 details.g{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}details.g summary{cursor:pointer;font-weight:600}
 .fmt dt{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:10px}.fmt dd{margin:2px 0 0}
+.isb{padding:2px 8px;font-size:11px;background:#5a3a10;border:1px solid #f39c12;color:#ffd08a;border-radius:8px;margin-left:4px}.isd{flex-basis:100%;font-size:13px;background:#2a2033;border-radius:8px;padding:4px 10px;margin-top:6px}.isd p{margin:6px 0}
 #stcover{position:fixed;top:0;left:0;right:0;height:var(--st);background:var(--bg);z-index:25;pointer-events:none}
 .sym{height:1.15em;width:1.15em;vertical-align:-.22em;margin:0 1px}
 .zflip{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);padding:12px 22px;background:#000c;border:1px solid #fff5}
@@ -190,6 +191,7 @@ function render(){
   if(!RO&&fxWelcome())return;
   $('#nav').innerHTML=(RO?NAV.slice(0,2):NAV).map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
   ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
+  if(V.view==='add'&&!RO&&IMP.qa&&IMP.stage!=='idle'){$('#main').innerHTML=`<button onclick="fxImpCancel()">← Back to Add card</button>`+fxImportView();return}
   if(V.view==='add'&&A.step==='start'&&!RO)$('#main').insertAdjacentHTML('beforeend',fxQuickAdd());
   if(RO){$('#main').insertAdjacentHTML('afterbegin',roBar());return}
   const due=backupDue();if(due&&!(V.view==='more'&&V.sub==='backup'))$('#main').insertAdjacentHTML('afterbegin',`<div class="warn">💾 ${esc(due)} <button style="margin-left:8px;padding:6px 10px" onclick="go('more');V.sub='backup';render()">Back up now</button></div>`);
@@ -362,14 +364,14 @@ function chg(name,dl){fxDraftChg(V.deck,name,dl)}
 function vDecks(m){
   if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
   m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" data-rw onclick="newDeck()">＋ Build a new deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
-    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
+    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
 }
 function vDeck(m,i){
   const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(dl),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
   const mx=Math.max(1,...cv);
   m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${fxDeckValue(d)}${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
-  ${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
+  ${fxIssueBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
   <div class="row" data-rw><button class="pri" onclick="fxBuilder(true)">＋ Add cards</button><button onclick="fxDeckEdit(${i})">✎ Edit details</button><button onclick="fxShareDeck(${i})">📤 Share deck</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxRoDeckBtns(i)}${fxDraftNote(i)}
@@ -396,7 +398,8 @@ function mkDeck(){
   const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=NSV,s=D.sleeves.find(x=>x.color===col);
   D.decks.push({name,format:f,sleeve:col,commander:$('#nc').value.trim(),info:'',cards:[],tokens:[]});
   if(s){s.deck=sleeveLabel(name,f);s.inUse=Math.min(s.total,fmtSize(f)||60)}
-  save();closeM();V.deck=D.decks.length-1;render();fxBuilder(true);
+  save();closeM();if(V.view!=='decks')go('decks');V.deck=D.decks.length-1;render();scrollTo(0,0);
+  const cm=D.decks[V.deck].commander&&findCard(D.decks[V.deck].commander);if(cm&&isCmdFmt(f))fxDraftChg(V.deck,cm.name,1);fxBuilder(true);
 }
 function delDeck(i){const d=D.decks[i];if(!confirm(`Delete ${d.name}? Cards stay in your collection and its sleeves return to the available pool.`))return;
   const s=sleeveOf(d);if(s){s.deck='';s.inUse=0}D.decks.splice(i,1);V.deck=null;DRAFT=null;save();render()}
@@ -637,7 +640,7 @@ const okColor=(c,cols)=>String(c.colors||'').split(/[\/,\s]+/).filter(Boolean).e
 function aiAvail(c,al){return freeCopies(c)+(c.type==='Basic Land'?0:sum(al,n=>takeable(c,n)))}
 function vAI(m){
   const F=dfmt(G.fmt);
-  m.innerHTML=`<h2>✨ Deck Generator</h2><p class="mut">Prefer to pick the cards yourself? <button style="padding:4px 10px" onclick="go('decks');newDeck()">＋ Build a deck by hand</button></p><p class="mut">Describe a deck and an AI drafts it from your collection. You review the list before anything is created. This app never stores logins or keys.</p>
+  m.innerHTML=`<h2>✨ Deck Generator</h2><p class="mut">Prefer to pick the cards yourself? <button style="padding:4px 10px" onclick="newDeck()">＋ Build a deck by hand</button></p><p class="mut">Describe a deck and an AI drafts it from your collection. You review the list before anything is created. This app never stores logins or keys.</p>
   <div class="f"><label>Deck type <span style="color:#ff6b6b">*</span></label><select id="gfmt" onchange="aiFmt(this.value)" style="${F?'':'border-color:#f39c12'}">${fmtOptions(G.fmt,true)}</select>
   ${F?`<p class="mut" style="margin:4px 0 0">${esc(fmtRuleText(F))}${F.note?' '+esc(F.note):''}</p>`:'<p class="mut" style="margin:4px 0 0;color:#f39c12">Choose a deck type to start.</p>'}
   ${F&&F.leg?`<p class="mut">Only cards that are legal in ${esc(F.k)} are used. ${(()=>{const u=D.cards.filter(c=>isReal(c)&&!c.leg).length;return u?`${u} card${u>1?'s':''} still need legality data — it loads before building.`:''})()}</p>`:''}
