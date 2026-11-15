@@ -36,7 +36,7 @@ const fxPl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 function fxMigrate(){if(!D)return;D.matchups=D.matchups||[];D.sims=D.sims||[];D.swaps=D.swaps||[];D.sleeves=D.sleeves||[];
   // Matchup log: only matchups that have actually been run are listed (drops old "Template / Pending" rows).
   D.matchups.forEach(s=>{if(/MASTER MATCHUP/i.test(s.title||'')&&s.rows)s.rows=s.rows.filter((r,i)=>i===0||!(/template|pending/i.test(String(r[r.length-1]))||String(r[5]).trim()==='-'))})}
-function fxBack(){if(CAM){CAM.close();return true}if(IMP.stage==='pick'&&IMP.qa&&V.view==='add'&&!$('#modal').classList.contains('open')){fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
+function fxBack(){if(CAM){CAM.close();return true}const qf=$('#qafull');if(qf){qf.remove();return true}if(IMP.stage==='pick'&&IMP.qa&&V.view==='add'&&!$('#modal').classList.contains('open')){fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
 async function fxDownload(text,name,type){const blob=new Blob([text],{type:type||'text/plain'});
   if(isNative()){try{const r=await nativeSave(blob,name,false);return toast(r.where?'Saved to '+r.where:'File shared')}catch(e){return toast('Could not save the file: '+String(e&&e.message||e).slice(0,80))}}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();toast('Saved to Downloads')}
@@ -1045,15 +1045,31 @@ function fxQAPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i]
     <div class="row" style="margin-top:10px"><button onclick="fxQAScan()">📷 Scan this card</button></div>`+nav;
   const c=x.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f);if(!fins.includes(x.fin))x.fin=fins[0];if(!x.prints&&!x.loading)fxQALoad(i);
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'',list=x.prints||[c];
-  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}<p class="mut" style="margin:0 0 8px">Tap the artwork that matches your card.</p>
+  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}<p class="mut" style="margin:0 0 8px">Tap any artwork to see it full screen, then swipe through them and pick the one that matches your card.</p>
   <div class="qabar"><b class="qanm">${esc(c.name)}</b><label style="margin:0">Copies</label><input type="number" min="1" value="${x.qty}" style="width:80px" onchange="IMP.items[${i}].qty=Math.max(1,parseInt(this.value)||1)">
   ${fins.length>1?`<span class="chips" style="margin:0">${fins.map(f=>`<button class="${x.fin===f?'on':''}" onclick="IMP.items[${i}].fin='${f}';render()">${f}</button>`).join('')}</span>`:`<span class="mut">${esc(fins[0])}</span>`}</div>
-  <div class="grid">${list.map((p,k)=>`<div class="tile" onclick="fxQAPrint(${i},${k})" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
+  <div class="grid">${list.map((p,k)=>`<div class="tile" onclick="fxQAView(${i},${k})" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
   ${x.loading?'<p class="mut">Loading all printings…</p>':''}`+nav}
 async function fxQALoad(i){const x=IMP.items[i];if(!x||!x.card||x.prints||x.loading)return;x.loading=true;const all=[];let url=x.card.prints_search_uri,pages=0;
   try{while(url&&pages<4){const p=await scry(url);if(!p||!p.data)break;all.push(...p.data);pages++;url=p.has_more?p.next_page:null}}catch(e){}
   x.loading=false;x.prints=all.length?all:[x.card];if(!x.prints.some(p=>p.id===x.card.id))x.prints.unshift(x.card);if(IMP.stage==='pick'&&IMP.pi===i&&V.view==='add')render()}
 function fxQAPrint(i,k){const x=IMP.items[i];const p=(x.prints||[])[k];if(!p)return;x.card=p;render()}
+/* Full-screen artwork viewer for the add-several picker: swipe or use ‹ › to browse every printing, flip double-faced cards, “Use this one” picks it. */
+function fxQAView(i,k){const x=IMP.items[i],list=x.prints||[x.card];if(!list[k])return;let face=0;$('#qafull')?.remove();const d=document.createElement('div');d.id='qafull';
+  const big=(p,f)=>{const cf=p.card_faces;if(cf&&cf[f]&&cf[f].image_uris)return cf[f].image_uris.large||cf[f].image_uris.normal||'';return p.image_uris?.large||p.image_uris?.normal||cf?.[0]?.image_uris?.large||cf?.[0]?.image_uris?.normal||''};
+  const draw=()=>{const p=list[k],sel=x.card&&p.id===x.card.id,two=!!(p.card_faces&&p.card_faces[1]&&p.card_faces[1].image_uris);
+    d.innerHTML=`<div class="qft"><span>${k+1} of ${list.length}</span>${sel?'<b class="qfsel">✓ Selected</b>':''}<button class="qfx" aria-label="Close">✕</button></div>
+    <div class="im"><button class="qfa ql" ${k?'':'disabled'} aria-label="Previous">‹</button><img src="${esc(big(p,face))}" alt=""><button class="qfa qr" ${k+1<list.length?'':'disabled'} aria-label="Next">›</button></div>
+    <div class="qfc"><b>${esc(p.set_name)}</b> · ${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''} ${fxFinLabel(p)}</div>
+    <div class="bt">${two?'<button class="qff">↻ Flip</button>':''}<button class="qfb">Back to list</button><button class="pri qfu">${sel?'Keep this one':'Use this one'}</button></div>`;
+    d.querySelector('.qfx').onclick=d.querySelector('.qfb').onclick=()=>d.remove();
+    d.querySelector('.ql').onclick=()=>go(-1);d.querySelector('.qr').onclick=()=>go(1);
+    if(two)d.querySelector('.qff').onclick=()=>{face=face?0:1;draw()};
+    d.querySelector('.qfu').onclick=()=>{d.remove();fxQAPrint(i,k)}};
+  const go=s=>{const n=k+s;if(n<0||n>=list.length)return;k=n;face=0;draw()};
+  let sx=null,sy=0;d.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+  d.addEventListener('touchend',e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3)go(dx<0?1:-1)},{passive:true});
+  draw();document.body.appendChild(d)}
 function fxQANext(){const x=IMP.items[IMP.pi];if(!x.card&&!x.skip)return;if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else{IMP.stage='preview';IMP.items.forEach(y=>{if(y.skip){y.card0=y.card0||y.card;y.card=null}});render();scrollTo(0,0)}}
 function fxQAPrev(){if(IMP.pi>0){IMP.pi--;render();scrollTo(0,0)}else fxImpCancel()}
 function fxQASkip(){const x=IMP.items[IMP.pi];x.skip=!x.skip;if(!x.skip&&x.card0&&!x.card)x.card=x.card0;render()}
