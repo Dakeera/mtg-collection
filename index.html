@@ -24,7 +24,7 @@ input[type=search],.bar input{flex:2;min-width:160px}select{flex:1}textarea{widt
 input:not([type=checkbox]),select{max-width:100%}.f input,.f select{width:100%}
 button,.btn{cursor:pointer;display:inline-block;text-align:center}.pri{background:var(--ac);border-color:var(--ac);font-weight:600}.danger{color:var(--bad)}.big{width:100%;padding:18px;font-size:17px;margin:8px 0}
 #nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0e0c13;border-top:1px solid #2a2438;padding-bottom:env(safe-area-inset-bottom);z-index:20}
-#nav button{flex:1;border:0;border-radius:0;background:none;color:var(--mut);padding:10px 4px;font-size:12px}#nav button span{display:block;font-size:20px}#nav .on{color:var(--gold)}
+#nav button{flex:1;border:0;border-radius:0;background:none;color:var(--mut);padding:10px 4px;font-size:12px}#nav button span{display:block;font-size:20px;height:26px;line-height:26px}#nav button span img{width:26px;height:26px;display:block;margin:0 auto;object-fit:contain}#nav .on{color:var(--gold)}
 .modal{position:fixed;inset:0;background:#000b;display:none;z-index:30;overflow:auto}.modal.open{display:block}
 .sheet{background:var(--bg);max-width:900px;margin:calc(20px + var(--st)) auto 20px;border-radius:14px;padding:16px;min-height:100px;position:relative}.x{position:absolute;right:10px;top:10px}
 .cd{display:grid;grid-template-columns:minmax(200px,420px) 1fr;gap:16px}.cd img,.cmp img{width:100%;border-radius:12px}@media(max-width:520px){.cd{grid-template-columns:1fr}}
@@ -194,11 +194,11 @@ function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
   const g=(code,neg)=>FMTS.filter(([k])=>neg?!L[k]:L[k]===code).map(([,n])=>n),b=g('b'),r=g('r'),l=g('l'),n=g(null,true),row=(t,a,col)=>a.length?`<div class="kv"><span>${t}</span><b style="${col?'color:'+col:''}">${esc(a.join(', '))}</b></div>`:'';
   return `<div class="sec"><h4>Format legality</h4>${b.length||r.length?'':'<div style="margin-bottom:6px">Not banned or restricted in any format.</div>'}${row('Banned in',b,'#ff6b6b')}${row('Restricted to 1 copy in',r,'#f39c12')}${row('Legal in',l)}${row('Not legal in',n,'var(--mut)')}<p class="mut" style="margin:8px 0 0;font-size:12px">From Scryfall, which follows Wizards’ official lists. Checked ${esc(c.legAt||'')}.</p></div>`}
 /* ---------- shell ---------- */
-const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','✨','Deck Generator'],['more','⚙️','More']];
+const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','icons/nav-generate.png','Deck Generator'],['more','⚙️','More']];
 function render(){
   document.body.classList.toggle('ro',!!RO);
   if(!RO&&fxWelcome())return;
-  $('#nav').innerHTML=(RO?NAV.slice(0,2):NAV).map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
+  $('#nav').innerHTML=(RO?NAV.slice(0,2):NAV).map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${/^icons\//.test(i)?`<img src="${i}" alt="">`:i}</span>${l}</button>`).join('');
   ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
   if(V.view==='add'&&!RO&&IMP.qa&&IMP.stage!=='idle'){$('#main').innerHTML=`<button onclick="fxImpCancel()">← Back to Add card</button>`+fxImportView();return}
   if(V.view==='add'&&A.step==='start'&&!RO)$('#main').insertAdjacentHTML('beforeend',fxQuickAdd());
