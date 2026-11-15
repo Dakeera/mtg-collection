@@ -2,6 +2,32 @@
    Loaded before the main script in index.html. Nothing here runs at load time except declarations;
    every function uses the main script's globals (D, V, render, …) only when it is called. */
 let RO=null,MINE=null,DRAFT=null,CAM=null,OC=null;
+/* Deck formats you build a deck for (constructed). Draft, Sealed, Cube, Jumpstart and Two-Headed Giant are left out:
+   their decks come from opening packs or another format's rules, so they can't be generated from a collection. */
+const DFMT=[
+ {k:'Casual',g:'House rules',n:60,max:4,leg:'',note:'Your own format: put 60 cards together and go nuts!'},
+ {k:'Standard',g:'Official formats',n:60,max:4,leg:'standard'},{k:'Pioneer',g:'Official formats',n:60,max:4,leg:'pioneer'},{k:'Modern',g:'Official formats',n:60,max:4,leg:'modern'},
+ {k:'Legacy',g:'Official formats',n:60,max:4,leg:'legacy'},{k:'Vintage',g:'Official formats',n:60,max:4,leg:'vintage',prompt:'Cards on the Vintage restricted list may appear only once.'},
+ {k:'Pauper',g:'Official formats',n:60,max:4,leg:'pauper',prompt:'Only cards that have been printed at common rarity are legal.'},
+ {k:'Commander',g:'Official formats',n:100,single:1,leg:'commander',cmd:'cr',life:40,cmdLabel:'Commander',cmdRule:'a legendary creature, or a card that says it can be your commander',prompt:'The commander counts toward the 100. Every card must fit inside the commander’s color identity.'},
+ {k:'Brawl',g:'Official formats',n:100,single:1,leg:'brawl',cmd:'crpw',life:25,cmdLabel:'Commander',cmdRule:'a legendary creature or a planeswalker',prompt:'The commander counts toward the 100 and sets the color identity.'},
+ {k:'Standard Brawl',g:'Official formats',n:60,single:1,leg:'standardbrawl',cmd:'crpw',life:25,cmdLabel:'Commander',cmdRule:'a legendary creature or a planeswalker',prompt:'Only Standard-legal cards. The commander counts toward the 60 and sets the color identity.'},
+ {k:'Historic',g:'Official MTG Arena formats',n:60,max:4,leg:'historic'},{k:'Timeless',g:'Official MTG Arena formats',n:60,max:4,leg:'timeless',prompt:'Cards on the Timeless restricted list may appear only once.'},
+ {k:'Alchemy',g:'Official MTG Arena formats',n:60,max:4,leg:'alchemy',note:'Wizards is retiring Alchemy from MTG Arena on February 2, 2027.'},
+ {k:'Oathbreaker',g:'Community formats',n:60,single:1,leg:'oathbreaker',cmd:'pw',life:20,cmdLabel:'Oathbreaker',cmdRule:'a planeswalker',prompt:'The 60 cards are: 1 planeswalker (the Oathbreaker), 1 signature spell (an instant or sorcery inside the Oathbreaker’s color identity) and 58 other cards. Every card must fit the Oathbreaker’s color identity.'},
+ {k:'Pauper Commander',g:'Community formats',n:100,single:1,leg:'paupercommander',cmd:'unc',life:30,cmdLabel:'Commander',cmdRule:'a creature that has been printed at uncommon',prompt:'The other 99 cards must have been printed at common. The commander sets the color identity.'},
+ {k:'Duel Commander',g:'Community formats',n:100,single:1,leg:'duel',cmd:'cr',life:20,cmdLabel:'Commander',cmdRule:'a legendary creature',prompt:'1 v 1 Commander with its own banned list. The commander counts toward the 100 and sets the color identity.'},
+ {k:'Premodern',g:'Community formats',n:60,max:4,leg:'premodern',prompt:'Only cards from Fourth Edition through Scourge are legal.'}];
+const dfmt=k=>DFMT.find(x=>x.k===k)||null,fmtSize=k=>(dfmt(k)||{}).n||0,isCmdFmt=k=>!!(dfmt(k)||{}).cmd;
+const sleeveLabel=(name,f)=>`${name} (${f||'Casual'} - ${fmtSize(f)||60} Cards)`;
+function fmtRuleText(F){return F.single?`Exactly ${F.n} cards${F.cmd?', including your '+F.cmdLabel.toLowerCase()+' ('+F.cmdRule+')':''}. Only 1 copy of each card, except basic lands.`:`${F.k==='Casual'?'60':'At least '+F.n} cards (this app builds exactly ${F.n}). Up to ${F.max} copies of any card, except basic lands.`}
+function fmtOptions(sel,req){const gs=[...new Set(DFMT.map(f=>f.g))];return (req?`<option value="" ${sel?'':'selected'} disabled>Choose your deck type…</option>`:'')+gs.map(g=>`<optgroup label="${g}">${DFMT.filter(f=>f.g===g).map(f=>`<option value="${f.k}" ${f.k===sel?'selected':''}>${f.k} · ${f.n} cards</option>`).join('')}</optgroup>`).join('')}
+const copyCap=(c,F)=>c.type==='Basic Land'||/a deck can have any number of cards named/i.test(c.text||'')?999:F.single||(F.k==='Vintage'||F.k==='Timeless')&&c.leg&&c.leg[F.leg]==='r'?1:F.max||4;
+function cmdOK(c,F){const t=(c.type||'')+' '+(c.subtype||'');
+  if(F.cmd==='pw')return /planeswalker/i.test(t);if(F.cmd==='unc')return /creature/i.test(t);
+  if(/can be your commander/i.test(c.text||''))return true;return /legendary/i.test(t)&&(/creature/i.test(t)||(F.cmd==='crpw'&&/planeswalker/i.test(t)))}
+function aiFmt(v){const F=dfmt(v);G.fmt=v;G.legal=F?F.leg:'';G.res=null;if(F&&!F.cmd)G.cmd='';render();if(G.legal)ensureLegal().then(()=>render())}
+function aiNeedFmt(){if(dfmt(G.fmt))return true;toast('Choose your deck type first');const s=document.getElementById('gfmt');if(s){s.scrollIntoView({block:'center'});s.focus()}return false}
 
 /* ---------- small helpers ---------- */
 const fxSlug=n=>{n=String(n||'').trim().replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'');return n?n+'-':''};
@@ -243,7 +269,7 @@ function fxImpCommit(){
   if(!confirm(`Create the deck “${name}” with ${fxPl(sum(cards),'card')}?${IMP.dadd?'\n\nCards you don’t own will also be added to your collection.':''}`))return;
   if(IMP.dadd){const need={};it.forEach(x=>{if(!x.own&&x.card){const k=x.card.id;need[k]=need[k]||{c:x.card,q:0};need[k].q+=x.qty}});Object.values(need).forEach(v=>{fxAddCard(v.c,v.q,'Normal','Deck import: '+name,'','Imported with the deck '+name);added+=v.q});saveArt()}
   const cm=it.find(x=>x.section==='commander'&&(x.own||x.card));
-  D.decks.push({name,format:IMP.dfmt,sleeve:'',commander:IMP.dfmt==='Commander'?(cm?cm.name:cards[0].name):'',info:'Imported deck list',cards,tokens:[]});
+  D.decks.push({name,format:IMP.dfmt,sleeve:'',commander:isCmdFmt(IMP.dfmt)?(cm?cm.name:cards[0].name):'',info:'Imported deck list',cards,tokens:[]});
   save();IMP.stage='idle';IMP.items=null;IMP.dtext='';IMP.dname='';go('decks');V.deck=D.decks.length-1;render();scrollTo(0,0);toast(`Deck created${added?` — ${fxPl(added,'card')} added to your collection`:''}`);fetchArt()}
 function fxTemplate(){fxDownload('Name,Quantity,Set code,Collector number,Finish,Source,Price,Notes\r\nLightning Bolt,4,m11,146,Normal,Singles Orders,,\r\nSol Ring,1,c21,263,Foil,Trade,2.50,From Sam\r\nLlanowar Elves,2,,,,,,Only the name is required\r\n','mtg-import-template.csv','text/csv')}
 function fxGuide(){fxDownload(`MtG DeckMaster — bulk import guide
@@ -291,7 +317,7 @@ function fxImportView(){
   <details class="g"><summary>🌐 Import from another website or app</summary><p class="mut">These let you build a collection (several by scanning with your camera) and export it as a CSV file. Export there, then use “Choose a file” above — the columns are recognised automatically.</p><ul style="padding-left:18px;margin:6px 0">
   ${site('Moxfield','https://moxfield.com','collection and decks; export the collection as CSV')}${site('Archidekt','https://archidekt.com','collection and decks; CSV export')}${site('ManaBox','https://manabox.app','phone app with a fast card scanner; Collection → top-right menu → export CSV')}${site('Deckbox','https://deckbox.org','inventory export as CSV')}${site('MTGGoldfish','https://www.mtggoldfish.com','collection export as CSV')}</ul><p class="mut" style="font-size:12px">Other scanner apps (Delver Lens, Dragon Shield, TCGplayer) also export CSV files with a card-name column, which is all this import needs. Their menus change over time, so look for “Export” or “Download CSV”.</p></details>
   <h3>Import a deck list</h3><p class="mut">Paste a deck exported as text from Moxfield, Archidekt, MTG Arena or most deck sites (lines like “1 Sol Ring”). A line that says “Commander” before a card marks the commander; sideboard and maybeboard sections are skipped.</p>
-  <div class="f"><label>Deck name</label><input value="${esc(IMP.dname)}" oninput="IMP.dname=this.value"><label>Format</label><select onchange="IMP.dfmt=this.value"><option ${IMP.dfmt==='Casual'?'selected':''}>Casual</option><option ${IMP.dfmt==='Commander'?'selected':''}>Commander</option></select>
+  <div class="f"><label>Deck name</label><input value="${esc(IMP.dname)}" oninput="IMP.dname=this.value"><label>Format</label><select onchange="IMP.dfmt=this.value">${fmtOptions(IMP.dfmt)}</select>
   <label>Deck list</label><textarea rows="5" placeholder="Commander&#10;1 Atraxa, Praetors’ Voice&#10;&#10;Deck&#10;1 Sol Ring&#10;10 Forest" oninput="IMP.dtext=this.value">${esc(IMP.dtext)}</textarea>
   <label><input type="checkbox" ${IMP.dadd?'checked':''} onchange="IMP.dadd=this.checked">Also add cards I don’t own to my collection</label></div><div class="row"><button onclick="fxImpDeck()">Read deck list</button></div>
   <h3>Export</h3><p class="mut">Save your collection as a CSV file that other sites, or a friend using this app, can import.</p><div class="row"><button onclick="fxExportCSV()">⬇ Export my collection as CSV</button></div>`}
@@ -324,7 +350,7 @@ function simCard(c,name){
   o.k=/planeswalker/i.test(ty)?'pw':'spell';return o}
 function simDeck(deck,cards,label){const idx=new Map(cards.map(c=>[norm(front(c.name)),c])),lib=[],unk=new Set();let cmdr=null;const cn=deck.commander?norm(front(deck.commander)):'';
   deck.cards.forEach(e=>{const c=idx.get(norm(front(e.name)));for(let i=0;i<e.qty;i++){const s=simCard(c,e.name);if(s.unk)unk.add(e.name);if(cn&&norm(front(e.name))===cn&&!cmdr&&s.k!=='land'){cmdr=s;continue}lib.push(s)}});
-  return {name:label||deck.name,lib,cmdr,unk:[...unk],n:lib.length+(cmdr?1:0),cmdFmt:deck.format==='Commander',list:deck.cards.map(e=>`${e.qty} ${e.name}`).join('\n'),commander:deck.commander||''}}
+  return {fmt:deck.format||'',name:label||deck.name,lib,cmdr,unk:[...unk],n:lib.length+(cmdr?1:0),cmdFmt:isCmdFmt(deck.format),life:(dfmt(deck.format)||{}).life||20,list:deck.cards.map(e=>`${e.qty} ${e.name}`).join('\n'),commander:deck.commander||''}}
 const simShuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const simDraw=(p,n)=>{while(n-->0&&p.lib.length)p.hand.push(p.lib.pop())};
 const simP=x=>x.p+x.o.anth[0],simT=x=>x.t+x.o.anth[1];
@@ -396,7 +422,7 @@ function simGame(A,B,first,life){
     simCombat(me,op);if(op.life<=0)return {w:t,turns:rnd};if(me.life<=0)return {w:1-t,turns:rnd};
     t=1-t}
   return {w:-1,turns:60}}
-async function simRun(A,B,n,onProg){const life=A.cmdFmt&&B.cmdFmt?40:20,r={n,aw:0,bw:0,dr:0,turns:0,ap:[0,0],ad:[0,0]};
+async function simRun(A,B,n,onProg){const life=A.life===B.life?A.life:20,r={n,aw:0,bw:0,dr:0,turns:0,ap:[0,0],ad:[0,0]};
   for(let g=0;g<n;g++){const first=g%2,res=simGame(A,B,first,life),k=first===0?r.ap:r.ad;k[1]++;
     if(res.w===0){r.aw++;k[0]++}else if(res.w===1)r.bw++;else r.dr++;r.turns+=res.turns;
     if(g%50===49){onProg&&onProg(g+1,n);await new Promise(x=>setTimeout(x,0))}}
@@ -430,7 +456,7 @@ async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||10
   out.innerHTML=`<p class="mut" id="simt">Playing games…</p><div class="pbar"><i id="simb" style="width:2%"></i></div>`;
   const r=await simRun(A,B,n,(d,t)=>{const b=document.getElementById('simb'),x=document.getElementById('simt');if(b)b.style.width=Math.round(d/t*100)+'%';if(x)x.textContent=`Playing games… ${d} of ${t}`});
   const ms=simMaster(),num=Math.max(0,...ms.rows.slice(1).map(x=>parseInt(String(x[0]).replace(/\D/g,''))||0))+1,id='MATCH-'+String(num).padStart(3,'0'),pct=v=>(Math.round(v/n*1000)/10).toFixed(1);
-  const fmt=A.cmdFmt&&B.cmdFmt?'Commander (100 Cards)':!A.cmdFmt&&!B.cmdFmt?'Casual Constructed (60 Cards)':'Mixed formats';
+  const fmt=A.fmt&&A.fmt===B.fmt?`${A.fmt} (${fmtSize(A.fmt)} Cards)`:'Mixed formats';
   ms.rows.push([id,today(),A.name,B.name,fmt,String(n),`${r.aw} (${pct(r.aw)}%)`,`${r.bw} (${pct(r.bw)}%)`,`${r.avg} Turns`,'Simulated in app']);
   D.sims.push({id,date:today(),a:A.name,b:B.name,fmt,n,aw:r.aw,bw:r.bw,dr:r.dr,avg:r.avg,ap:r.ap,ad:r.ad,unkA:A.unk,unkB:B.unk,la:A.list,lb:B.list,ca:A.commander,cb:B.commander,ao:A.owner,bo:B.owner,ad:A.deck,bd:B.deck,note:''});
   V.simOpen=id;save();render();toast(`${A.name} ${pct(r.aw)}% — ${B.name} ${pct(r.bw)}%`)}
@@ -618,7 +644,7 @@ function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
     return `<div class="res" style="cursor:default"><span>${esc(c.name)} ${costHtml(c.cost)}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
     <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span></div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
 function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
-function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef"><option ${d.format==='Casual'?'selected':''}>Casual</option><option ${d.format==='Commander'?'selected':''}>Commander</option></select>
+function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef">${fmtOptions(dfmt(d.format)?d.format:'Casual')}</select>
   <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
   <label>Sleeves <span id="sl" class="mut"></span></label><label style="margin:2px 0 4px;font-weight:400"><input type="checkbox" id="nsa" onchange="NSA=this.checked;sleeveOpts(window.FXCUR)">Auto-select from available sleeves</label><div class="swr" id="ns"></div></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`);
   const cur=sleeveOf(d);window.FXCUR=cur?cur.color:'';NSA=false;NSV=window.FXCUR;$('#ef').onchange=()=>sleeveOpts(window.FXCUR);sleeveOpts(window.FXCUR)}
@@ -626,7 +652,7 @@ function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.n
   const s=sleeveOf(d);d.name=name;d.format=$('#ef').value;d.commander=$('#ec').value.trim();
   if(name!==old){D.loans.forEach(l=>{if(l.from===old)l.from=name;if(l.to===old)l.to=name});D.swaps.forEach(w=>{if(w.deck===old)w.deck=name;if(w.row&&w.row[1]===old)w.row[1]=name})}
   const ns=D.sleeves.find(x=>x.color===NSV);if(s&&s!==ns){s.deck='';s.inUse=0}d.sleeve=ns?ns.color:'';
-  if(ns){const need=d.format==='Commander'?100:60;ns.deck=`${name} (${d.format==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;ns.inUse=Math.min(need,ns.total)}
+  if(ns){ns.deck=sleeveLabel(name,d.format);ns.inUse=Math.min(fmtSize(d.format)||60,ns.total)}
   save();closeM();render();toast('Deck details saved')}
 
 /* ---------- Add card tab: type several card names at once ---------- */
