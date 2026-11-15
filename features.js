@@ -467,6 +467,7 @@ function simPick(v){const p=String(v).split(':');if(p[0]==='m'){const d=D.decks[
 const simName=(s,k)=>{const o=s[k+'o'],r=o&&o!==D.uid&&(OC||[]).find(x=>x.uid===o&&!x.sep);return r&&s[k+'d']?`${s[k+'d']} (${r.name})`:s[k]};
 async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||1000,out=document.getElementById('simout');if(!A||!B)return toast('Pick two decks first');
   if(V.simA===V.simB&&!confirm('Both sides are the same deck (a mirror match). Run it anyway?'))return;
+  if(V.simA!==V.simB&&!confirm(`Run ${n} games of ${A.name} vs ${B.name}?\n\nThe result is added to the Simulation log.`))return;
   for(const d of [A,B])if(d.n<20)return toast(`${d.name} has only ${d.n} cards — add more before simulating`);
   out.innerHTML=`<p class="mut" id="simt">Playing games…</p><div class="pbar"><i id="simb" style="width:2%"></i></div>`;
   const r=await simRun(A,B,n,(d,t)=>{const b=document.getElementById('simb'),x=document.getElementById('simt');if(b)b.style.width=Math.round(d/t*100)+'%';if(x)x.textContent=`Playing games… ${d} of ${t}`});
@@ -489,7 +490,7 @@ DECK B — ${s.b}${s.cb?' (commander: '+s.cb+')':''}:
 ${s.lb||'(list not saved)'}`}
 const simGet=id=>(D.sims||[]).find(s=>s.id===id);
 function fxSimCopy(id){const s=simGet(id);if(!s)return;navigator.clipboard.writeText(fxSimPrompt(s)).then(()=>toast('Prompt copied — paste it into your AI app, then paste its answer back here'),()=>toast('Could not copy'))}
-function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
+function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;if(!confirm('Save this note on the matchup?'))return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
 // One place that talks to the AI providers. Times out (default 3 min) and can be cancelled; gives a clear message for every failure.
 async function fxCallAI(p,o){o=o||{};const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the Deck Generator tab first (Option B).');
   const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),o.timeout||180000);if(o.signal)o.signal.addEventListener('abort',()=>ctl.abort());let r,j,txt='';
@@ -502,7 +503,7 @@ async function fxCallAI(p,o){o=o||{};const key=AIKEY.trim(),model=G.model.trim()
   clearTimeout(to);
   if(!r.ok){const m=j&&j.error&&(j.error.message||j.error.type)||('error '+r.status);throw new Error(`${FXPN[G.prov]||'The provider'} said: ${m}${r.status===404||/model/i.test(m)?' — tap “My models” to pick a model your key can use.':r.status===401||r.status===403?' — check the API key.':r.status===429?' — you’ve hit a usage or rate limit; wait a minute or check your plan.':''}`)}
   if(!txt)throw new Error('The AI sent back an empty reply'+(j.candidates?.[0]?.finishReason?` (${j.candidates[0].finishReason})`:j.stop_reason?` (${j.stop_reason})`:'')+'. Try again or pick another model.');return txt}
-async function fxSimAsk(id){const s=simGet(id);if(!s)return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
+async function fxSimAsk(id){const s=simGet(id);if(!s)return;if(!confirm(s.note?'Ask the AI to explain this matchup?\n\nIts answer replaces the current note.':'Ask the AI to explain this matchup?\n\nIts answer is saved as the note.'))return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
 
 /* ---------- card prices (Scryfall, USD) and collection sorting ---------- */
 const fxMoney=v=>'$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -555,7 +556,7 @@ function fxWelcome(){if(D.uid||D.cards.length||D.decks.length||V.noWelcome)retur
   <p><button style="background:none;border:0;text-decoration:underline;color:var(--mut)" onclick="V.noWelcome=1;render()">Just look around</button></p>
   <p class="mut" style="font-size:12px">Your collection gets its own permanent ID. You can rename the collection any time; the ID stays the same and comes back whenever you restore a backup.</p></div>`;return true}
 function fxStart(){fxIdentity(($('#wname').value||'').trim()||'My collection');persist();render();toast('Collection created')}
-function fxRename(v){D.owner=String(v||'').trim();save();toast('Collection name saved — your ID stays the same')}
+function fxRename(v){const n=String(v||'').trim();if(n===(D.owner||''))return;if(!confirm(`Rename your collection to “${n}”?\n\nYour ID stays the same.`))return render();D.owner=n;save();toast('Collection name saved — your ID stays the same')}
 function fxAsk(title,body,btns){window.FXASK=btns.map(b=>()=>{closeM();b.fn&&b.fn()});
   openM(`<h3>${title}</h3>${body}<div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">${btns.map((b,i)=>`<button class="${b.cls||''}" style="padding:13px" onclick="FXASK[${i}]()">${b.t}</button>`).join('')}</div>`)}
 const fxWho=(name,uid)=>`<b>${esc(name||'(no name)')}</b>${uid?` <span class="mut">· ID ${esc(fxCode(uid))}</span>`:' <span class="mut">· no ID (older file)</span>'}`;
@@ -724,7 +725,7 @@ function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div 
   <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
   <label>Sleeves <span id="sl" class="mut"></span></label><label style="margin:2px 0 4px;font-weight:400"><input type="checkbox" id="nsa" onchange="NSA=this.checked;sleeveOpts(window.FXCUR)">Auto-select from available sleeves</label><div class="swr" id="ns"></div></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`);
   const cur=sleeveOf(d);window.FXCUR=cur?cur.color:'';NSA=false;NSV=window.FXCUR;$('#ef').onchange=()=>sleeveOpts(window.FXCUR);sleeveOpts(window.FXCUR)}
-function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.name;if(!name)return toast('Give the deck a name');if(D.decks.some((x,k)=>k!==i&&x.name.toLowerCase()===name.toLowerCase()))return toast('Another deck already has that name');
+function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.name;if(!name)return toast('Give the deck a name');if(D.decks.some((x,k)=>k!==i&&x.name.toLowerCase()===name.toLowerCase()))return toast('Another deck already has that name');if(!confirm(`Save the changes to “${old}”?`))return;
   const s=sleeveOf(d);d.name=name;d.format=$('#ef').value;d.commander=$('#ec').value.trim();
   if(name!==old){D.loans.forEach(l=>{if(l.from===old)l.from=name;if(l.to===old)l.to=name});D.swaps.forEach(w=>{if(w.deck===old)w.deck=name;if(w.row&&w.row[1]===old)w.row[1]=name})}
   const ns=D.sleeves.find(x=>x.color===NSV);if(s&&s!==ns){s.deck='';s.inUse=0}d.sleeve=ns?ns.color:'';
@@ -783,7 +784,7 @@ function fxVerPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i
   <div class="qabar"><b class="qanm">${esc(x.name)}</b><span class="mut" style="font-size:13px">${esc(c.set_name||'')} · ${esc(String(c.set||'').toUpperCase())} #${esc(c.collector_number||'')}</span></div>
   <div class="grid">${x.prints.map((p,k)=>`<div class="tile" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art" onclick="fxQAView(${i},${k})"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap" onclick="fxQAPrint(${i},${k})" style="cursor:pointer"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>`+nav}
 function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
-  if(saveIt){if(x.stub||x.err||!x.prints)return;if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}}
+  if(saveIt){if(x.stub||x.err||!x.prints)return;if(!confirm(`Save ${x.card.set_name} #${x.card.collector_number} as the verified artwork for ${x.name}?`))return;if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}}
   if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else fxVerStop()}
 function fxVerStop(){const n=IMP.vdone||0,h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
@@ -799,17 +800,21 @@ function fxSrcPrint(prints,src){const low=String(src||'').toLowerCase();
 const svMsg=t=>{SV.msg=t;const e=document.getElementById('svmsg');if(e)e.textContent=t};
 async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){if(!auto)toast('You’re offline — try again when connected');return}
   const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!c.verified&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
-  SV={running:true,msg:'',ok:[],unsure:[]};if(!auto)render();let stopped=false;
+  SV={running:true,msg:'',ok:[],unsure:[],cand:[]};if(!auto)render();let stopped=false;
   let errs=0;for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
     if(c.verified)continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
     const r=await scry(fxPrintsUrl(c.name));if(!r){if(!navigator.onLine||scry.st===0){stopped=true;break}if(scry.st===404)SV.unsure.push([c.name,'not found on Scryfall']);else errs++;continue}
     let pr=r.data||[];if(r.has_more){const r2=await scry(r.next_page);if(r2&&r2.data)pr=pr.concat(r2.data)}
     const res=srcs.map(s=>SV_SKIP.test(s)?{why:'also from “'+s+'”'}:fxSrcPrint(pr,s)),bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
     if(bad||ids.size!==1){SV.unsure.push([c.name,bad?bad.why:'its sources point to different printings']);continue}
-    fxVerifyPrint(c.name,res[0].p,'from pull source',true);SV.ok.push(c.name);if(SV.ok.length%20===0){saveArt();save()}}
-  if(!stopped&&!errs)D.srcv2=today();saveArt();save();SV.running=false;
-  SV.msg=stopped?`Stopped (offline) — ${SV.ok.length} verified so far. It continues next time.`:`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
-  if(!auto||SV.ok.length)toast(SV.ok.length?`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their pull source — details in More → Data check`:'No cards could be verified from their pull source')}
+    SV.cand.push({name:c.name,p:res[0].p,src:srcs.join(', ')})}
+  SV.running=false;const C=SV.cand;
+  SV.msg=stopped?`Stopped (offline) — it continues next time.`:`Checked: ${fxPl(C.length,'card')} can be verified from their pull source, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
+  if(!C.length){if(!stopped&&!errs){D.srcv2=today();save()}if(!auto)toast('No cards could be verified from their pull source');return}
+  /* nothing changes until the user approves the list */
+  fxAsk(`Verify ${fxPl(C.length,'card')} from their pull source?`,`<p class="mut">Each of these has a “pulled from” source that names a set with exactly one matching printing. Approving sets that printing and gives the card the gold ✓.</p><div style="max-height:45vh;overflow:auto;font-size:13px">${C.map(x=>`<div>${esc(x.name)} → <b>${esc(x.p.set_name)}</b> #${esc(x.p.collector_number)} <span class="mut">(${esc(x.src)})</span></div>`).join('')}</div>`,
+    [{t:`✓ Verify these ${C.length}`,cls:'pri',fn:()=>{C.forEach(x=>{if(fxVerifyPrint(x.name,x.p,'from pull source',true))SV.ok.push(x.name)});SV.cand=[];if(!stopped&&!errs)D.srcv2=today();saveArt();save();SV.msg=`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.`;render();toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')}`)}},
+     {t:'Not now',fn:()=>{if(!stopped&&!errs){D.srcv2=today();save()}SV.msg+=' Not applied — tap the button to check again.';render()}}])}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
 function fxSrcAuto(){setTimeout(()=>{if(!D.srcv2&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
 function fxSrcView(){return `<div class="sec"><h4>Verify artwork from pull sources</h4><p class="mut" style="margin:4px 0">For cards whose “pulled from” source names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a source that isn’t a set) the card is left unverified for you.${D.srcv2?` Last run: <b>${esc(D.srcv2)}</b>.`:''}</p>
@@ -945,55 +950,58 @@ function fxOptApply(){const i=OPT.deck,d=D.decks[i],r=OPT.res;if(!d||d.name!==OP
 /* ---------- Build a deck from someone else's list: use my cards, borrow from my decks, or track the rest as missing → ordered → received ---------- */
 const fxTcg=n=>'https://www.tcgplayer.com/search/magic/product?productLineName=magic&view=grid&q='+encodeURIComponent(front(n));
 const fxTcgMass=L=>'https://www.tcgplayer.com/massentry?productline=Magic&c='+encodeURIComponent(L.map(m=>`${m.qty} ${front(m.name)}`).join('||'));
+const fxMissUsd=m=>{const c=findCard(m.name);return (c&&c.price?fxUnit(c).Normal:0)||m.usd||0};
 const fxMissQ=(d,n)=>sum((d.miss||[]).filter(m=>norm(m.name)===norm(n)),m=>m.qty);
 let BP=null;
-function fxBuildPlan(i){const d=D.decks[i],snap={};d.cards.forEach(e=>{const c=findCard(e.name)||{};snap[norm(e.name)]={type:c.type||'',cmc:c.cmc||'',colors:c.colors||'',cost:c.cost||'',art:ART[c.name]||c.art||''}});
+function fxBuildPlan(i){const d=D.decks[i],snap={};d.cards.forEach(e=>{const c=findCard(e.name)||{};snap[norm(e.name)]={type:c.type||'',cmc:c.cmc||'',colors:c.colors||'',cost:c.cost||'',art:ART[c.name]||c.art||'',usd:c.price?fxUnit(c).Normal||0:0}});
   const src={name:d.name,format:d.format||'Casual',commander:d.commander||'',owner:RO.given||RO.name,cards:d.cards.map(e=>({name:e.name,qty:e.qty}))};roExit();
   const rows=[];src.cards.forEach(e=>{const c=findCard(e.name),s=snap[norm(e.name)]||{},r={name:c?c.name:e.name,need:e.qty,snap:s,c};
     if(!c||!isReal(c)){r.free=0;r.lend=[];r.buy=e.qty}
     else{r.free=Math.min(e.qty,freeCopies(c));let left=e.qty-r.free;r.lend=[];if(c.type!=='Basic Land')D.decks.map(x=>({deck:x.name,t:takeable(c,x.name)})).filter(x=>x.t>0).sort((a,b)=>b.t-a.t).forEach(x=>{if(left<=0)return;const k=Math.min(left,x.t);r.lend.push({deck:x.deck,q:k});left-=k});r.buy=left}
-    r.borrow=false;rows.push(r)});
+    r.usd=(c&&c.price?fxUnit(c).Normal:0)||s.usd||0;r.borrow=false;rows.push(r)});
   let nm=`${src.owner} - ${src.name}`,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${src.owner} - ${src.name} ${k++}`;
   BP={src,rows,name:nm};go('decks');V.deck=null;render();fxBuildDraw()}
 function fxBuildDraw(){const B=BP;if(!B)return;const tot=k=>sum(B.rows,r=>k(r)),inDeck=B.rows.filter(r=>r.lend.length);
-  const st=r=>[r.free?`✓ ${r.free} from your collection`:'',r.lend.length?(r.borrow?'↪ borrow '+r.lend.map(x=>`${x.q} from ${esc(x.deck)}`).join(', '):'⏳ missing — '+r.lend.map(x=>`${x.q} in ${esc(x.deck)}`).join(', ')):'',r.buy?`🛒 ${r.buy} to get (you don’t own ${r.free||r.lend.length?'enough':'it'})`:''].filter(Boolean).join('<br>');
+  const st=r=>[r.free?`✓ ${r.free} from your collection`:'',r.lend.length?(r.borrow?'↪ borrow '+r.lend.map(x=>`${x.q} from ${esc(x.deck)}`).join(', '):'⏳ missing — '+r.lend.map(x=>`${x.q} in ${esc(x.deck)}`).join(', ')):'',r.buy?`🛒 ${r.buy} to get (you don’t own ${r.free||r.lend.length?'enough':'it'})${r.usd?' · ≈ '+fxMoney(r.usd*r.buy):''}`:''].filter(Boolean).join('<br>');
   openM(`<h3>Build “${esc(B.src.name)}” with your cards</h3>
   <div class="f"><label>New deck name</label><input id="bpname" value="${esc(B.name)}" oninput="BP.name=this.value"></div>
-  <div class="tags"><span>✓ ${tot(r=>r.free)} you have free</span><span>↪/⏳ ${tot(r=>sum(r.lend,x=>x.q))} in your other decks</span><span>🛒 ${tot(r=>r.buy)} you don’t own</span></div>
+  <div class="tags"><span>✓ ${tot(r=>r.free)} you have free</span><span>↪/⏳ ${tot(r=>sum(r.lend,x=>x.q))} in your other decks</span><span>🛒 ${tot(r=>r.buy)} you don’t own${tot(r=>r.buy*r.usd)?` · ≈ ${fxMoney(tot(r=>r.buy*r.usd))}`:''}</span></div>
   ${inDeck.length?`<div class="sec"><b>Cards that are in your other decks</b><p class="mut" style="margin:4px 0">Borrow them now (recorded as a loan — that deck gets a red ★), or leave them where they are and list them as missing in the new deck.</p><div class="row"><button onclick="BP.rows.forEach(r=>r.borrow=true);fxBuildDraw()">↪ Borrow all</button><button onclick="BP.rows.forEach(r=>r.borrow=false);fxBuildDraw()">⏳ Leave all as missing</button></div></div>`:''}
   <div class="tblw"><table><tr><th>Qty</th><th>Card</th><th>Where it comes from</th></tr>${B.rows.map((r,k)=>`<tr><td>${r.need}</td><td>${esc(r.name)}</td><td style="font-size:13px">${st(r)}${r.lend.length?`<br><label style="margin:4px 0 0;font-weight:400"><input type="checkbox" ${r.borrow?'checked':''} onchange="BP.rows[${k}].borrow=this.checked;fxBuildDraw()">Borrow</label>`:''}${r.buy?`<br><a href="${fxTcg(r.name)}" target="_blank" rel="noopener">Find on TCGplayer ↗</a>`:''}</td></tr>`).join('')}</table></div>
   <p class="mut">Cards you don’t have are still put on the deck list and marked missing (🛒), so you can order them and tick them off when they arrive.</p>
   <div class="row"><button onclick="BP=null;closeM()">Cancel</button><button class="pri" onclick="fxBuildMake()">Create deck</button></div>`)}
 function fxBuildMake(){const B=BP,name=(B.name||'').trim();if(!name)return toast('Give the deck a name');if(D.decks.some(x=>x.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
+  {const bor=sum(B.rows.filter(r=>r.borrow),r=>sum(r.lend,x=>x.q)),mis=sum(B.rows,r=>r.buy+(r.borrow?0:sum(r.lend,x=>x.q)));if(!confirm(`Create “${name}”?${bor?`\n\n${fxPl(bor,'card')} will be borrowed from your other decks (they get a red ★).`:''}${mis?`\n${fxPl(mis,'card')} will be listed as missing.`:''}`))return}
   const d={name,format:B.src.format,sleeve:'',commander:B.src.commander,info:`Built from ${B.src.owner}’s “${B.src.name}”`,cards:[],tokens:[],miss:[]};D.decks.push(d);const inG={},sec='Built from a shared deck';
   B.rows.forEach(r=>{const e={name:r.name,qty:r.need,finish:'Normal'};if(!r.c){Object.assign(e,{type:r.snap.type,cmc:r.snap.cmc,colors:r.snap.colors})}d.cards.push(e);
     if(r.free&&r.c){const L=fxCardLabel(r.c);fxGrpPut(inG,L.k,r.free,r.name,L.alt)}
     r.lend.forEach(x=>{if(r.borrow){makeLoan(r.name,x.q,x.deck,name,sec+' — borrowed from another deck');fxGrpPut(inG,'From deck: '+x.deck,x.q,r.name)}else d.miss.push({name:r.name,qty:x.q,why:'deck',deck:x.deck,st:'missing',at:today()})});
-    if(r.buy)d.miss.push({name:r.name,qty:r.buy,why:'buy',st:'missing',at:today()})});
+    if(r.buy)d.miss.push({name:r.name,qty:r.buy,why:'buy',st:'missing',at:today(),usd:r.usd||0})});
   if(!d.miss.length)delete d.miss;BP=null;save();closeM();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
   const nm=sum(d.miss||[],m=>m.qty);if(Object.keys(inG).length)fxPullSplash(name,inG,{});toast(nm?`Deck created — ${fxPl(nm,'card')} marked missing (🛒)`:'Deck created')}
 /* Missing-cards box on the deck page */
 function fxMissBox(i){const d=D.decks[i];if(RO||!d||!(d.miss||[]).length)return '';const L=d.miss,mi=L.filter(m=>m.st==='missing'),buy=mi.filter(m=>m.why==='buy');
   const row=(m,k)=>{const c=findCard(m.name),fr=c?freeCopies(c):0,canB=m.why==='deck'&&m.deck&&c&&takeable(c,m.deck)>0;
-    return `<div class="sec" style="margin:6px 0"><b>${m.qty}× ${cl(m.name)}</b> <span class="mut">· ${m.st==='ordered'?`📦 ordered ${esc(m.od||'')}`:m.why==='deck'?`⏳ in ${esc(m.deck||'another deck')}`:'🛒 you don’t own it'}</span>
+    return `<div class="sec" style="margin:6px 0"><b>${m.qty}× ${cl(m.name)}</b> <span class="mut">· ${m.st==='ordered'?`📦 ordered ${esc(m.od||'')}${m.note?' — '+esc(m.note):''}`:m.why==='deck'?`⏳ in ${esc(m.deck||'another deck')}`:'🛒 you don’t own it'}${fxMissUsd(m)?' · ≈ '+fxMoney(fxMissUsd(m)*m.qty):''}</span>
     <div class="row" style="margin-top:6px">${m.st==='missing'?`<a class="btn" href="${fxTcg(m.name)}" target="_blank" rel="noopener">TCGplayer ↗</a><button onclick="fxMissOrdered(${i},${k})">Ordered</button>${canB?`<button onclick="fxMissBorrow(${i},${k})">↪ Borrow from ${esc(m.deck)}</button>`:''}${fr>0?`<button onclick="fxMissUseFree(${i},${k})">✓ Use my free copy</button>`:''}`
       :`<button onclick="fxMissCancel(${i},${k})">Order cancelled</button><button class="pri" onclick="fxMissGot(${i},${k})">Card received</button>`}</div></div>`};
-  return `<div class="redbox" style="border-color:#f39c12"><b>🛒 Missing cards — ${fxPl(sum(L,m=>m.qty),'card')}</b><p class="mut" style="margin:4px 0">They’re on the deck list but not in the deck yet. Order them, then tap <b>Card received</b> to add them to your collection.</p>
+  return `<div class="redbox" style="border-color:#f39c12"><b>🛒 Missing cards — ${fxPl(sum(L,m=>m.qty),'card')}</b><p class="mut" style="margin:4px 0">They’re on the deck list but not in the deck yet. Order them, then tap <b>Card received</b> to add them to your collection.${sum(buy,m=>fxMissUsd(m)*m.qty)?` Estimated cost of the cards you don’t own: <b>≈ ${fxMoney(sum(buy,m=>fxMissUsd(m)*m.qty))}</b> (Scryfall market price).`:''}</p>
   ${buy.length?`<div class="row"><a class="btn pri" href="${fxTcgMass(buy)}" target="_blank" rel="noopener">🛒 Buy all ${fxPl(sum(buy,m=>m.qty),'card')} on TCGplayer ↗</a><button onclick="fxMissOrderAll(${i})">Mark all as ordered</button></div>`:''}
   ${L.map(row).join('')}</div>`}
 const fxMissTag=d=>(d.miss||[]).length?` <span style="color:#f39c12;font-size:12px">🛒 ${sum(d.miss,m=>m.qty)} missing${d.miss.some(m=>m.st==='ordered')?' · 📦 '+sum(d.miss.filter(m=>m.st==='ordered'),m=>m.qty)+' ordered':''}</span>`:'';
 function fxMissDone(d,k){d.miss.splice(k,1);if(!d.miss.length)delete d.miss}
-function fxMissOrdered(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Mark ${m.qty}× ${m.name} as ordered?`))return;m.st='ordered';m.od=today();save();render()}
-function fxMissOrderAll(i){const d=D.decks[i],L=d.miss.filter(m=>m.st==='missing'&&m.why==='buy');if(!confirm(`Mark all ${fxPl(sum(L,m=>m.qty),'card')} you don’t own as ordered?\n\n${L.map(m=>m.qty+'× '+m.name).join('\n')}`))return;L.forEach(m=>{m.st='ordered';m.od=today()});save();render()}
-function fxMissCancel(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Order cancelled for ${m.qty}× ${m.name}?\n\nIt goes back to missing.`))return;m.st='missing';delete m.od;save();render()}
+function fxMissOrdered(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Mark ${m.qty}× ${m.name} as ordered?`))return;const n=prompt('Optional note — where you ordered it or an order number:','');m.st='ordered';m.od=today();if(n&&n.trim())m.note=n.trim().slice(0,120);save();render()}
+function fxMissOrderAll(i){const d=D.decks[i],L=d.miss.filter(m=>m.st==='missing'&&m.why==='buy');if(!confirm(`Mark all ${fxPl(sum(L,m=>m.qty),'card')} you don’t own as ordered?\n\n${L.map(m=>m.qty+'× '+m.name).join('\n')}`))return;const nt=(prompt('Optional note — where you ordered them or an order number:','')||'').trim().slice(0,120);L.forEach(m=>{m.st='ordered';m.od=today();if(nt)m.note=nt});save();render()}
+function fxMissCancel(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Order cancelled for ${m.qty}× ${m.name}?\n\nIt goes back to missing.`))return;m.st='missing';delete m.od;delete m.note;save();render()}
 function fxMissBorrow(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,takeable(c,m.deck));if(!q)return toast(`${m.deck} has no copy to lend right now`);
   if(!confirm(`Borrow ${q}× ${c.name} from ${m.deck}?\n\n${m.deck} will show a red ★ until it’s returned.`))return;makeLoan(c.name,q,m.deck,d.name,'Built from a shared deck — borrowed from another deck');m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
 function fxMissUseFree(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,freeCopies(c));if(!confirm(`Use ${q}× ${c.name} from your collection (not in any deck)?`))return;m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
-async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Card received: add ${m.qty}× ${m.name} to your collection and to ${d.name}?\n\nIt’s filed under “Singles Orders”.`))return;
+async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];let q=m.qty;if(m.qty>1){const a=prompt(`How many of the ${m.qty}× ${m.name} arrived?`,String(m.qty));if(a==null)return;q=Math.max(0,Math.min(m.qty,parseInt(a,10)||0));if(!q)return}
+  if(!confirm(`Card received: add ${q}× ${m.name} to your collection and to ${d.name}?\n\nIt’s filed under “Singles Orders”.${q<m.qty?`\n${m.qty-q} stay on order.`:''}`))return;
   toast('Looking the card up…');const c=await scry('/cards/named?exact='+encodeURIComponent(front(m.name)));if(!c||c.object!=='card')return toast(navigator.onLine?'Couldn’t find that card on Scryfall — try again later':'You’re offline — try again when connected');
   const e=d.cards.find(x=>norm(x.name)===norm(m.name));if(e){['type','cmc','colors'].forEach(x=>delete e[x])}
-  fxAddCard(c,m.qty,'Normal','Singles Orders','','Ordered for '+d.name);fxMissDone(d,k);IDX=null;saveArt();save();render();
-  if(confirm(`${m.qty}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`))artPicker(c.name)}
+  fxAddCard(c,q,'Normal','Singles Orders','','Ordered for '+d.name+(m.note?' — '+m.note:''));m.qty-=q;if(m.qty<=0)fxMissDone(d,k);IDX=null;saveArt();save();render();
+  if(confirm(`${q}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`))artPicker(c.name)}
 
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
@@ -1044,7 +1052,7 @@ function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign)
   ${L.map((x,k)=>`<div class="sec" style="${x.ign?'opacity:.75':''}"><b>${esc(x.title)}</b>${x.card&&!x.title.includes(x.card)?` — ${cl(x.card)}`:''}${x.ign?' <span class="mut" style="font-size:12px">· ignored</span>':''}<p style="margin:6px 0">${esc(x.msg)}</p><div class="row" style="margin:0">${x.fixes.map((f,j)=>`<button class="pri" style="padding:7px 12px" onclick="fxFix(${i},${k},${j})">${esc(f.t)}</button>`).join('')}<button style="padding:7px 12px" onclick="fxFix(${i},${k},-1)">${x.ign?'Stop ignoring':'Ignore this'}</button></div></div>`).join('')}
   <div class="row"><button onclick="fxDeckEdit(${i})">Change deck type…</button><button class="pri" onclick="closeM()">Done</button></div>`)}
 function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
-  if(j<0){const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
+  if(j<0){if(!confirm(x.ign?`Stop ignoring “${x.title}”?`:`Ignore “${x.title}”${x.card?' for '+x.card:''}?\n\nIt stays listed (muted) and the deck stops showing ⚠ for it.`))return;const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
   const f=x.fixes[j];if(f.a==='match')return fxMatchUnknown(x.card,()=>{render();fxIssues(i)});if(f.a==='sug')return fxUseSug(x.card,()=>{render();fxIssues(i)});if(f.a==='custom'){fxSetCustom(x.card,true);return fxIssues(i)}if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
   if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}
 
@@ -1061,7 +1069,7 @@ function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
   return `<div class="sec" style="display:flex;gap:10px;align-items:center;border:1px solid #4a6aa8"><span style="flex:1">⏳ <b>${fxPl(need.length,'card')}</b> haven’t been checked against the ${esc(d.format)} rules yet — this needs an internet connection.</span><button onclick="fxLegalCheck(${i})">Check now</button></div>`}
 
 /* ---------- cards Scryfall doesn't recognise: find a match, or mark as a custom card ---------- */
-function fxSetCustom(name,on){const c=findCard(name);if(!c)return;c.custom=!!on;{const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(on)ss.push(CUSTOM_SRC);c.source=ss.length?ss.join(', '):'None'}if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
+function fxSetCustom(name,on,ok){const c=findCard(name);if(!c)return;if(!ok&&!confirm(on?`Mark ${c.name} as a custom card?\n\nIt moves to the Custom cards group and is filed under “Custom Cards”.`:`Unmark ${c.name} as a custom card?`))return;c.custom=!!on;{const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(on)ss.push(CUSTOM_SRC);c.source=ss.length?ss.join(', '):'None'}if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
 function fxUnknownBox(c){if(!c||RO||!findCard(c.name))return '';
   if(c.custom)return `<div class="sec"><b style="color:#c39bff">★ Custom card</b><p class="mut" style="margin:4px 0">Kept in your Custom cards group. The app doesn’t look it up on Scryfall, and it’s flagged as not legal in official formats. Add your own photo so it shows like any other card — it’s compressed (about 60 KB) and included in your backups and share files.</p><div class="row" style="margin:6px 0 0"><button onclick="fxCustomEdit('${esc(c.name).replace(/'/g,"\\'")}')">✎ Edit card details</button></div><div class="row" style="margin:6px 0 0"><button class="pri" onclick="fxCustomPhoto('${esc(c.name).replace(/'/g,"\\'")}')">📷 ${CIMG[c.name]?'Retake photo':'Take a photo of this card'}</button>${CIMG[c.name]?`<button onclick="fxCustomPhotoDel('${esc(c.name).replace(/'/g,"\\'")}')">Remove photo</button>`:''}</div><button style="margin-top:8px" onclick="fxUnmarkCustom('${esc(c.name).replace(/'/g,"\\'")}')">It’s a real card — unmark</button></div>`;
   if(!c.legMiss||c.leg)return '';
@@ -1111,7 +1119,7 @@ function fxCompress(blob){return new Promise((ok,no)=>{const u=URL.createObjectU
     const W=490,H=684,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');x.imageSmoothingQuality='high';x.fillStyle='#000';x.fillRect(0,0,W,H);x.drawImage(im,sx,sy,sw,sh,0,0,W,H);
     let q=0.82,url=cv.toDataURL('image/jpeg',q);while(url.length*0.75>65000&&q>0.42){q-=0.08;url=cv.toDataURL('image/jpeg',q)}ok(url)};im.src=u})}
 function fxCustomPhoto(name){closeM();fxCam(b=>fxCustomPhotoSet(name,b))}
-async function fxCustomPhotoSet(name,b){{const c=findCard(name);if(!c||!b)return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
+async function fxCustomPhotoSet(name,b){{const c=findCard(name);if(!c||!b)return;if(!confirm(`Use this picture for ${c.name}?${CIMG[c.name]?'\n\nIt replaces the current picture.':''}`))return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
   CIMG[c.name]=url;fxImgPut(c.name,url);c.imgAt=Date.now();save();render();showCard(c.name);toast(`Picture saved (${Math.round(url.length*0.75/1024)} KB)`)}}
 function fxCustomPhotoDel(name){const c=findCard(name);if(!c||!confirm(`Remove the photo of ${c.name}?`))return;delete CIMG[c.name];fxImgDel(c.name);c.imgAt=Date.now();save();render();showCard(c.name)}
 
@@ -1310,7 +1318,7 @@ function fxUmNote(){const v=($('#um_n').value||'').trim(),r=v?autoNumber(canonSr
 function fxUmSave(name){const c=findCard(name);if(!c)return;const sel=$('#um_s').value;let src=sel==='__new'?($('#um_n').value||'').trim():sel;
   if(!src)return toast('Choose where it came from');if(sel==='__new'){if(allSources().map(x=>x.toLowerCase()).includes(src.toLowerCase()))src=allSources().find(x=>x.toLowerCase()===src.toLowerCase());else src=autoNumber(canonSrc(src))}
   if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — choose another source');
-  fxSetCustom(c.name,false);const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(!ss.includes(src))ss.push(src);c.source=ss.join(', ');
+  fxSetCustom(c.name,false,true);const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(!ss.includes(src))ss.push(src);c.source=ss.join(', ');
   D.acq.forEach(a=>{if(norm(a.name)===norm(c.name)&&isCustomSrc(a.source))a.source=src});logEdit(c.name,'Pulled from','Custom Cards',src);save();render();showCard(c.name);toast(`${c.name} is now a regular card from “${src}”`)}
 
 /* ---------- edit a custom card's details (name, type, cost, colors, P/T, rules text) ---------- */

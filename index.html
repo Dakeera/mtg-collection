@@ -375,13 +375,14 @@ function loanBox(d){const out=actLoans().filter(l=>l.from===d.name),inn=actLoans
   return h}
 const sleeveOf=d=>D.sleeves.find(s=>s.deck&&s.deck.toLowerCase().startsWith(d.name.toLowerCase()));
 const target=d=>fmtSize(d.format);
-function addToDeck(i,name,n){
+function addToDeck(i,name,n,ok){
   if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return fxDraftChg(i,name,n);DRAFT=null;
   const d=D.decks[i],c=findCard(name);let plan=null;
   if(c&&c.type!=='Basic Land'&&n>freeCopies(c)){
     plan=planCard(c,n,D.decks.filter(x=>x!==d).map(x=>x.name));const from=plan.from.map(x=>`${x.q}× from ${x.deck}`).join(', ');
     if(!confirm(`You own ${c.qty}× ${c.name} and only ${freeCopies(c)} ${freeCopies(c)===1?'is':'are'} free (not in a deck).\n\n${from?`Add it to ${d.name} by borrowing ${from}? That deck will show a red ★ (incomplete) until the card is returned.`:`No other deck has a copy to borrow. Add it to ${d.name} anyway?`}`))return;
     plan.from.forEach(x=>makeLoan(c.name,x.q,x.deck,d.name))}
+  else if(!ok&&!confirm(`Put ${n}× ${c?c.name:name} in ${d.name}?`))return;
   const e=d.cards.find(x=>norm(x.name)===norm(name));e?e.qty+=n:d.cards.push({name:c?c.name:name,qty:n,finish:c?.finish||'Normal'});save();toast('Added to '+d.name);if(V.view==='decks')render();
 }
 function chg(name,dl){fxDraftChg(V.deck,name,dl)}
@@ -421,7 +422,7 @@ function sleeveOpts(cur){const need=fmtSize(($('#nf')||$('#ef')).value)||60,free
   $('#ns').innerHTML=free.map(s=>`<button type="button" class="sw ${s.color===NSV?'on':''}" title="${esc(noEmoji(s.color))} · ${s.total} sleeves${s.total<need?' (not enough for '+need+')':''}" style="background:${sleeveBg(s)};${s.total<need?'opacity:.45':''}" onclick="pickSleeve(${D.sleeves.indexOf(s)})"></button>`).join('')+`<button type="button" class="sw ${!NSV?'on':''}" title="No sleeves" style="background:#222;font-size:18px;color:var(--mut)" onclick="NSA=false;$('#nsa').checked=false;NSV='';sleeveOpts(${cur?`'${esc(cur)}'`:''})">∅</button>`;
   const s=D.sleeves.find(x=>x.color===NSV);$('#sl').textContent=NSV?`· ${title(noEmoji(NSV))} (${s?s.total:'?'} sleeves${s&&s.total<need?', fewer than '+need:''})${NSA?' — auto-selected':''}`:free.length?'· none':'· no free sleeve sets — add some in More → Sleeves'}
 function mkDeck(){
-  const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=NSV,s=D.sleeves.find(x=>x.color===col);
+  const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');if(!D.decks.some(d=>d.name.toLowerCase()===name.toLowerCase())&&!confirm(`Create the deck “${name}”?`))return;const f=$('#nf').value,col=NSV,s=D.sleeves.find(x=>x.color===col);
   D.decks.push({name,format:f,sleeve:col,commander:$('#nc').value.trim(),info:'',cards:[],tokens:[]});
   if(s){s.deck=sleeveLabel(name,f);s.inUse=Math.min(s.total,fmtSize(f)||60)}
   save();closeM();if(V.view!=='decks')go('decks');V.deck=D.decks.length-1;render();scrollTo(0,0);
@@ -624,7 +625,7 @@ async function runDataCheck(){
   D.flags=flags;D.unmatched=unmatched;D.lastCheck=today();save();DC.running=false;DC.msg='';render();
 }
 function dcFix(i){const f=D.flags[i];if(!f)return;if(!confirm(`Update your existing “${f.name}” entry to match the official card?\n\n${f.diffs.map(x=>`• ${x.label}: ${String(x.old).slice(0,40)} → ${String(x.now).slice(0,40)}`).join('\n')}\n\nQuantity, finish, sources and decks are not touched. No new card is created.`))return;const e=findCard(f.name);if(e){applyDiffs(e,f.diffs);toast('Card fixed')}D.flags.splice(i,1);save();render()}
-function dcKeep(i){const f=D.flags[i];if(!f)return;D.kept=D.kept||{};D.kept[dcKey(f.name,f.diffs)]=1;D.flags.splice(i,1);save();render();toast('Kept as is')}
+function dcKeep(i){const f=D.flags[i];if(!f)return;if(!confirm(`Keep ${f.name} as it is?\n\nThe data check won’t flag these differences again.`))return;D.kept=D.kept||{};D.kept[dcKey(f.name,f.diffs)]=1;D.flags.splice(i,1);save();render();toast('Kept as is')}
 async function dcDetail(i){const f=D.flags[i];if(!f)return;const e=findCard(f.name);if(!e)return;
   const nmD=f.diffs.find(x=>x.f==='name'),dif=new Set(f.diffs.map(x=>x.f));
   openM(`<h3>Compare: ${esc(f.name)}</h3><p class="mut">Loading the official card…</p>`);
@@ -641,6 +642,7 @@ function mergeFinish(old,qty,add,n){const o={};if(/\(\d+\)/.test(old))old.split(
   const k=Object.keys(o);return k.length===1?k[0]:k.map(x=>`${x} (${o[x]})`).join(', ')}
 function commit(){
   const q=A.q||{},src=resolveSrc().trim(),n=A.qty;if(!src)return toast('Please say where this card came from');if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — please pick another source');autoPrint(src);const c=A.card;
+  if(!confirm(`Add ${n}× ${c.name} (${A.finish||'Normal'}) to your collection?\n\nPulled from: ${src}${q.deck!==undefined&&q.deck!==''&&D.decks[+q.deck]?'\nAlso put it in: '+D.decks[+q.deck].name:''}`))return;
   const nm=c.name,cat=catOf(c);
   let e=findCard(nm);const existed=!!e;let had=false;
   if(e){had=cardSources(e).includes(src);e.finish=mergeFinish(e.finish,e.qty,A.finish,n);e.qty+=n;if(!e.source.split(', ').includes(src))e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src}
@@ -652,7 +654,7 @@ function commit(){
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||'',shared:had});
-  if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n);save();
+  if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n,true);save();
   A={step:'done',msg:`${n}× ${nm} (${c.set.toUpperCase()}) added from “${src}”${q.deck?` and placed in ${D.decks[+q.deck].name}`:''}.`};render();
   if(existed)verifyEntry(e,c,closeM);
 }
@@ -813,13 +815,13 @@ function crDraw(){const c=$('#crv');if(!c)return;const x=c.getContext('2d'),g=cr
   x.fillStyle='rgba(0,0,0,.6)';x.beginPath();x.rect(0,0,300,300);x.moveTo(290,150);x.arc(150,150,140,0,Math.PI*2,true);x.closePath();x.fill('evenodd');x.strokeStyle='#f1c40f';x.lineWidth=2;x.beginPath();x.arc(150,150,140,0,Math.PI*2);x.stroke()}
 function crSave(){const g=crGeom(),cv=document.createElement('canvas');cv.width=cv.height=160;
   cv.getContext('2d').drawImage(CR.bmp,(10-g.px)/g.s,(10-g.py)/g.s,280/g.s,280/g.s,0,0,160,160);SLN.img=cv.toDataURL('image/jpeg',.8);SLN.hex='';CR=null;slDraw()}
-function slSave(){const n=SLN,name=n.name.trim();if(!name)return toast('Give the sleeves a name');
+function slSave(){const n=SLN,name=n.name.trim();if(!name)return toast('Give the sleeves a name');if(!confirm(n.idx==null?`Add the sleeves “${name}” (${n.total})?`:`Save the changes to the sleeves “${name}”?`))return;
   if(D.sleeves.some((s,i)=>i!==n.idx&&noEmoji(s.color).toLowerCase()===name.toLowerCase()))return toast('You already have sleeves with that name');
   if(n.idx==null)D.sleeves.push({color:name,total:n.total,deck:'',inUse:0,hex:n.hex,img:n.img});else Object.assign(D.sleeves[n.idx],{color:name,total:n.total,hex:n.hex,img:n.img});
   save();closeM();render();toast('Sleeves saved')}
 function slDel(i){const s=D.sleeves[i];if(s.deck)return toast('Those sleeves are assigned to a deck — free them first');if(confirm(`Remove ${noEmoji(s.color)} sleeves from your inventory?`)){D.sleeves.splice(i,1);save();render()}}
 let BKF='sqlite';
-const setSleeve=(i,v)=>{D.sleeves[i].total=Math.max(0,+v||0);save();render()};
+const setSleeve=(i,v)=>{const t=Math.max(0,+v||0);if(t===D.sleeves[i].total)return;if(!confirm(`Change how many “${noEmoji(D.sleeves[i].color)}” sleeves you have from ${D.sleeves[i].total} to ${t}?`))return render();D.sleeves[i].total=t;save();render()};
 const stamp=()=>{try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}};
 async function checkPersist(){let p=false;try{p=await navigator.storage.persisted()}catch(e){}const el=$('#pst');if(el)el.textContent=p?'protected ✓':'not guaranteed — back up regularly'}
 function backupDue(){try{if(!localStorage.getItem(DY))return '';const l=localStorage.getItem(BK);if(!l)return 'You have changes that have never been backed up.';const d=Math.floor((Date.now()-new Date(l))/864e5);return d>=14?`Your last backup was ${d} days ago.`:''}catch(e){return ''}}
