@@ -939,25 +939,42 @@ async function fxLoadModels(){const key=AIKEY.trim();if(!key)return toast('Type 
 
 /* ---------- suggestion lists ----------
    Android's built-in <datalist> popup draws with a see-through background in dark mode once you start typing,
-   so every input that has a list="…" is switched to this styled dropdown instead (applied automatically). */
+   so every input that has a list="…" is switched to this styled dropdown instead (applied automatically).
+   The list scrolls with your finger; an option is only chosen by a deliberate tap (finger lifted without moving).
+   Suggestion fields and in-popup search boxes get a ✕ that clears the field. */
 let FXAC=null;
 function fxACClose(){if(FXAC){FXAC.box.remove();FXAC=null}}
+function fxACPlace(){if(!FXAC)return;const r=FXAC.inp.getBoundingClientRect(),vh=(window.visualViewport&&visualViewport.height)||innerHeight,below=vh-r.bottom>200||r.top<200;
+  Object.assign(FXAC.box.style,{left:r.left+'px',width:r.width+'px',top:below?(r.bottom+4)+'px':'',bottom:below?'':(innerHeight-r.top+4)+'px',maxHeight:Math.max(140,Math.min(300,below?vh-r.bottom-12:r.top-12))+'px'})}
 function fxACShow(inp){const id=inp.dataset.acl,dl=id&&document.getElementById(id);if(!dl){fxACClose();return}
   const all=[...dl.options].map(o=>o.value).filter(Boolean),q=inp.value.trim().toLowerCase(),
-    opts=(q?all.filter(v=>v.toLowerCase().includes(q)&&v.toLowerCase()!==q).sort((a,b)=>(b.toLowerCase().startsWith(q))-(a.toLowerCase().startsWith(q))):all).slice(0,8);
+    opts=(q?all.filter(v=>v.toLowerCase().includes(q)&&v.toLowerCase()!==q).sort((a,b)=>(b.toLowerCase().startsWith(q))-(a.toLowerCase().startsWith(q))):all).slice(0,80);
   if(!opts.length){fxACClose();return}
-  if(!FXAC||FXAC.inp!==inp){fxACClose();const box=document.createElement('div');box.className='acbox';document.body.appendChild(box);FXAC={inp,box}}
-  const r=inp.getBoundingClientRect(),below=innerHeight-r.bottom>220;
-  Object.assign(FXAC.box.style,{left:r.left+'px',width:r.width+'px',top:below?(r.bottom+4)+'px':'',bottom:below?'':(innerHeight-r.top+4)+'px'});
-  FXAC.box.innerHTML=opts.map((v,k)=>`<div data-ack="${k}">${esc(v)}</div>`).join('');FXAC.opts=opts}
-function fxACWire(root){(root||document).querySelectorAll('input[list]').forEach(inp=>{inp.dataset.acl=inp.getAttribute('list');inp.removeAttribute('list');inp.setAttribute('autocomplete','off')})}
+  if(!FXAC||FXAC.inp!==inp){fxACClose();const box=document.createElement('div');box.className='acbox';document.body.appendChild(box);FXAC={inp,box};fxACTouch(box)}
+  fxACPlace();FXAC.box.innerHTML=opts.map((v,k)=>`<div data-ack="${k}">${esc(v)}</div>`).join('');FXAC.opts=opts;FXAC.box.scrollTop=0}
+function fxACPick(k){if(!FXAC)return;const inp=FXAC.inp,v=FXAC.opts[k];if(v==null)return;inp.value=v;fxACClose();inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));fxACClose();fxACX(inp)}
+// A tap = finger down and up on the same option without moving more than a few pixels. Moving = scrolling, never a choice.
+function fxACTouch(box){let st=null;
+  box.addEventListener('pointerdown',e=>{const o=e.target.closest('[data-ack]');st={x:e.clientX,y:e.clientY,k:o?+o.dataset.ack:null,top:box.scrollTop,t:Date.now()};FXAC&&(FXAC.inBox=true);if(e.pointerType==='mouse')e.preventDefault()});
+  box.addEventListener('pointermove',e=>{if(st&&(Math.abs(e.clientY-st.y)>8||Math.abs(e.clientX-st.x)>8))st.moved=true});
+  box.addEventListener('pointercancel',()=>{st=null});
+  box.addEventListener('scroll',()=>{if(st&&Math.abs(box.scrollTop-st.top)>4)st.moved=true},{passive:true});
+  box.addEventListener('pointerup',e=>{const s=st;st=null;if(!s||s.moved||s.k==null)return;const o=e.target.closest('[data-ack]');if(!o||+o.dataset.ack!==s.k)return;e.preventDefault();fxACPick(s.k)});
+  box.addEventListener('click',e=>e.preventDefault())}
+function fxACX(inp){const w=inp.parentElement;if(!w||!w.classList.contains('acw'))return;w.classList.toggle('has',!!inp.value)}
+function fxACWrap(inp){if(inp.parentElement&&inp.parentElement.classList.contains('acw'))return;const w=document.createElement('span');w.className='acw';if(inp.style.flex){w.style.flex=inp.style.flex;inp.style.flex=''}
+  inp.parentNode.insertBefore(w,inp);w.appendChild(inp);const b=document.createElement('button');b.type='button';b.className='acx';b.setAttribute('aria-label','Clear');b.textContent='✕';
+  b.addEventListener('pointerdown',e=>e.preventDefault());b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();inp.value='';inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));fxACX(inp);inp.focus()});
+  w.appendChild(b);fxACX(inp)}
+function fxACWire(root){(root||document).querySelectorAll('input[list]').forEach(inp=>{inp.dataset.acl=inp.getAttribute('list');inp.removeAttribute('list');inp.setAttribute('autocomplete','off');fxACWrap(inp)});
+  (root||document).querySelectorAll('#modal input[type=search],#modal #unkq,#modal #um_n').forEach(fxACWrap)}
 document.addEventListener('focusin',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.acl)fxACShow(t)});
-document.addEventListener('input',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.acl)fxACShow(t)});
-document.addEventListener('focusout',e=>{if(FXAC&&e.target===FXAC.inp)setTimeout(()=>{if(FXAC&&document.activeElement!==FXAC.inp)fxACClose()},180)});
-document.addEventListener('pointerdown',e=>{const o=e.target.closest&&e.target.closest('[data-ack]');if(!o||!FXAC)return;e.preventDefault();
-  const inp=FXAC.inp,v=FXAC.opts[+o.dataset.ack];inp.value=v;fxACClose();inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));fxACClose()},true);
-addEventListener('scroll',()=>{if(FXAC)fxACShow(FXAC.inp)},true);
-new MutationObserver(()=>{if(document.querySelector('input[list]'))fxACWire()}).observe(document.documentElement,{childList:true,subtree:true});
+document.addEventListener('input',e=>{const t=e.target;if(!t||!t.parentElement)return;if(t.parentElement.classList.contains('acw'))fxACX(t);if(t.dataset&&t.dataset.acl)fxACShow(t)});
+document.addEventListener('focusout',e=>{if(FXAC&&e.target===FXAC.inp)setTimeout(()=>{if(FXAC&&!FXAC.inBox&&document.activeElement!==FXAC.inp)fxACClose();if(FXAC)FXAC.inBox=false},250)});
+document.addEventListener('pointerdown',e=>{if(FXAC&&!FXAC.box.contains(e.target)&&e.target!==FXAC.inp&&!e.target.closest('.acw'))fxACClose()},true);
+addEventListener('scroll',e=>{if(FXAC&&!FXAC.box.contains(e.target))fxACPlace()},true);
+addEventListener('resize',()=>fxACPlace());if(window.visualViewport)visualViewport.addEventListener('resize',()=>fxACPlace());
+new MutationObserver(()=>{if(document.querySelector('input[list],#modal input[type=search]:not(.acw input),#modal #unkq:not(.acw input),#modal #um_n:not(.acw input)'))fxACWire()}).observe(document.documentElement,{childList:true,subtree:true});
 
 /* ---------- custom card artwork: take a photo or upload a picture (never a Scryfall search or a card scan) ---------- */
 function fxCustomArt(name){const c=findCard(name);if(!c)return;const q=esc(c.name).replace(/'/g,"\\'");
