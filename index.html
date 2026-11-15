@@ -253,7 +253,7 @@ function showCard(name,keep){
   ${c.leg||!has(c.legal)||/^None/.test(c.legal)?'':`<div class="warn">${esc(c.legal)}</div>`}
   ${has(c.text)||has(c.keywords)?`<div class="sec"><h4>Rules</h4>${has(c.text)?`<pre>${symHtml(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut" style="margin:8px 0 0">${esc(c.keywords)}</p>`:''}</div>`:''}
   ${fxUnknownBox(c)}${c.custom?'':legalBox(c)}
-  <div class="sec"><h4>My collection</h4>${kv('Owned',c.qty)}${has(c.finish)?kv('Finish',esc(c.finish)):''}${c.custom?'':kv('Printing',c.set?`${esc(c.setName||'')} · ${esc(c.set.toUpperCase())} #${esc(c.cn||'')}${c.verified?' <span style="color:var(--gold)">✓ verified</span>':''}`:'<span class="mut">not set — tap 🎨</span>')}${fxPriceRow(c)}</div>
+  <div class="sec"><h4>My collection</h4>${kv('Owned',c.qty)}${has(c.finish)?kv('Finish',esc(c.finish)):''}${c.custom?'':kv('Printing',c.set&&c.verified?`${esc(c.setName||'')} · ${esc(c.set.toUpperCase())} #${esc(c.cn||'')} <span style="color:var(--gold)">✓ verified</span>`:'<span class="mut">not verified yet — tap 🎨 to choose your artwork</span>')}${fxPriceRow(c)}</div>
   <div class="sec"><h4>Pulled from</h4>${c.source&&c.source!=='None'?`<ul>${c.source.split(', ').map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<span class="mut">—</span>'}</div>
   <div class="sec"><h4>In decks</h4>${u.length?u.map(x=>kv(esc(x.d.name),'×'+x.q)).join(''):'<span class="mut">Not in any deck</span>'}</div>
   ${acq.length?`<div class="sec"><h4>Added in app</h4>${acq.map(a=>kv(esc(a.date),`${esc(a.source)} ×${a.qty}`)).join('')}</div>`:''}

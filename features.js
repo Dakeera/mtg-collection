@@ -241,13 +241,15 @@ async function fxResolve(items,onProg){
     const ac=await scry('/cards/autocomplete?q='+encodeURIComponent(nm.slice(0,Math.max(3,Math.min(nm.length,6)))));
     const sg=((ac&&ac.data)||[]).map(n=>({n,s:sim(nm,n)})).sort((a,b)=>b.s-a.s).slice(0,5).map(x=>x.n);if(sg.length)x.sugs=sg}
   onProg&&onProg(1,1)}
-function fxAddCard(c,n,fin,src,price,notes){
+/* ver = the user picked this exact printing (several-cards picker): mark the artwork verified ✓, like a single add. An artwork already verified is never replaced. */
+function fxAddCard(c,n,fin,src,price,notes,ver){
   const nm=c.name;let e=findCard(nm),had=false;fin=fin||'Normal';
   if(e){had=cardSources(e).includes(src);e.finish=mergeFinish(e.finish||'Normal',e.qty,fin,n);e.qty+=n;if(!had)e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src}
   else{const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/'),tl=c.type_line||f.type_line||'';
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
-  if(!e.set||!e.art)Object.assign(e,{art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id});
+  const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
+  if(ver&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
@@ -271,7 +273,7 @@ function fxImpCommit(){
   if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty),src=fxImpSrc();
     if(!src){toast(IMP.sq&&isCustomSrc((IMP.sq.newSrc||IMP.sq.sel||'').trim())?'“Custom Cards” is only for custom cards — pick another source':'Choose where these cards came from first');document.getElementById('impsrc')?.scrollIntoView({block:'center'});return}
     if(!confirm(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nSource: ${src}\n\nCards you already own get their quantity increased — no duplicates are created.`))return;
-    ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];fxAddCard(x.card,x.qty,fin,src,x.price,x.notes)});
+    ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];fxAddCard(x.card,x.qty,fin,src,x.price,x.notes,IMP.qa)});
     saveArt();save();IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
@@ -1046,15 +1048,15 @@ function fxQAPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i]
     <div class="row" style="margin-top:10px"><button onclick="fxQAScan()">📷 Scan this card</button></div>`+nav;
   const c=x.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f);if(!fins.includes(x.fin))x.fin=fins[0];if(!x.prints&&!x.loading)fxQALoad(i);
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'',list=x.prints||[c];
-  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}<p class="mut" style="margin:0 0 8px">Tap any artwork to see it full screen, then swipe through them and pick the one that matches your card.</p>
+  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}${x.mine?'<p style="margin:0 0 8px;color:var(--gold)">✓ Already in your collection with this verified artwork.</p>':''}<p class="mut" style="margin:0 0 8px">Tap any artwork to see it full screen, then swipe through them and pick the one that matches your card.</p>
   <div class="qabar"><b class="qanm">${esc(c.name)}</b><label style="margin:0">Copies</label><input type="number" min="1" value="${x.qty}" style="width:80px" onchange="IMP.items[${i}].qty=Math.max(1,parseInt(this.value)||1)">
   ${fins.length>1?`<span class="chips" style="margin:0">${fins.map(f=>`<button class="${x.fin===f?'on':''}" onclick="IMP.items[${i}].fin='${f}';render()">${f}</button>`).join('')}</span>`:`<span class="mut">${esc(fins[0])}</span>`}</div>
   <div class="grid">${list.map((p,k)=>`<div class="tile" onclick="fxQAView(${i},${k})" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
   ${x.loading?'<p class="mut">Loading all printings…</p>':''}`+nav}
 async function fxQALoad(i){const x=IMP.items[i];if(!x||!x.card||x.prints||x.loading)return;x.loading=true;const all=[];let url=x.card.prints_search_uri,pages=0;
   try{while(url&&pages<4){const p=await scry(url);if(!p||!p.data)break;all.push(...p.data);pages++;url=p.has_more?p.next_page:null}}catch(e){}
-  x.loading=false;x.prints=all.length?all:[x.card];if(!x.prints.some(p=>p.id===x.card.id))x.prints.unshift(x.card);if(IMP.stage==='pick'&&IMP.pi===i&&V.view==='add')render()}
-function fxQAPrint(i,k){const x=IMP.items[i];const p=(x.prints||[])[k];if(!p)return;x.card=p;render()}
+  x.loading=false;x.prints=all.length?all:[x.card];if(!x.prints.some(p=>p.id===x.card.id))x.prints.unshift(x.card);if(!x.picked){const e=findCard(x.card.name),m=e&&e.verified&&e.scryId&&x.prints.find(p=>p.id===e.scryId);if(m){x.card=m;x.mine=true}}if(IMP.stage==='pick'&&IMP.pi===i&&V.view==='add')render()}
+function fxQAPrint(i,k){const x=IMP.items[i];const p=(x.prints||[])[k];if(!p)return;x.card=p;x.picked=true;x.mine=false;render()}
 /* Full-screen artwork viewer for the add-several picker: swipe or use ‹ › to browse every printing, flip double-faced cards, “Use this one” picks it. */
 function fxQAView(i,k){const x=IMP.items[i],list=x.prints||[x.card];if(!list[k])return;let face=0;$('#qafull')?.remove();const d=document.createElement('div');d.id='qafull';
   const big=(p,f)=>{const cf=p.card_faces;if(cf&&cf[f]&&cf[f].image_uris)return cf[f].image_uris.large||cf[f].image_uris.normal||'';return p.image_uris?.large||p.image_uris?.normal||cf?.[0]?.image_uris?.large||cf?.[0]?.image_uris?.normal||''};
