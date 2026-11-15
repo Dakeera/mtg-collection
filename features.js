@@ -105,33 +105,29 @@ const fxDb=()=>new Promise((ok,no)=>{const r=indexedDB.open('mtg_others',1);r.on
 const fxTx=(mode,fn)=>fxDb().then(db=>new Promise((ok,no)=>{const t=db.transaction('c',mode),r=fn(t.objectStore('c'));t.oncomplete=()=>{db.close();ok(r&&r.result)};t.onerror=()=>{db.close();no(t.error)}}));
 async function ocLoad(){try{OC=((await fxTx('readonly',st=>st.getAll()))||[]).sort((a,b)=>(b.added||0)-(a.added||0))}catch(e){OC=[]}return OC}
 function fxOthersView(){return `<p class="mut">Open a backup file someone shared with you to browse their collection and decks. It is view-only and kept separate from your own collection — nothing here can change your data.</p>
-  <div class="row"><label class="btn pri">⬆ Import someone’s collection<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="ocImport(this.files[0]);this.value=''"></label></div>
+  <div class="row"><label class="btn pri">⬆ Import someone’s collection<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="fxOpenFile(this.files[0],'view');this.value=''"></label></div>
+  <div class="f"><label>…or paste a deck link someone sent you</label><input id="oclink" placeholder="https://…#d=…"></div><div class="row"><button onclick="fxOpenLink(document.getElementById('oclink').value)">Open deck link</button></div>
   <p class="mut" style="font-size:12px">Tap a collection to open it. Slide a row to the left to delete it.</p><div id="oclist"><p class="mut">Loading…</p></div>`}
 async function ocDraw(){await ocLoad();const el=document.getElementById('oclist');if(!el)return;
-  el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)}<br><span>${r.data.cards.length} titles · ${fxPl(r.data.decks.length,'deck')}</span></b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
+  el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)} ${r.status==='signed'?'<span title="Signed by its owner" style="color:#2ecc71">✓</span>':'<span class="mut" style="font-weight:400;font-size:11px">unverified</span>'}<br><span>${r.partial?fxPl(r.data.decks.length,'deck')+' only':r.data.cards.length+' titles · '+fxPl(r.data.decks.length,'deck')}${r.uid&&!/^(old|link)-/.test(r.uid)?' · ID '+esc(fxCode(r.uid)):''}</span></b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
   el.querySelectorAll('.ocrow').forEach(row=>{const inn=row.querySelector('.ocin');let x0=null,dx=0,open=false;
     const set=o=>{open=o;inn.style.transform=o?'translateX(-92px)':''};
     inn.addEventListener('pointerdown',e=>{x0=e.clientX;dx=0;inn.style.transition='none';try{inn.setPointerCapture(e.pointerId)}catch(_){}});
     inn.addEventListener('pointermove',e=>{if(x0==null)return;dx=e.clientX-x0;const b=open?-92:0;inn.style.transform=`translateX(${Math.max(-92,Math.min(0,b+dx))}px)`});
     const end=()=>{if(x0==null)return;x0=null;inn.style.transition='';if(Math.abs(dx)<8){if(open)set(false);else roOpen(row.dataset.oc)}else set(open?dx<40:dx<-40)};
     inn.addEventListener('pointerup',end);inn.addEventListener('pointercancel',()=>{x0=null;inn.style.transition='';set(open)})})}
-async function ocImport(f){if(!f)return;let j;try{j=await fxReadBackup(f)}catch(e){return toast('That file is not a valid collection backup')}
-  const name=(j.owner||String(f.name||'Collection').replace(/\.[^.]+$/,'').replace(/-?mtg-backup.*$/i,'')||'Collection').trim()||'Collection',updated=j.updated||f.lastModified||Date.now();
-  await ocLoad();const same=OC.find(r=>r.name.toLowerCase()===name.toLowerCase());let id='c'+Date.now().toString(36);
-  if(same){if(confirm(`You already have a saved collection called “${name}”.\n\nOK = replace it with this file\nCancel = keep both`))id=same.id}
-  try{await fxTx('readwrite',st=>st.put({id,name:same&&id!==same.id?name+' (2)':name,updated,added:Date.now(),data:j}))}catch(e){return toast('Could not save that collection (storage full?)')}
-  toast(`${name} added to your saved collections`);ocDraw()}
+async function ocImport(f){return fxOpenFile(f,'view')}
 async function ocDelete(id){const r=(OC||[]).find(x=>x.id===id);if(!r)return;if(!confirm(`Delete the saved collection “${r.name}”?\n\nThis only removes it from this list. Your own collection is not affected.`))return ocDraw();
-  await fxTx('readwrite',st=>st.delete(id));toast('Removed');ocDraw()}
+  await fxTx('readwrite',st=>st.delete(id));if(!(OC||[]).some(x=>x.id!==id&&x.uid===r.uid))fxFriendIndex(r,true);toast('Removed');ocDraw()}
 async function roOpen(id){await ocLoad();const r=OC.find(x=>x.id===id);if(!r)return;if(!fxCanLeave())return;
   const j=JSON.parse(JSON.stringify(r.data));['acq','edits','flags','swaps','matchups','loans','sleeves','sims'].forEach(k=>{j[k]=j[k]||[]});j.kept=j.kept||{};
   j.cards.forEach(c=>{c.text=c.text||'';c.colors=c.colors||'';c.type=c.type||'';c.qty=+c.qty||0});j.decks.forEach(d=>{d.cards=d.cards||[];d.tokens=d.tokens||[]});
-  MINE={D,ART,ART2};D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,updated:r.updated};IDX=null;DRAFT=null;HIST.length=0;
+  MINE={D,ART,ART2};D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,updated:r.updated,uid:r.uid,status:r.status};IDX=null;DRAFT=null;HIST.length=0;
   V.view='collection';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();render();scrollTo(0,0);fetchArt()}
-function roExit(){if(!RO)return;D=MINE.D;ART=MINE.ART;ART2=MINE.ART2;RO=null;MINE=null;IDX=null;HIST.length=0;V.view='more';V.sub='others';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();render();scrollTo(0,0)}
-const roBar=()=>`<div class="robar"><button onclick="roExit()">← Back to my collection</button><b title="Tap to rename" onclick="roRename()">${esc(RO.name)}</b><span>Updated<br>${esc(fxDate(RO.updated))}</span></div>`;
+function roExit(){if(!RO)return;D=MINE.D;ART=MINE.ART;ART2=MINE.ART2;RO=null;MINE=null;IDX=null;HIST.length=0;V.view='more';V.sub='others';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();persist();render();scrollTo(0,0)}
+const roBar=()=>`<div class="robar"><button onclick="roExit()">← Back to my collection</button><b title="Tap to rename" onclick="roRename()">${RO.status==='signed'?'✓ ':''}${esc(RO.name)}</b><span>Updated<br>${esc(fxDate(RO.updated))}</span></div>`;
 async function roRename(){const n=prompt('Name for this collection (so you know whose it is):',RO.name);if(n==null)return;const name=n.trim();if(!name)return;
-  await ocLoad();const r=OC.find(x=>x.id===RO.id);if(r){r.name=name;await fxTx('readwrite',st=>st.put(r))}RO.name=name;render();toast('Renamed')}
+  await ocLoad();const r=OC.find(x=>x.id===RO.id);if(r){r.name=name;await fxTx('readwrite',st=>st.put(r));fxFriendIndex(r)}RO.name=name;render();toast('Renamed')}
 
 /* ---------- formats guide ---------- */
 const FXFMT=[
@@ -275,7 +271,7 @@ Cards you already own get their quantity increased. Nothing is added until you c
 `,'mtg-import-guide.txt','text/plain')}
 function fxExportCSV(){const q=v=>/[",\n]/.test(String(v))?'"'+String(v).replace(/"/g,'""')+'"':String(v??''),rows=[['Name','Quantity','Set code','Collector number','Finish','Source','Type']];
   D.cards.forEach(c=>{const fm=finMapOf(c);Object.keys(fm).filter(k=>fm[k]>0).forEach(k=>rows.push([c.name,fm[k],c.set||'',c.cn||'',k,c.source&&c.source!=='None'?c.source:'',c.type||'']))});
-  fxDownload(rows.map(r=>r.map(q).join(',')).join('\r\n')+'\r\n',`${fxSlug(D.owner)}mtg-collection-${tsName()}.csv`,'text/csv')}
+  fxDownload(rows.map(r=>r.map(q).join(',')).join('\r\n')+'\r\n',`${fxPrefix()}collection_${tsName()}.csv`,'text/csv')}
 function fxImportView(){
   if(IMP.stage==='work')return `<h3>Reading your ${IMP.kind==='deck'?'deck list':'cards'}…</h3><p class="mut" id="impt">Looking cards up…</p><div class="pbar"><i id="impb" style="width:3%"></i></div>`;
   if(IMP.stage==='preview'){const it=IMP.items,deck=IMP.kind==='deck',ok=it.filter(x=>x.card||x.own),bad=it.filter(x=>!x.card&&!x.own),own=it.filter(x=>x.own);
@@ -415,7 +411,7 @@ function fxMatchups(){const ms=D.matchups.find(x=>/MASTER MATCHUP/i.test(x.title
   <div class="row"><button class="pri" onclick="fxSimRun()">⚔ Run simulation</button></div><div id="simout"></div>
   <details class="g"><summary>How accurate is this?</summary><p class="mut">It is a simplified model, not a full rules engine. It plays lands and casts spells on curve, attacks and blocks using real power, toughness and keywords (flying, trample, deathtouch, first strike, lifelink, menace…), and understands removal, burn, board wipes, card draw, ramp, tokens, counterspells, lifegain and commanders from each card’s rules text. Triggered abilities, combos and tricky cards are not modelled, so treat the numbers as a guide to how the decks’ speed and board presence compare. Use “Ask an AI” on a result for a second opinion that understands synergies.</p></details>
   <h3>Simulation log</h3>${rows.length?tbl(['ID','Date','Deck A','Deck B','Format','Games','A wins','B wins','Avg length','Status',''],[...rows].reverse().map(r=>[...r.slice(0,10).map(noEmoji),{h:`<button class="danger" data-rw style="padding:4px 8px" onclick="fxSimDel('${esc(r[0])}')">✕</button>`}])):'<p class="mut">No matchups have been run yet.</p>'}
-  ${sims.map(s=>`<details class="g" ${V.simOpen===s.id?'open':''}><summary>${esc(s.id)} · ${esc(s.a)} vs ${esc(s.b)} · ${pc(s.aw,s.n)} / ${pc(s.bw,s.n)}</summary>
+  ${sims.map(s=>`<details class="g" ${V.simOpen===s.id?'open':''}><summary>${esc(s.id)} · ${esc(simName(s,'a'))} vs ${esc(simName(s,'b'))} · ${pc(s.aw,s.n)} / ${pc(s.bw,s.n)}</summary>
     ${tbl(['',s.a,s.b],[['Overall wins',`${s.aw} (${pc(s.aw,s.n)})`,`${s.bw} (${pc(s.bw,s.n)})`],['Win rate when '+s.a+' goes first',pc(s.ap[0],s.ap[1]),''],['Win rate when '+s.b+' goes first',pc(s.ad[0],s.ad[1]),''],['Draws / stalled games',s.dr,''],['Average game length',s.avg+' turns','']])}
     ${(s.unkA||[]).length||(s.unkB||[]).length?`<p class="mut" style="font-size:12px">Cards the simulator had no data for (treated as plain 3-mana spells): ${esc([...(s.unkA||[]),...(s.unkB||[])].slice(0,30).join(', '))}</p>`:''}
     ${s.note?`<div class="sec"><h4>AI commentary</h4><pre style="white-space:pre-wrap">${esc(s.note)}</pre></div>`:''}
@@ -426,7 +422,8 @@ async function simFill(){await ocLoad();const a=document.getElementById('simA'),
   const opts=[...D.decks.map((d,i)=>[`m:${i}`,d.name]),...OC.flatMap(r=>r.data.decks.map((d,i)=>[`o:${r.id}:${i}`,`${d.name} (${r.name})`]))];
   const h=sel=>opts.map(([v,l])=>`<option value="${esc(v)}" ${sel===v?'selected':''}>${esc(l)}</option>`).join('')||'<option value="">No decks yet</option>';
   if(!V.simA||!opts.some(o=>o[0]===V.simA))V.simA=opts[0]?.[0]||'';if(!V.simB||!opts.some(o=>o[0]===V.simB))V.simB=(opts[1]||opts[0]||[''])[0];a.innerHTML=h(V.simA);b.innerHTML=h(V.simB)}
-function simPick(v){const p=String(v).split(':');if(p[0]==='m'){const d=D.decks[+p[1]];return d&&simDeck(d,D.cards)}const r=(OC||[]).find(x=>x.id===p[1]),d=r&&r.data.decks[+p[2]];return d&&simDeck(d,r.data.cards,`${d.name} (${r.name})`)}
+function simPick(v){const p=String(v).split(':');if(p[0]==='m'){const d=D.decks[+p[1]];return d&&Object.assign(simDeck(d,D.cards),{owner:D.uid||'',deck:d.name})}const r=(OC||[]).find(x=>x.id===p[1]),d=r&&r.data.decks[+p[2]];return d&&Object.assign(simDeck(d,r.data.cards,`${d.name} (${r.name})`),{owner:r.uid||'',deck:d.name})}
+const simName=(s,k)=>{const o=s[k+'o'],r=o&&o!==D.uid&&(OC||[]).find(x=>x.uid===o&&!x.sep);return r&&s[k+'d']?`${s[k+'d']} (${r.name})`:s[k]};
 async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||1000,out=document.getElementById('simout');if(!A||!B)return toast('Pick two decks first');
   if(V.simA===V.simB&&!confirm('Both sides are the same deck (a mirror match). Run it anyway?'))return;
   for(const d of [A,B])if(d.n<20)return toast(`${d.name} has only ${d.n} cards — add more before simulating`);
@@ -435,7 +432,7 @@ async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||10
   const ms=simMaster(),num=Math.max(0,...ms.rows.slice(1).map(x=>parseInt(String(x[0]).replace(/\D/g,''))||0))+1,id='MATCH-'+String(num).padStart(3,'0'),pct=v=>(Math.round(v/n*1000)/10).toFixed(1);
   const fmt=A.cmdFmt&&B.cmdFmt?'Commander (100 Cards)':!A.cmdFmt&&!B.cmdFmt?'Casual Constructed (60 Cards)':'Mixed formats';
   ms.rows.push([id,today(),A.name,B.name,fmt,String(n),`${r.aw} (${pct(r.aw)}%)`,`${r.bw} (${pct(r.bw)}%)`,`${r.avg} Turns`,'Simulated in app']);
-  D.sims.push({id,date:today(),a:A.name,b:B.name,fmt,n,aw:r.aw,bw:r.bw,dr:r.dr,avg:r.avg,ap:r.ap,ad:r.ad,unkA:A.unk,unkB:B.unk,la:A.list,lb:B.list,ca:A.commander,cb:B.commander,note:''});
+  D.sims.push({id,date:today(),a:A.name,b:B.name,fmt,n,aw:r.aw,bw:r.bw,dr:r.dr,avg:r.avg,ap:r.ap,ad:r.ad,unkA:A.unk,unkB:B.unk,la:A.list,lb:B.list,ca:A.commander,cb:B.commander,ao:A.owner,bo:B.owner,ad:A.deck,bd:B.deck,note:''});
   V.simOpen=id;save();render();toast(`${A.name} ${pct(r.aw)}% — ${B.name} ${pct(r.bw)}%`)}
 function fxSimDel(id){if(!confirm(`Remove ${id} from the matchup log?`))return;const ms=simMaster();ms.rows=ms.rows.filter((r,i)=>i===0||r[0]!==id);D.sims=(D.sims||[]).filter(s=>s.id!==id);save();render()}
 function fxSimPrompt(s){return `You are an expert Magic: The Gathering analyst. Two decks were played against each other in a simplified simulator (it models mana, creatures, combat keywords, removal, burn, card draw and ramp, but not triggered abilities or combos).
@@ -486,3 +483,115 @@ function fxSort(cs){const k=fxSortKey(),mv=c=>parseFloat(c.cmc)||0,nm=(a,b)=>a.n
   return k==='new'?a.reverse():k==='az'?a.sort(nm):k==='za'?a.sort((x,y)=>nm(y,x)):k==='qty'?a.sort((x,y)=>y.qty-x.qty||nm(x,y)):k==='mvlo'?a.sort((x,y)=>mv(x)-mv(y)||nm(x,y)):k==='mvhi'?a.sort((x,y)=>mv(y)-mv(x)||nm(x,y)):
     k==='prhi'?a.sort((x,y)=>fxEach(y)-fxEach(x)||nm(x,y)):k==='prlo'?a.sort((x,y)=>(fxEach(x)||1e9)-(fxEach(y)||1e9)||nm(x,y)):k==='total'?a.sort((x,y)=>fxVal(y)-fxVal(x)||nm(x,y)):k==='type'?a.sort((x,y)=>String(x.type).localeCompare(String(y.type))||nm(x,y)):a.sort((x,y)=>String(x.colors).localeCompare(String(y.colors))||nm(x,y))}
 const fxBadge=c=>'×'+c.qty+(/^(prhi|prlo|total)$/.test(fxSortKey())&&fxVal(c)?' · '+fxMoney(V.sort==='total'?fxVal(c):fxEach(c)):'');
+
+/* ---------- identity: every collection has a permanent ID, a changeable name, and a signing key ----------
+   No server: the ID is a random UUID made on the device and stored inside the data, so it travels with backups.
+   Share files are signed with a private key that never leaves the app or the owner's own backups. */
+const FX_SITE='https://dakeera.github.io/mtg-collection/';
+const fxUuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=crypto.getRandomValues(new Uint8Array(1))[0]&15;return (c==='x'?r:(r&3|8)).toString(16)});
+function fxCode(uid){try{const hex=String(uid).replace(/[^0-9a-f]/gi,'').slice(0,10);if(hex.length<10)return String(uid).slice(0,9).toUpperCase();const A='0123456789ABCDEFGHJKMNPQRSTVWXYZ';let n=BigInt('0x'+hex),s='';for(let i=0;i<8;i++){s=A[Number(n&31n)]+s;n>>=5n}return s.slice(0,4)+'-'+s.slice(4)}catch(e){return ''}}
+const fxPrefix=()=>(fxSlug(D.owner).replace(/-$/,'')||'mtg')+'_'+(D.uid?fxCode(D.uid)+'_':'');
+const fxSubtle=()=>(window.crypto&&crypto.subtle)||null,FXEC={name:'ECDSA',namedCurve:'P-256'},FXSG={name:'ECDSA',hash:'SHA-256'};
+const fxB64=buf=>{let s='';new Uint8Array(buf).forEach(b=>s+=String.fromCharCode(b));return btoa(s)},fxUnB64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const fxPubId=p=>p?String(p.x)+'.'+String(p.y):'';
+async function fxKeys(){const T=D,s=fxSubtle();if(!T||T.keys||!s)return;try{const k=await s.generateKey(FXEC,true,['sign','verify']);T.keys={pub:await s.exportKey('jwk',k.publicKey),priv:await s.exportKey('jwk',k.privateKey)};if(!RO&&T===D)persist()}catch(e){}}
+async function fxSign(text){const s=fxSubtle();if(!s||!D.keys)return null;try{const k=await s.importKey('jwk',D.keys.priv,FXEC,false,['sign']);return fxB64(await s.sign(FXSG,k,new TextEncoder().encode(text)))}catch(e){return null}}
+async function fxVerify(text,sig,pub){const s=fxSubtle();if(!s||!sig||!pub)return false;try{const k=await s.importKey('jwk',pub,FXEC,false,['verify']);return await s.verify(FXSG,k,fxUnB64(sig),new TextEncoder().encode(text))}catch(e){return false}}
+function fxIdentity(name){if(!D.uid){D.uid=fxUuid();D.created=D.created||today()}if(name!=null)D.owner=name;D.friends=D.friends||[];fxKeys()}
+function fxInitId(){D.friends=D.friends||[];if(!D.uid&&(D.cards.length||D.decks.length))fxIdentity();else if(D.uid&&!D.keys)fxKeys()}
+function fxWelcome(){if(D.uid||D.cards.length||D.decks.length||V.noWelcome)return false;$('#nav').innerHTML='';
+  $('#main').innerHTML=`<div style="max-width:460px;margin:6vh auto 0;text-align:center"><img src="icons/icon-192.png" alt="" style="width:96px;height:96px;border-radius:22px"><h2>Welcome to MtG DeckMaster</h2>
+  <p class="mut">Track your Magic cards and decks. Everything stays on this device — there is no account and no login.</p>
+  <div class="f" style="text-align:left"><label>Name your collection</label><input id="wname" maxlength="40" placeholder="e.g. Nick’s collection"></div><br><button class="pri big" style="width:100%" onclick="fxStart()">Start my collection</button>
+  <p class="mut" style="margin:18px 0 6px">Already have one?</p><label class="btn big" style="display:block">⬆ Restore my backup<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="fxOpenFile(this.files[0],'restore');this.value=''"></label>
+  <p><button style="background:none;border:0;text-decoration:underline;color:var(--mut)" onclick="V.noWelcome=1;render()">Just look around</button></p>
+  <p class="mut" style="font-size:12px">Your collection gets its own permanent ID. You can rename the collection any time; the ID stays the same and comes back whenever you restore a backup.</p></div>`;return true}
+function fxStart(){fxIdentity(($('#wname').value||'').trim()||'My collection');persist();render();toast('Collection created')}
+function fxRename(v){D.owner=String(v||'').trim();save();toast('Collection name saved — your ID stays the same')}
+function fxAsk(title,body,btns){window.FXASK=btns.map(b=>()=>{closeM();b.fn&&b.fn()});
+  openM(`<h3>${title}</h3>${body}<div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">${btns.map((b,i)=>`<button class="${b.cls||''}" style="padding:13px" onclick="FXASK[${i}]()">${b.t}</button>`).join('')}</div>`)}
+const fxWho=(name,uid)=>`<b>${esc(name||'(no name)')}</b>${uid?` <span class="mut">· ID ${esc(fxCode(uid))}</span>`:' <span class="mut">· no ID (older file)</span>'}`;
+
+/* ---------- one way in for every file: backup, share file, or someone else's backup ---------- */
+async function fxOpenFile(f,hint){if(!f)return;let j;try{j=await fxReadBackup(f)}catch(e){return toast('That file isn’t a MtG DeckMaster backup or share file')}
+  if(j.kind==='mtg-share')return fxGotShare(j);return fxGotBackup(j,f,hint)}
+function fxRestoreAsk(j){let m=`Restore this backup? It replaces everything currently in the app (${D.cards.length} card titles, ${fxPl(D.decks.length,'deck')}).`;
+  if(j.updated&&D.updated&&j.updated<D.updated-60000&&D.cards.length)m+=`\n\n⚠ This backup is OLDER than what is in the app now.\nBackup last changed: ${new Date(j.updated).toLocaleString()}\nApp last changed: ${new Date(D.updated).toLocaleString()}\nAnything you changed since then will be lost.`;
+  if(confirm(m))fxRestore(j)}
+function fxRestore(j){D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();DRAFT=null;V.noWelcome=0;save();stamp();closeM();toast('Backup restored');render();fetchArt()}
+function fxGotBackup(j,f,hint){const empty=!D.cards.length&&!D.decks.length,same=j.uid&&D.uid&&j.uid===D.uid;
+  const asFriend=()=>fxSaveFriend({uid:j.uid||('old-'+fxUuid()),name:j.owner||String(f.name||'Collection').replace(/\.[^.]+$/,'').replace(/[_-]?(mtg-)?backup.*$/i,'').replace(/_[0-9A-Z]{4}-[0-9A-Z]{4}$/,'')||'Collection',updated:j.updated||f.lastModified||Date.now(),pub:j.keys?j.keys.pub:null,cards:j.cards,decks:j.decks,scope:'all'},'unverified',{});
+  if(same||(empty&&hint!=='view'))return fxRestoreAsk(j);
+  const info=`<div class="sec">${fxWho(j.owner,j.uid)}<br><span class="mut">${j.cards.length} card titles · ${fxPl(j.decks.length,'deck')}${j.updated?' · last changed '+esc(fxDate(j.updated)):''}</span></div>`;
+  fxAsk('Whose collection is this?',info+`<p class="mut">${j.uid&&D.uid?'This file belongs to a <b>different collection</b> than the one in this app.':'This backup was made by an older version of the app, so it has no ID and I can’t tell whose it is.'} ${empty?'':'Your own collection stays untouched unless you choose to replace it.'}</p>`,
+    [{t:'👁 View it (add to Other collections)',cls:hint==='view'||!empty?'pri':'',fn:asFriend},{t:empty?'Use it as my collection':'Replace my collection with it',cls:empty?'':'danger',fn:()=>fxRestoreAsk(j)},{t:'Cancel'}])}
+async function fxGotShare(j){const {sig,...rest}=j;let st='unsigned';if(sig&&j.pub)st=(await fxVerify(JSON.stringify(rest),sig,j.pub))?'signed':'bad';
+  const info=`<div class="sec">${fxWho(j.name,j.uid)}<br><span class="mut">${j.scope==='deck'?'Deck: '+esc(j.decks[0]?.name||''):j.cards.length+' card titles · '+fxPl(j.decks.length,'deck')}${j.updated?' · last changed '+esc(fxDate(j.updated)):''}</span></div>`,empty=!D.cards.length&&!D.decks.length;
+  if(D.uid&&j.uid===D.uid&&j.scope!=='deck')return fxAsk('This is your own share file',info+'<p class="mut">A share file holds your cards and decks, but not your private notes, logs, sleeves or signing key. A backup file is the better way to restore. You can still use this one.</p>',[{t:'Restore my cards and decks from it',fn:()=>fxRecover(j,'mine')},{t:'Cancel'}]);
+  await ocLoad();const ex=OC.find(r=>r.uid===j.uid&&!r.sep&&!r.link),known=ex?ex.pub:((D.friends||[]).find(x=>x.uid===j.uid)||{}).pub,keyOK=!known||(j.pub&&fxPubId(known)===fxPubId(j.pub)),who=ex?ex.name:j.name;
+  const good=st==='signed'?'signed':'unverified';
+  if(st==='bad')return fxAsk('⚠ This file was changed',info+'<p>The signature doesn’t match the contents. The file was edited after it was created, or it is damaged.</p><p class="mut">You can still open it. It will be marked “unverified”'+(ex?' and saved separately, so the trusted copy you already have is not replaced.':'.')+'</p>',[{t:'Import anyway (unverified)',fn:()=>fxSaveFriend(j,'unverified',{separate:!!ex})},{t:'Cancel',cls:'pri'}]);
+  if(!keyOK)return fxAsk('⚠ Signature doesn’t match',info+`<p>You already know <b>${esc(who)}</b> under this ID, but this file ${st==='unsigned'?'is <b>not signed</b>':'is signed with a <b>different key</b>'}.</p><p class="mut">That happens when they reset the app or recovered their collection without a backup${st==='unsigned'?', or made the file with an older version':''}. It could also be a file from someone else using their ID. If you’re not sure, ask them.</p>`,
+    [{t:`Trust it — update ${esc(who)} and remember this signature`,fn:()=>fxSaveFriend(j,good,{trust:true})},{t:'Keep both — save it separately as unverified',fn:()=>fxSaveFriend(j,'unverified',{separate:true})},{t:'Cancel',cls:'pri'}]);
+  if(empty&&j.scope!=='deck')return fxAsk('A share file',info+'<p class="mut">Your app has no collection yet. What would you like to do with this one?</p>',[{t:'👁 View it (it belongs to someone else)',cls:'pri',fn:()=>fxSaveFriend(j,good,{})},{t:'It was mine — recover it (keeps the same ID)',fn:()=>fxRecover(j,'recover')},{t:'Start my collection from a copy (new ID)',fn:()=>fxRecover(j,'copy')},{t:'Cancel'}]);
+  fxSaveFriend(j,good,{})}
+function fxRecover(j,mode){if(mode==='mine'&&!confirm(`Replace your current cards and decks (${D.cards.length} titles, ${fxPl(D.decks.length,'deck')}) with the ones in this share file?\n\nYour logs, sleeves and ID are kept.`))return;
+  D.cards=j.cards;D.decks=j.decks;D.loans=[];if(mode!=='mine'){D.owner=mode==='copy'?(j.name||'My')+' (copy)':j.name;D.uid=mode==='recover'?j.uid:fxUuid();D.created=today();D.keys=null;fxKeys()}
+  normSources();IDX=null;DRAFT=null;V.noWelcome=0;save();render();fetchArt();toast(mode==='recover'?'Collection recovered — friends will be asked to trust your new signature':'Done')}
+function fxFriendIndex(rec,del){const F=RO?(MINE.D.friends=MINE.D.friends||[]):(D.friends=D.friends||[]),i=F.findIndex(x=>x.uid===rec.uid);if(del){if(i>=0)F.splice(i,1)}else if(!rec.sep&&!rec.link){const e={uid:rec.uid,name:rec.name,pub:rec.pub||null};i>=0?F[i]=e:F.push(e)}if(!RO)save()}
+async function fxSaveFriend(j,status,opt){await ocLoad();const ex=opt.separate?null:OC.find(r=>r.uid===j.uid&&!r.sep&&!!r.link===!!opt.link),nick=((D.friends||[]).find(x=>x.uid===j.uid)||{}).name;
+  let data={cards:j.cards,decks:j.decks,owner:j.name,updated:j.updated},msg='';
+  if(j.scope==='deck'&&ex){data=JSON.parse(JSON.stringify(ex.data));j.decks.forEach(d=>{const i=data.decks.findIndex(x=>x.name===d.name);i>=0?data.decks[i]=d:data.decks.push(d)});j.cards.forEach(c=>{const i=data.cards.findIndex(x=>norm(x.name)===norm(c.name));if(i<0)data.cards.push(c);else if(ex.partial)data.cards[i]=c});msg=`Deck “${j.decks[0].name}” added to ${ex.name}`}
+  else if(ex){const o=new Set(ex.data.cards.map(c=>norm(c.name))),n=new Set(j.cards.map(c=>norm(c.name))),add=[...n].filter(x=>!o.has(x)).length,rem=[...o].filter(x=>!n.has(x)).length,dd=j.decks.length-ex.data.decks.length;
+    msg=`${ex.name} updated: ${add?'+'+add+' ':''}${rem?'−'+rem+' ':''}${add||rem?'card titles':'no card changes'}${dd?`, ${dd>0?'+':''}${dd} deck${Math.abs(dd)===1?'':'s'}`:''}`}
+  const rec={id:ex?ex.id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),uid:j.uid,name:ex?ex.name:(opt.separate?(j.name||'Collection')+' (unverified copy)':(opt.link?opt.nick:nick)||opt.nick||j.name||'Collection'),given:j.name,updated:j.scope==='deck'&&ex?Math.max(ex.updated||0,j.updated||0):j.updated,added:ex?ex.added:Date.now(),
+    pub:opt.trust||!ex||!ex.pub?(j.pub||null):ex.pub,status:j.scope==='deck'&&ex?ex.status:status,partial:j.scope==='deck'?(ex?!!ex.partial:true):false,sep:!!opt.separate,link:!!opt.link,data};
+  try{await fxTx('readwrite',st=>st.put(rec))}catch(e){toast('Could not save that collection (storage full?)');return null}
+  fxFriendIndex(rec);toast(msg||`${rec.name} added to Other collections${status==='signed'?' ✓ verified':''}`);if(!opt.quiet){V.view='more';V.sub='others';render()}return rec}
+
+/* ---------- sharing: signed share files and deck links ---------- */
+async function fxShareData(scope,i){const keep=['name','colors','cost','cmc','type','subtype','power','toughness','text','keywords','qty','finish','set','setName','cn','scryId','art','art2','leg','legAt','price','priceAt','verified'];
+  let decks=D.decks.map(d=>({name:d.name,format:d.format,commander:d.commander||'',cards:d.cards.map(e=>({name:e.name,qty:e.qty,finish:e.finish||'Normal'})),tokens:d.tokens||[]})),cards=D.cards;
+  if(scope==='deck'){decks=[decks[i]];const s=new Set(decks[0].cards.map(e=>norm(e.name)));cards=cards.filter(c=>s.has(norm(c.name)))}
+  const body={kind:'mtg-share',v:1,scope,uid:D.uid,name:D.owner||'Collection',updated:D.updated||Date.now(),pub:D.keys?D.keys.pub:null,cards:cards.map(c=>{const o={};keep.forEach(k=>{if(c[k]!=null)o[k]=c[k]});return o}),decks};
+  const txt=JSON.stringify(body),sig=await fxSign(txt);return JSON.stringify(Object.assign(JSON.parse(txt),{sig}))}
+async function fxSend(text,name){const blob=new Blob([text],{type:'application/json'});
+  if(isNative()){try{await nativeSave(blob,name,true)}catch(e){toast('Could not share the file: '+String(e&&e.message||e).slice(0,80))}return}
+  try{const file=new File([blob],name,{type:'application/json'});if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}}catch(e){if(e&&e.name==='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();toast('Share file saved to Downloads — send it to your friend')}
+async function fxShareFile(scope,i){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
+  const name=`${fxPrefix()}${scope==='deck'?'deck-'+(fxSlug(D.decks[i].name).replace(/-$/,'')||'deck')+'_':''}share_${tsName()}.json`;fxSend(await fxShareData(scope,i),name)}
+async function fxPack(o){const b=new TextEncoder().encode(JSON.stringify(o));let out=b,z='j';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='z'}}catch(e){out=b;z='j'}
+  return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+async function fxUnpack(s){const z=s[0];let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
+async function fxDeckLink(i){const d=D.decks[i];if(!D.uid)fxIdentity();const base=!isNative()&&/^https?:/.test(location.protocol)?location.origin+location.pathname:FX_SITE,url=base+'#d='+await fxPack({n:d.name,f:d.format,c:d.commander||'',o:D.owner||'',u:D.uid||'',l:d.cards.map(e=>[e.qty,e.name])});
+  try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title:d.name,text:`${d.name} — a MtG DeckMaster deck`,url,dialogTitle:'Share deck link'});return}
+    if(navigator.share){await navigator.share({title:d.name,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
+  navigator.clipboard.writeText(url).then(()=>toast('Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
+function fxShareDeck(i){const d=D.decks[i];fxAsk(`Share “${esc(d.name)}”`,'<p class="mut"><b>File</b>: signed, includes the card details, opens in the app under Other collections.<br><b>Link</b>: quickest — opens the web version with the deck ready to view. Links aren’t signed.</p>',[{t:'📄 Send as a file',cls:'pri',fn:()=>fxShareFile('deck',i)},{t:'🔗 Share as a link',fn:()=>fxDeckLink(i)},{t:'Cancel'}])}
+function fxCardObj(c,src,n,fin){const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/'),tl=c.type_line||f.type_line||'';
+  return {name:c.name,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
+    text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin||'Normal',status:'Added in app'}}
+async function fxOpenLink(text){const m=String(text||'').match(/#d=([A-Za-z0-9_\-]+)/);if(!m)return toast('That doesn’t look like a deck link');let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
+  const n=sum(o.l,x=>+x[0]||0);fxAsk('A deck was shared with you',`<div class="sec"><b>${esc(o.n)}</b> <span class="mut">· ${esc(o.f||'')} · ${fxPl(n,'card')}</span><br>from ${fxWho(o.o||'someone',o.u)}</div><p class="mut">Links aren’t signed, so the sender can’t be verified. The deck is view-only until you copy it to your own decks.</p>`,[{t:'👁 View the deck',cls:'pri',fn:()=>fxLinkImport(o)},{t:'Cancel'}])}
+async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.map(([q,nm])=>({name:String(nm),qty:+q||1,set:'',num:'',sid:''})),need=[];
+  items.forEach(x=>{const c=findCard(x.name);if(c)x.own=c;else need.push(x)});try{if(need.length)await fxResolve(need)}catch(e){return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection')}
+  const cards=[],seen=new Set();items.forEach(x=>{const src=x.own||(x.card&&Object.assign(fxCardObj(x.card,'',x.qty),{art:sImg(x.card),set:x.card.set,setName:x.card.set_name,cn:x.card.collector_number,scryId:x.card.id,leg:legOf(x.card.legalities)}));if(!src)return;x.name=src.name;if(seen.has(norm(src.name)))return;seen.add(norm(src.name));const c=JSON.parse(JSON.stringify(src));delete c.source;c.qty=x.qty;cards.push(c)});
+  const uid=o.u||('link-'+fxUuid()),rec=await fxSaveFriend({uid,name:o.o||'Shared decks',updated:Date.now(),pub:null,scope:'deck',cards,decks:[{name:o.n,format:o.f||'Casual',commander:o.c||'',cards:items.map(x=>({name:x.name,qty:x.qty,finish:'Normal'})),tokens:[]}]},'unverified',{link:true,quiet:true,nick:(o.o||'Someone')+' — shared by link'});
+  if(rec){await roOpen(rec.id);const i=D.decks.findIndex(d=>d.name===o.n);if(i>=0){V.view='decks';V.deck=i;render()}}}
+function fxCheckLink(){try{if(/#d=/.test(location.hash)){const h=location.hash;history.replaceState(history.state,'',location.pathname+location.search);fxOpenLink(h)}}catch(e){}}
+addEventListener('hashchange',()=>fxCheckLink());
+const fxRoDeckBtns=i=>RO?`<div class="row"><button class="pri" onclick="fxCopyDeck(${i})">＋ Copy to my decks</button><button onclick="fxSimVs(${i})">⚔ Simulate vs my decks</button></div>`:'';
+function fxCopyDeck(i){const d=D.decks[i],from=RO.name;roExit();let nm=`${d.name} (from ${from})`,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${d.name} (from ${from}) ${k++}`;
+  const cards=d.cards.map(e=>({name:(findCard(e.name)||e).name,qty:e.qty,finish:'Normal'})),own=cards.filter(e=>{const c=findCard(e.name);return c&&(c.type==='Basic Land'||c.qty>=e.qty)}).length;
+  D.decks.push({name:nm,format:d.format||'Casual',sleeve:'',commander:d.commander||'',info:'Copied from '+from,cards,tokens:[]});save();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
+  fxAsk('Deck copied to your decks',`<p>You own enough copies of <b>${own} of ${cards.length}</b> card titles in this deck.</p><p class="mut">Cards you don’t own are still on the list, so you can see what you’d need to get. No cards were added to your collection.</p>`,[{t:'Done',cls:'pri'}])}
+function fxSimVs(i){const id=RO.id;roExit();V.view='more';V.sub='matchups';V.simB=`o:${id}:${i}`;render();scrollTo(0,0)}
+function fxProfileView(){if(!D.uid)return `<p class="mut">You’re just looking around, so this app has no collection yet.</p><div class="f"><label>Name your collection</label><input id="wname" maxlength="40" placeholder="e.g. Nick’s collection"></div><div class="row"><button class="pri" onclick="fxStart()">Start my collection</button><label class="btn">⬆ Restore my backup<input type="file" hidden onchange="fxOpenFile(this.files[0],'restore');this.value=''"></label></div>`;
+  const v=sum(D.cards,fxVal),kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
+  return `<div class="sec"><div class="f" style="margin-bottom:10px"><label>Collection name</label><input value="${esc(D.owner||'')}" maxlength="40" placeholder="e.g. Nick’s collection" onchange="fxRename(this.value)"></div>
+  ${kv('Collection ID',`${esc(fxCode(D.uid))} <button style="padding:3px 8px;margin-left:6px" onclick="navigator.clipboard.writeText('${esc(fxCode(D.uid))}').then(()=>toast('ID copied'))">Copy</button>`)}${kv('Created',esc(D.created||'—'))}${kv('Cards',`${sum(D.cards)} <span class="mut">(${D.cards.length} titles)</span>`)}${kv('Decks',D.decks.length)}${v?kv('Estimated value',fxMoney(v)):''}${kv('Last changed',D.updated?esc(new Date(D.updated).toLocaleString()):'—')}${kv('Signature',D.keys?'✓ files you share are signed':'<span class="mut">not available on this device</span>')}</div>
+  <p class="mut">The name can change whenever you like. The ID never changes: it is stored inside your data, appears in your file names, and comes back when you restore a backup — even on a new phone.</p>
+  <div class="row"><button class="pri" onclick="V.sub='backup';render();scrollTo(0,0)">💾 Back up</button><button onclick="fxShareFile('all')">📤 Share my collection</button></div>
+  <div class="row"><label class="btn">📂 Open a file (backup or share file)<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="fxOpenFile(this.files[0]);this.value=''"></label></div>
+  <details class="g"><summary>Backup file or share file — which one?</summary><p class="mut"><b>Backup</b> (More → Backup): private and complete. It includes your notes, logs, sleeves and the secret key that signs your files. Keep it to yourself and use it to restore.</p><p class="mut"><b>Share file</b>: made for other people. It has your cards and decks only, and it is signed so their app can tell it really came from you. To share one deck, open the deck and tap “Share deck”.</p></details>`}

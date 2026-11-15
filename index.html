@@ -102,7 +102,7 @@ const NS='';const LS='mtg_state_v1'+NS,AS='mtg_art_v1'+NS,BK='mtg_backup_v1'+NS,
 let IDX=null,D,A={step:'start'},PD='',ART={},ART2={},FACE=false;try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}try{ART2=JSON.parse(localStorage.getItem(AS+'_b')||'{}')}catch(e){}
 const V={view:'collection',q:'',type:'',color:'',deck:null,sub:'log'};
 const persist=()=>{if(RO)return;try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
-const save=()=>{if(RO){IDX=null;return}try{reconcileLoans()}catch(e){}IDX=null;D.updated=Date.now();persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
+const save=()=>{if(RO){IDX=null;return}if(!D.uid&&(D.cards.length||D.decks.length))fxIdentity();try{reconcileLoans()}catch(e){}IDX=null;D.updated=Date.now();persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
 const saveArt=()=>{if(RO)return;try{localStorage.setItem(AS,JSON.stringify(ART));localStorage.setItem(AS+'_b',JSON.stringify(ART2))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
 const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
@@ -140,7 +140,7 @@ const backUrl=n=>{const c=findCard(n);return (c&&c.art2)||ART2[n]||''};
 async function init(){
   const s=localStorage.getItem(LS);
   try{D=s?JSON.parse(s):await startData()}catch(e){$('#main').textContent='Could not load your data.';return}
-  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();if(!s)persist();render();fetchArt();
+  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();if(!s)persist();render();fetchArt();fxCheckLink();
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
@@ -187,6 +187,7 @@ function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
 const NAV=[['collection','🃏','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','✨','AI deck'],['more','⚙️','More']];
 function render(){
   document.body.classList.toggle('ro',!!RO);
+  if(!RO&&fxWelcome())return;
   $('#nav').innerHTML=(RO?NAV.slice(0,2):NAV).map(([k,i,l])=>`<button class="${V.view===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
   ({collection:vCollection,decks:vDecks,add:vAdd,ai:vAI,more:vMore})[V.view]($('#main'));
   if(RO){$('#main').insertAdjacentHTML('afterbegin',roBar());return}
@@ -370,7 +371,7 @@ function vDeck(m,i){
   ${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
-  <div class="row" data-rw><button class="pri" onclick="deckSearch(true)">＋ Add card from collection</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxDraftNote(i)}
+  <div class="row" data-rw><button class="pri" onclick="deckSearch(true)">＋ Add card from collection</button><button onclick="fxShareDeck(${i})">📤 Share deck</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxRoDeckBtns(i)}${fxDraftNote(i)}
   <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
   ${d.tokens.length?`<h3>Deck tokens (${sum(d.tokens)})</h3>${tbl(['Token','Qty','Details'],d.tokens.map(t=>[t.name,t.qty,{h:symHtml(t.text)}]))}`:''}`;
 }
@@ -709,10 +710,11 @@ function mkAIDeck(){
 
 /* ---------- more ---------- */
 function vMore(m){
-  const tabs=[['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup']];
+  const tabs=[['me','My profile'],['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup']];
   let body='';
-  if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},a.set.toUpperCase()+' '+a.cn,a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
+  if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Source','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},String(a.set||'').toUpperCase()+' '+(a.cn||''),a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
   if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>(r=>(r[2]={h:cl(r[2])},r))([s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji))));
+  if(V.sub==='me')body=fxProfileView();
   if(V.sub==='matchups')body=fxMatchups();
   if(V.sub==='import')body=fxImportView();
   if(V.sub==='others')body=fxOthersView();
@@ -720,7 +722,7 @@ function vMore(m){
   if(V.sub==='check')body=`<p class="mut">Compares every card in your collection with the official Scryfall data (name, mana cost, type, power/toughness, rules text). Nothing changes until you approve each card. Last check: <b>${esc(D.lastCheck||'never')}</b></p><div class="row"><button class="pri" onclick="runDataCheck()" ${DC.running?'disabled':''}>${DC.running?'Checking…':'🔍 Run data check'}</button></div><p id="dcmsg" class="mut">${esc(DC.msg)}</p>`+(D.lastCheck&&!(D.flags||[]).length&&!DC.running?'<div class="sec">✓ No mismatches waiting for review.</div>':'')+(D.flags||[]).slice(0,25).map((f,i)=>`<div class="sec" data-dcd="${i}" style="cursor:pointer"><h4>Needs review · ${i+1} of ${D.flags.length} <span style="text-transform:none;letter-spacing:0">· tap for details</span></h4><b>${cl(f.name)}</b>${tbl(['Field','Yours','Official'],f.diffs.map(x=>[x.label,{h:symHtml(x.old)},{h:symHtml(x.now)}]))}<div class="row"><button data-dcf="${i}">Keep mine</button><button class="pri" data-dck="${i}">Fix to official</button></div></div>`).join('')+((D.flags||[]).length>25?`<p class="mut">Showing the first 25 of ${D.flags.length}. The rest appear as you finish these.</p>`:'')+((D.unmatched||[]).length?`<div class="sec"><h4>Couldn’t find on Scryfall (${D.unmatched.length})</h4><p class="mut" style="margin:0">${esc(D.unmatched.join(', '))}</p></div>`:'');
   if(V.sub==='edits')body=(D.edits||[]).length?'<p class="mut">Every change the app made to an existing card (data fixes, printing changes, quantity changes).</p>'+tbl(['When','Card','Field','Was','Now'],[...D.edits].reverse().slice(0,300).map(x=>[x.when,{h:cl(x.card)},x.field,{h:symHtml(x.old)},{h:symHtml(x.now)}])):'<p class="mut">No changes yet.</p>';
   if(V.sub==='sleeves')body='<div class="row"><button class="pri" onclick="slEdit(null)">＋ Add sleeves</button></div><p class="mut">Set how many you own in each color. New decks pick from sleeves that have enough free.</p>'+tbl(['Sleeves','Owned','Assigned deck','In use','Spare',''],D.sleeves.map((s,i)=>[{h:sl(s.color)},{h:`<input type="number" min="0" value="${s.total}" style="width:84px;padding:6px" onchange="setSleeve(${i},this.value)">`},s.deck||'Available',s.inUse,s.total-s.inUse,{h:`<button style="padding:4px 8px" onclick="slEdit(${i})">Edit</button> <button class="danger" style="padding:4px 8px" onclick="slDel(${i})">✕</button>`}]));
-  if(V.sub==='backup')body=`<div class="f"><label>Collection name <span class="mut">(shown on your Collection tab and used at the start of backup file names)</span></label><input value="${esc(D.owner||'')}" placeholder="e.g. Nick" onchange="D.owner=this.value.trim();save();toast('Collection name saved')"></div><p class="mut">Your collection is stored on this phone. Last backup: <b>${esc(localStorage.getItem(BK)||'never')}</b><br>Storage protection: <b id="pst">checking…</b></p>
+  if(V.sub==='backup')body=`<div class="sec">${D.uid?`<b>${esc(D.owner||'My collection')}</b> <span class="mut">· ID ${esc(fxCode(D.uid))} · backup files start with “${esc(fxPrefix())}”</span>`:'<span class="mut">No collection yet.</span>'} <button style="padding:3px 8px;margin-left:6px" onclick="V.sub='me';render()">My profile</button></div><p class="mut">Your collection is stored on this phone. Last backup: <b>${esc(localStorage.getItem(BK)||'never')}</b><br>Storage protection: <b id="pst">checking…</b></p>
   <label>Backup file type</label><select onchange="BKF=this.value"><option value="sqlite" ${BKF==='sqlite'?'selected':''}>SQLite database (.sqlite)</option><option value="json" ${BKF==='json'?'selected':''}>JSON (.json)</option></select>
   <div class="row"><button class="pri" onclick="doBackup(true)">📤 Back up to Drive / Files…</button><button onclick="doBackup(false)">⬇ Download to phone</button></div>
   <p class="mut">The first button opens your phone’s share sheet so you can save the file to Google Drive or Files, or send it to yourself. The .sqlite file opens in any database viewer and can be restored here too.</p>
@@ -802,7 +804,7 @@ async function nativeSave(blob,name,share){
   return {shared:true,fellBack:!share};
 }
 async function doBackup(share){
-  const ext=BKF==='json'?'json':'sqlite',name=`${fxSlug(D.owner)}mtg-backup-${tsName()}.${ext}`;let blob;
+  const ext=BKF==='json'?'json':'sqlite',name=`${fxPrefix()}backup_${tsName()}.${ext}`;let blob;
   try{blob=BKF==='json'?new Blob([JSON.stringify(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
   if(isNative()){
@@ -816,16 +818,7 @@ async function doBackup(share){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();stamp();
   toast(share?'Your phone’s share sheet didn’t accept this file, so it was saved to Downloads — send it to Drive from the Files app':'Saved to Downloads');render();
 }
-async function importData(f){
-  if(!f)return;
-  try{const buf=new Uint8Array(await f.arrayBuffer());let j;
-    if(String.fromCharCode(...buf.slice(0,15))==='SQLite format 3'){const SQL=await loadSQL(),db=new SQL.Database(buf),r=db.exec("SELECT value FROM app_state WHERE key='backup_json'");db.close();j=JSON.parse(r[0].values[0][0])}
-    else j=JSON.parse(new TextDecoder().decode(buf));
-    if(!j.cards||!j.decks)throw 0;
-    if(!confirm(`Restore this backup? It replaces everything currently in the app (${D.cards.length} cards, ${D.decks.length} decks).`))return;
-    D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();save();stamp();toast('Backup restored');render();fetchArt()}
-  catch(e){toast('That file is not a valid backup')}
-}
+async function importData(f){return fxOpenFile(f,'restore')}
 async function startData(){try{const r=await fetch('data.json',{cache:'reload'});if(r.ok)return await r.json()}catch(e){}return JSON.parse(JSON.stringify(EMPTY))}
 async function resetData(){if(!confirm('Replace everything with the starting data (a blank collection if the app has no starting data file)? Changes made in the app will be lost — back up first.'))return;
   D=await startData();D.acq=[];D.loans=[];save();render();fetchArt();toast('Reset complete')}
