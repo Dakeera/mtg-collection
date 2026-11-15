@@ -28,11 +28,12 @@ jobs:
       - run: npm install
       - run: node scripts/build-www.js
       - run: npx cap add android
-      - name: Apply icon, camera permission, version
+      - name: Apply icon, camera permission, deck-link handling, version
         run: |
           cp -r android-resources/mipmap-* android/app/src/main/res/
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
           sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application|' android/app/src/main/AndroidManifest.xml
+          sed -i '0,/<\/activity>/s|</activity>|<intent-filter android:autoVerify="true"><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="https" android:host="dakeera.github.io" android:pathPrefix="/mtg-collection/d" /></intent-filter>\n            <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="mtgdeckmaster" /></intent-filter>\n        </activity>|' android/app/src/main/AndroidManifest.xml
           sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
       - name: Build signed release APK
         working-directory: android

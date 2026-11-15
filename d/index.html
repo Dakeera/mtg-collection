@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MtG DeckMaster deck</title></head>
+<body style="background:#14101f;color:#eee;font-family:system-ui,sans-serif;text-align:center;padding:48px 20px">
+<p>Opening the deck…</p><p><a id="a" style="color:#b39dff">Open in the app</a> &nbsp;·&nbsp; <a id="w" style="color:#b39dff">Open on the web</a></p>
+<script>
+/* Landing page for shared deck links. On Android it tries the installed app first and falls back to the web version. */
+var p=((location.hash+location.search).match(/[#?&]d=([A-Za-z0-9_\-]+)/)||[])[1]||'',web='../'+(p?'#d='+p:''),abs=new URL(web,location.href).href,andr=/Android/i.test(navigator.userAgent),na=/[?&]na=1/.test(location.search);
+var intent='intent://deck?d='+p+'#Intent;scheme=mtgdeckmaster;package=com.dakeera.mtgdeckmaster;S.browser_fallback_url='+encodeURIComponent(abs)+';end';
+document.getElementById('w').href=web;document.getElementById('a').href=andr?intent:'mtgdeckmaster://deck?d='+p;
+if(p&&andr&&!na){try{location.href=intent}catch(e){}setTimeout(function(){location.replace(web)},1600)}else location.replace(web);
+</script></body></html>

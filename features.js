@@ -35,7 +35,7 @@ const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base);
 function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,d:x.qty-x.base}))}
 function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0});
   x.qty=Math.max(0,x.qty+dl);if(!x.qty&&!x.base)delete d.m[k];render();
-  if(fromSearch){toast(`${x.name} added — tap “Save changes” when you’re done`);deckSearch()}}
+  if(fromSearch)fxBuilder()}
 function fxCanLeave(){if(fxDraftDirty()){if(!confirm('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing'))return false}DRAFT=null;return true}
 function fxLeaveDeck(){if(!fxCanLeave())return;V.deck=null;render();scrollTo(0,0)}
 const fxDraftNote=i=>RO?'':'<p class="mut" data-rw>Use + / − or “Add card” to make as many changes as you like. Nothing changes until you tap <b>Save changes</b>.</p>';
@@ -449,7 +449,7 @@ ${s.lb||'(list not saved)'}`}
 const simGet=id=>(D.sims||[]).find(s=>s.id===id);
 function fxSimCopy(id){const s=simGet(id);if(!s)return;navigator.clipboard.writeText(fxSimPrompt(s)).then(()=>toast('Prompt copied — paste it into your AI app, then paste its answer back here'),()=>toast('Could not copy'))}
 function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
-async function fxCallAI(p){const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the AI deck tab first (Option B). It is kept in memory only.');let r,j,txt='';
+async function fxCallAI(p){const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the Deck Generator tab first (Option B). It is kept in memory only.');let r,j,txt='';
   if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:1500,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
   else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({model,messages:[{role:'user',content:p}]})});j=await r.json();txt=j.choices?.[0]?.message?.content||''}
   else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();txt=(j.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('')}
@@ -564,7 +564,7 @@ async function fxShareFile(scope,i){if(!D.uid)fxIdentity();if(!D.keys)await fxKe
 async function fxPack(o){const b=new TextEncoder().encode(JSON.stringify(o));let out=b,z='j';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='z'}}catch(e){out=b;z='j'}
   return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 async function fxUnpack(s){const z=s[0];let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
-async function fxDeckLink(i){const d=D.decks[i];if(!D.uid)fxIdentity();const base=!isNative()&&/^https?:/.test(location.protocol)?location.origin+location.pathname:FX_SITE,url=base+'#d='+await fxPack({n:d.name,f:d.format,c:d.commander||'',o:D.owner||'',u:D.uid||'',l:d.cards.map(e=>[e.qty,e.name])});
+async function fxDeckLink(i){const d=D.decks[i];if(!D.uid)fxIdentity();const base=!isNative()&&/^https?:/.test(location.protocol)?new URL('d/',location.origin+location.pathname).href:FX_SITE+'d/',url=base+'#d='+await fxPack({n:d.name,f:d.format,c:d.commander||'',o:D.owner||'',u:D.uid||'',l:d.cards.map(e=>[e.qty,e.name])});
   try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title:d.name,text:`${d.name} — a MtG DeckMaster deck`,url,dialogTitle:'Share deck link'});return}
     if(navigator.share){await navigator.share({title:d.name,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
   navigator.clipboard.writeText(url).then(()=>toast('Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
@@ -572,7 +572,7 @@ function fxShareDeck(i){const d=D.decks[i];fxAsk(`Share “${esc(d.name)}”`,'<
 function fxCardObj(c,src,n,fin){const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/'),tl=c.type_line||f.type_line||'';
   return {name:c.name,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
     text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin||'Normal',status:'Added in app'}}
-async function fxOpenLink(text){const m=String(text||'').match(/#d=([A-Za-z0-9_\-]+)/);if(!m)return toast('That doesn’t look like a deck link');let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
+async function fxOpenLink(text){const m=String(text||'').match(/[#?&]d=([A-Za-z0-9_\-]+)/);if(!m)return toast('That doesn’t look like a deck link');let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
   const n=sum(o.l,x=>+x[0]||0);fxAsk('A deck was shared with you',`<div class="sec"><b>${esc(o.n)}</b> <span class="mut">· ${esc(o.f||'')} · ${fxPl(n,'card')}</span><br>from ${fxWho(o.o||'someone',o.u)}</div><p class="mut">Links aren’t signed, so the sender can’t be verified. The deck is view-only until you copy it to your own decks.</p>`,[{t:'👁 View the deck',cls:'pri',fn:()=>fxLinkImport(o)},{t:'Cancel'}])}
 async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.map(([q,nm])=>({name:String(nm),qty:+q||1,set:'',num:'',sid:''})),need=[];
   items.forEach(x=>{const c=findCard(x.name);if(c)x.own=c;else need.push(x)});try{if(need.length)await fxResolve(need)}catch(e){return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection')}
@@ -595,3 +595,37 @@ function fxProfileView(){if(!D.uid)return `<p class="mut">You’re just looking 
   <div class="row"><button class="pri" onclick="V.sub='backup';render();scrollTo(0,0)">💾 Back up</button><button onclick="fxShareFile('all')">📤 Share my collection</button></div>
   <div class="row"><label class="btn">📂 Open a file (backup or share file)<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="fxOpenFile(this.files[0]);this.value=''"></label></div>
   <details class="g"><summary>Backup file or share file — which one?</summary><p class="mut"><b>Backup</b> (More → Backup): private and complete. It includes your notes, logs, sleeves and the secret key that signs your files. Keep it to yourself and use it to restore.</p><p class="mut"><b>Share file</b>: made for other people. It has your cards and decks only, and it is signed so their app can tell it really came from you. To share one deck, open the deck and tap “Share deck”.</p></details>`}
+
+/* ---------- deck links that open the Android app ---------- */
+function fxNativeLinks(){try{if(!isNative())return;const A=window.Capacitor.Plugins.App;if(!A)return;const go=u=>{if(/[#?&]d=[A-Za-z0-9_\-]+/.test(String(u||'')))fxOpenLink(u)};
+  A.addListener('appUrlOpen',e=>go(e&&e.url));A.getLaunchUrl().then(r=>go(r&&r.url)).catch(()=>{})}catch(e){}}
+
+/* ---------- building a deck by hand ---------- */
+let FXB=[];
+function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
+  if(first){V.bq='';V.bt='';V.bc='';V.bfree=false;const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
+    openM(`<h3>Add cards to ${esc(d.name)}</h3><div id="bhead" class="sec" style="position:sticky;top:0;z-index:2"></div>
+    <input id="bq" type="search" placeholder="Search name or rules text…" style="width:100%" oninput="V.bq=this.value;fxBuilder()">
+    <div class="brow" style="margin:8px 0"><select onchange="V.bt=this.value;fxBuilder()"><option value="">All types</option>${types.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select onchange="V.bc=this.value;fxBuilder()"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>`<option>${x}</option>`).join('')}</select></div>
+    <label style="margin:0 0 8px"><input type="checkbox" onchange="V.bfree=this.checked;fxBuilder()">Only show cards with a copy that isn’t in another deck</label><div id="bres"></div><div class="row"><button class="pri" onclick="closeM()">Done</button></div>`)}
+  const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),t=target(d),n=sum(dl);
+  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this deck${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
+  const list=D.cards.filter(c=>isReal(c)&&(!q||c.name.toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q))&&(!V.bt||c.type===V.bt)&&(!V.bc||String(c.colors).includes(V.bc))&&(!V.bfree||freeCopies(c)>0||inDeck(c.name)>0)).sort((a,b)=>(inDeck(b.name)>0)-(inDeck(a.name)>0)||a.name.localeCompare(b.name));
+  FXB=list.slice(0,60).map(c=>c.name);
+  el.innerHTML=list.slice(0,60).map((c,k)=>{const u=usage(c.name).filter(x=>x.d!==d),fr=freeCopies(c),have=inDeck(c.name);
+    return `<div class="res" style="cursor:default"><span>${esc(c.name)} ${costHtml(c.cost)}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
+    <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span></div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
+function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
+function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef"><option ${d.format==='Casual'?'selected':''}>Casual</option><option ${d.format==='Commander'?'selected':''}>Commander</option></select>
+  <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`)}
+function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.name;if(!name)return toast('Give the deck a name');if(D.decks.some((x,k)=>k!==i&&x.name.toLowerCase()===name.toLowerCase()))return toast('Another deck already has that name');
+  const s=sleeveOf(d);d.name=name;d.format=$('#ef').value;d.commander=$('#ec').value.trim();
+  if(name!==old){D.loans.forEach(l=>{if(l.from===old)l.from=name;if(l.to===old)l.to=name});D.swaps.forEach(w=>{if(w.deck===old)w.deck=name;if(w.row&&w.row[1]===old)w.row[1]=name})}
+  if(s){const need=d.format==='Commander'?100:60;s.deck=`${name} (${d.format==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;s.inUse=need}
+  save();closeM();render();toast('Deck details saved')}
+
+/* ---------- Add card tab: type several card names at once ---------- */
+const fxQuickAdd=()=>`<div class="sec" style="margin-top:22px"><h4>Add several cards at once</h4><div class="f"><textarea id="qadd" rows="3" placeholder="Sol Ring, Llanowar Elves, 4 Lightning Bolt">${esc(V.qadd||'')}</textarea></div>
+  <p class="mut" style="font-size:12px;margin:6px 0">Type the card names with a comma between each one. Don’t use commas inside a card’s name — they are only for separating cards. Put a number in front for more than one copy (“4 Lightning Bolt”). You’ll see a preview before anything is added.</p><div class="row"><button class="pri" onclick="fxQuickGo()">Look up these cards</button></div></div>`;
+function fxQuickGo(){const txt=(document.getElementById('qadd').value||'').trim();if(!txt)return toast('Type one or more card names first');const items=fxParseList(txt.split(/[,\n]+/).map(x=>x.trim()).filter(Boolean).join('\n'));if(!items.length)return toast('I couldn’t find any card names in that');
+  V.qadd='';go('more');V.sub='import';fxImpStart(items,'collection')}
