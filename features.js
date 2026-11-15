@@ -1,7 +1,7 @@
 /* MtG DeckMaster — feature modules shared by the web version and the Android app.
    Loaded before the main script in index.html. Nothing here runs at load time except declarations;
    every function uses the main script's globals (D, V, render, …) only when it is called. */
-let RO=null,MINE=null,DRAFT=null,CAM=null,OC=null;
+let RO=null,MINE=null,DRAFT=null,CAM=null,OC=null,CIMG={};
 /* Deck formats you build a deck for (constructed). Draft, Sealed, Cube, Jumpstart and Two-Headed Giant are left out:
    their decks come from opening packs or another format's rules, so they can't be generated from a collection. */
 const DFMT=[
@@ -60,7 +60,7 @@ function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEa
 const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base);
 function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,d:x.qty-x.base}))}
 function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
-  if(dl>0&&F&&sum(fxDeckCards(i))+dl>F.n){toast(`${F.k} decks hold ${F.n} cards — remove a card before adding another`);return}
+  if(dl>0&&F&&!D.decks[i].override){const pr=fxAddProblems(i,name,dl);if(pr.length&&!fxOverrideAsk(i,name,pr))return}
   const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0});
   x.qty=Math.max(0,x.qty+dl);if(!x.qty&&!x.base)delete d.m[k];render();
   if(fromSearch)fxBuilder()}
@@ -150,9 +150,9 @@ async function ocDelete(id){const r=(OC||[]).find(x=>x.id===id);if(!r)return;if(
 async function roOpen(id){await ocLoad();const r=OC.find(x=>x.id===id);if(!r)return;if(!fxCanLeave())return;
   const j=JSON.parse(JSON.stringify(r.data));['acq','edits','flags','swaps','matchups','loans','sleeves','sims'].forEach(k=>{j[k]=j[k]||[]});j.kept=j.kept||{};
   j.cards.forEach(c=>{c.text=c.text||'';c.colors=c.colors||'';c.type=c.type||'';c.qty=+c.qty||0});j.decks.forEach(d=>{d.cards=d.cards||[];d.tokens=d.tokens||[]});
-  MINE={D,ART,ART2};D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,updated:r.updated,uid:r.uid,status:r.status};IDX=null;DRAFT=null;HIST.length=0;
+  MINE={D,ART,ART2,CIMG};CIMG=j.customImgs||{};delete j.customImgs;D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,updated:r.updated,uid:r.uid,status:r.status};IDX=null;DRAFT=null;HIST.length=0;
   V.view='collection';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();render();scrollTo(0,0);fetchArt()}
-function roExit(){if(!RO)return;D=MINE.D;ART=MINE.ART;ART2=MINE.ART2;RO=null;MINE=null;IDX=null;HIST.length=0;V.view='more';V.sub='others';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();persist();render();scrollTo(0,0)}
+function roExit(){if(!RO)return;D=MINE.D;ART=MINE.ART;ART2=MINE.ART2;CIMG=MINE.CIMG;RO=null;MINE=null;IDX=null;HIST.length=0;V.view='more';V.sub='others';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();persist();render();scrollTo(0,0)}
 const roBar=()=>`<div class="robar"><button onclick="roExit()">← Back to my collection</button><b title="Tap to rename" onclick="roRename()">${RO.status==='signed'?'✓ ':''}${esc(RO.name)}</b><span>Updated<br>${esc(fxDate(RO.updated))}</span></div>`;
 async function roRename(){const n=prompt('Name for this collection (so you know whose it is):',RO.name);if(n==null)return;const name=n.trim();if(!name)return;
   await ocLoad();const r=OC.find(x=>x.id===RO.id);if(r){r.name=name;await fxTx('readwrite',st=>st.put(r));fxFriendIndex(r)}RO.name=name;render();toast('Renamed')}
@@ -546,9 +546,9 @@ async function fxOpenFile(f,hint){if(!f)return;let j;try{j=await fxReadBackup(f)
 function fxRestoreAsk(j){let m=`Restore this backup? It replaces everything currently in the app (${D.cards.length} card titles, ${fxPl(D.decks.length,'deck')}).`;
   if(j.updated&&D.updated&&j.updated<D.updated-60000&&D.cards.length)m+=`\n\n⚠ This backup is OLDER than what is in the app now.\nBackup last changed: ${new Date(j.updated).toLocaleString()}\nApp last changed: ${new Date(D.updated).toLocaleString()}\nAnything you changed since then will be lost.`;
   if(confirm(m))fxRestore(j)}
-function fxRestore(j){D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();DRAFT=null;V.noWelcome=0;save();stamp();closeM();toast('Backup restored');render();fetchArt()}
+function fxRestore(j){fxImgsIn(j);D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();DRAFT=null;V.noWelcome=0;save();stamp();closeM();toast('Backup restored');render();fetchArt()}
 function fxGotBackup(j,f,hint){const empty=!D.cards.length&&!D.decks.length,same=j.uid&&D.uid&&j.uid===D.uid;
-  const asFriend=()=>fxSaveFriend({uid:j.uid||('old-'+fxUuid()),name:j.owner||String(f.name||'Collection').replace(/\.[^.]+$/,'').replace(/[_-]?(mtg-)?backup.*$/i,'').replace(/_[0-9A-Z]{4}-[0-9A-Z]{4}$/,'')||'Collection',updated:j.updated||f.lastModified||Date.now(),pub:j.keys?j.keys.pub:null,cards:j.cards,decks:j.decks,scope:'all'},'unverified',{});
+  const asFriend=()=>fxSaveFriend({uid:j.uid||('old-'+fxUuid()),name:j.owner||String(f.name||'Collection').replace(/\.[^.]+$/,'').replace(/[_-]?(mtg-)?backup.*$/i,'').replace(/_[0-9A-Z]{4}-[0-9A-Z]{4}$/,'')||'Collection',updated:j.updated||f.lastModified||Date.now(),pub:j.keys?j.keys.pub:null,cards:j.cards,decks:j.decks,customImgs:j.customImgs,scope:'all'},'unverified',{});
   if(same||(empty&&hint!=='view'))return fxRestoreAsk(j);
   const info=`<div class="sec">${fxWho(j.owner,j.uid)}<br><span class="mut">${j.cards.length} card titles · ${fxPl(j.decks.length,'deck')}${j.updated?' · last changed '+esc(fxDate(j.updated)):''}</span></div>`;
   fxAsk('Whose collection is this?',info+`<p class="mut">${j.uid&&D.uid?'This file belongs to a <b>different collection</b> than the one in this app.':'This backup was made by an older version of the app, so it has no ID and I can’t tell whose it is.'} ${empty?'':'Your own collection stays untouched unless you choose to replace it.'}</p>`,
@@ -568,8 +568,8 @@ function fxRecover(j,mode){if(mode==='mine'&&!confirm(`Replace your current card
   normSources();IDX=null;DRAFT=null;V.noWelcome=0;save();render();fetchArt();toast(mode==='recover'?'Collection recovered — friends will be asked to trust your new signature':'Done')}
 function fxFriendIndex(rec,del){const F=RO?(MINE.D.friends=MINE.D.friends||[]):(D.friends=D.friends||[]),i=F.findIndex(x=>x.uid===rec.uid);if(del){if(i>=0)F.splice(i,1)}else if(!rec.sep&&!rec.link){const e={uid:rec.uid,name:rec.name,pub:rec.pub||null};i>=0?F[i]=e:F.push(e)}if(!RO)save()}
 async function fxSaveFriend(j,status,opt){await ocLoad();const ex=opt.separate?null:OC.find(r=>r.uid===j.uid&&!r.sep&&!!r.link===!!opt.link),nick=((D.friends||[]).find(x=>x.uid===j.uid)||{}).name;
-  let data={cards:j.cards,decks:j.decks,owner:j.name,updated:j.updated},msg='';
-  if(j.scope==='deck'&&ex){data=JSON.parse(JSON.stringify(ex.data));j.decks.forEach(d=>{const i=data.decks.findIndex(x=>x.name===d.name);i>=0?data.decks[i]=d:data.decks.push(d)});j.cards.forEach(c=>{const i=data.cards.findIndex(x=>norm(x.name)===norm(c.name));if(i<0)data.cards.push(c);else if(ex.partial)data.cards[i]=c});msg=`Deck “${j.decks[0].name}” added to ${ex.name}`}
+  let data={cards:j.cards,decks:j.decks,owner:j.name,updated:j.updated,customImgs:j.customImgs||{}},msg='';
+  if(j.scope==='deck'&&ex){data=JSON.parse(JSON.stringify(ex.data));j.decks.forEach(d=>{const i=data.decks.findIndex(x=>x.name===d.name);i>=0?data.decks[i]=d:data.decks.push(d)});data.customImgs=Object.assign(data.customImgs||{},j.customImgs||{});j.cards.forEach(c=>{const i=data.cards.findIndex(x=>norm(x.name)===norm(c.name));if(i<0)data.cards.push(c);else if(ex.partial)data.cards[i]=c});msg=`Deck “${j.decks[0].name}” added to ${ex.name}`}
   else if(ex){const o=new Set(ex.data.cards.map(c=>norm(c.name))),n=new Set(j.cards.map(c=>norm(c.name))),add=[...n].filter(x=>!o.has(x)).length,rem=[...o].filter(x=>!n.has(x)).length,dd=j.decks.length-ex.data.decks.length;
     msg=`${ex.name} updated: ${add?'+'+add+' ':''}${rem?'−'+rem+' ':''}${add||rem?'card titles':'no card changes'}${dd?`, ${dd>0?'+':''}${dd} deck${Math.abs(dd)===1?'':'s'}`:''}`}
   const rec={id:ex?ex.id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),uid:j.uid,name:ex?ex.name:(opt.separate?(j.name||'Collection')+' (unverified copy)':(opt.link?opt.nick:nick)||opt.nick||j.name||'Collection'),given:j.name,updated:j.scope==='deck'&&ex?Math.max(ex.updated||0,j.updated||0):j.updated,added:ex?ex.added:Date.now(),
@@ -582,6 +582,7 @@ async function fxShareData(scope,i){const keep=['name','colors','cost','cmc','ty
   let decks=D.decks.map(d=>({name:d.name,format:d.format,commander:d.commander||'',cards:d.cards.map(e=>({name:e.name,qty:e.qty,finish:e.finish||'Normal'})),tokens:d.tokens||[]})),cards=D.cards;
   if(scope==='deck'){decks=[decks[i]];const s=new Set(decks[0].cards.map(e=>norm(e.name)));cards=cards.filter(c=>s.has(norm(c.name)))}
   const body={kind:'mtg-share',v:1,scope,uid:D.uid,name:D.owner||'Collection',updated:D.updated||Date.now(),pub:D.keys?D.keys.pub:null,cards:cards.map(c=>{const o={};keep.forEach(k=>{if(c[k]!=null)o[k]=c[k]});return o}),decks};
+  const im={};cards.forEach(c=>{if(c.custom&&CIMG[c.name])im[c.name]=CIMG[c.name]});if(Object.keys(im).length)body.customImgs=im;
   const txt=JSON.stringify(body),sig=await fxSign(txt);return JSON.stringify(Object.assign(JSON.parse(txt),{sig}))}
 async function fxSend(text,name){const blob=new Blob([text],{type:'application/json'});
   if(isNative()){try{await nativeSave(blob,name,true)}catch(e){toast('Could not share the file: '+String(e&&e.message||e).slice(0,80))}return}
@@ -639,13 +640,13 @@ async function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
     <div class="brow" style="margin:8px 0"><select onchange="V.bt=this.value;fxBuilder()"><option value="">All types</option>${types.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select onchange="V.bc=this.value;fxBuilder()"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>`<option>${x}</option>`).join('')}</select></div>
     <label style="margin:0 0 8px"><input type="checkbox" onchange="V.bfree=this.checked;fxBuilder()">Only show cards with a copy that isn’t in another deck</label><div id="bres"></div><div class="row"><button class="pri" onclick="closeM()">Done</button></div>`)}
   const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),t=target(d),n=sum(dl),F=dfmt(d.format),cmdC=d.commander&&findCard(d.commander);
-  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?' <span style="color:#f39c12">· full</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
+  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?` <span style="color:#f39c12">· ${n>t?'over the limit':'full'}</span>`:''}${d.override?' <span style="color:#ff6b6b">· ⛔ override on</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
   const list=D.cards.filter(c=>isReal(c)&&(!q||c.name.toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q))&&(!V.bt||c.type===V.bt)&&(!V.bc||String(c.colors).includes(V.bc))&&(!V.bfree||freeCopies(c)>0||inDeck(c.name)>0)).sort((a,b)=>(inDeck(b.name)>0)-(inDeck(a.name)>0)||a.name.localeCompare(b.name));
   FXB=list.slice(0,60).map(c=>c.name);
   el.innerHTML=list.slice(0,60).map((c,k)=>{const u=usage(c.name).filter(x=>x.d!==d),fr=freeCopies(c),have=inDeck(c.name);
     const iss=fxCardIssues(c,have,F,cmdC);
     return `<div class="res" style="cursor:default;flex-wrap:wrap"><span style="flex:1;min-width:0">${esc(c.name)} ${costHtml(c.cost)}${iss.length?` <button class="isb" onclick="this.closest('.res').querySelector('.isd').hidden^=1">⚠ ${esc(iss[0].title)}${iss.length>1?' +'+(iss.length-1):''}</button>`:''}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
-    <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)" ${n>=t&&t?'disabled':''}>+</button></span>${iss.length?`<div class="isd" hidden>${iss.map(x=>`<p><b>${esc(x.title)}.</b> ${esc(x.msg)}</p>`).join('')}<p class="mut">You can still add it — this is just so you know.</p></div>`:''}</div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
+    <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span>${iss.length?`<div class="isd" hidden>${iss.map(x=>`<p><b>${esc(x.title)}.</b> ${esc(x.msg)}</p>`).join('')}<p class="mut">You can still add it — this is just so you know.</p></div>`:''}</div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
 function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
 function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef">${fmtOptions(dfmt(d.format)?d.format:'Casual')}</select>
   <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
@@ -682,7 +683,7 @@ function fxSrcPick(kind,x){const q=A.q;if(kind==='new'){q.newSrc=x;const i=docum
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
   if(!confirm('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.'))return;
   const j=Object.assign(JSON.parse(JSON.stringify(D)),{xfer:{from:isNative()?'Android app':(/iPhone|iPad/i.test(navigator.userAgent)?'iPhone / iPad':'web browser'),at:Date.now()}});
-  await fxSend(JSON.stringify(j),`${fxPrefix()}to-my-device_${tsName()}.json`);try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}}
+  await fxSend(fxWithImgs(j),`${fxPrefix()}to-my-device_${tsName()}.json`);try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}}
 function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!D.decks.length,newer=!D.updated||(j.updated||0)>=D.updated,when=x=>x?new Date(x).toLocaleString():'unknown';
   const body=`<div class="sec">${fxWho(j.owner,j.uid)}<br><span class="mut">Sent from your ${esc(j.xfer.from)} · ${esc(when(j.xfer.at))}</span></div>
   ${tbl(['','On this device','In the file'],[['Card titles',D.cards.length,j.cards.length],['Decks',D.decks.length,j.decks.length],['Last changed',when(D.updated),when(j.updated)]])}
@@ -706,13 +707,17 @@ function deckIssues(i){const d=D.decks[i],F=d&&dfmt(d.format);if(!F)return [];co
     else if(cmdC&&!cmdOK(cmdC,F))add(d.commander,{kind:'badcmd',title:`${cmdC.name} can’t be the ${F.cmdLabel.toLowerCase()}`,msg:`In ${F.k} the ${F.cmdLabel.toLowerCase()} must be ${F.cmdRule}. ${cmdC.name} is a ${cmdC.type}.`},[{t:'Choose another',a:'edit'}])}
   L.forEach(e=>{const c=findCard(e.name);if(!c)return;fxCardIssues(c,e.qty,F,cmdC).forEach(x=>add(c.name,x,x.kind==='unknown'?[...(c.legSug?[{t:'Use '+c.legSug,a:'sug'}]:[]),{t:c.legSug?'Something else':'Find a match',a:'match'},{t:'Mark as custom card',a:'custom'}]:x.cap?[{t:`Reduce to ${x.cap}`,a:'cut',n:e.qty-x.cap}]:[{t:'Remove from deck',a:'cut',n:e.qty}]))});
   return out}
-function fxIssueTag(d){const i=D.decks.indexOf(d),L=deckIssues(i),a=L.filter(x=>!x.ign).length,g=L.length-a;if(!L.length)return '';
-  return `<br><span style="color:${a?'#f39c12':'var(--mut)'};font-size:12px">⚠ ${a?fxPl(a,'rule issue')+' for '+esc(d.format):''}${a&&g?' · ':''}${g?g+' ignored':''}</span>`}
-function fxIssueBox(i){const all=deckIssues(i);if(!all.length)return '';const d=D.decks[i],L=all.filter(x=>!x.ign),g=all.length-L.length;
+function fxIssueTag(d){const i=D.decks.indexOf(d),L=deckIssues(i),a=L.filter(x=>!x.ign).length,g=L.length-a;
+  if(d.override)return `<br><button class="ovtag" onclick="event.stopPropagation();V.deck=${i};render();fxIssues(${i})">⛔ Override on — not legal for ${esc(d.format)}${L.length?' · '+fxPl(L.length,'rule issue'):''} · View</button>`;
+  if(!L.length)return '';
+  return `<br><button class="ovtag w${a?'':' g'}" onclick="event.stopPropagation();V.deck=${i};render();fxIssues(${i})">⚠ ${a?fxPl(a,'rule issue')+' for '+esc(d.format):''}${a&&g?' · ':''}${g?g+' ignored':''} · View</button>`}
+function fxIssueBox(i){const all=deckIssues(i),d=D.decks[i];
+  if(d.override)return `<div class="ovbox"><b style="color:#ff8a80">⛔ Override on — this deck isn’t legal for ${esc(d.format)}</b><p style="margin:6px 0">${all.length?`${fxPl(all.length,'rule issue')}: ${esc(all.slice(0,3).map(x=>x.title+(x.card&&!x.title.includes(x.card)?' ('+x.card+')':'')).join('; '))}${all.length>3?'…':''}`:'No cards break the rules right now, but the override stays on until you turn it off.'}</p><div class="row" style="margin:0"><button class="pri" onclick="fxIssues(${i})">See all cards in violation</button><button onclick="fxOverrideOff(${i})">Turn override off</button></div></div>`;
+  if(!all.length)return '';const L=all.filter(x=>!x.ign),g=all.length-L.length;
   if(!L.length)return `<div class="sec" style="display:flex;gap:10px;align-items:center"><span class="mut" style="flex:1">⚠ ${fxPl(g,'ignored rule issue')} for ${esc(d.format)}</span><button onclick="fxIssues(${i})">Inspect</button></div>`;
   return `<div class="warn" style="display:flex;gap:10px;align-items:center"><span style="flex:1">⚠ <b>${fxPl(L.length,'rule issue')}</b> for ${esc(d.format)}${g?` <span class="mut">(+${g} ignored)</span>`:''}: ${esc(L.slice(0,3).map(x=>x.title+(x.card&&!x.title.includes(x.card)?' ('+x.card+')':'')).join('; '))}${L.length>3?'…':''}</span><button onclick="fxIssues(${i})">Inspect</button></div>`}
-function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign);window.FXISS=L;if(!L.length){closeM();return toast('No rule issues left')}
-  openM(`<h3>⚠ ${esc(d.name)} — ${esc(d.format)} rules</h3><p class="mut">The deck can still be used as it is. Removing cards here is staged like any other edit: tap <b>Save changes</b> afterwards.</p>
+function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign);window.FXISS=L;if(!L.length&&!d.override){closeM();return toast('No rule issues left')}
+  openM(`<h3>⚠ ${esc(d.name)} — ${esc(d.format)} rules</h3>${d.override?`<div class="ovbox" style="margin-top:0">⛔ <b>Override on</b> since ${esc(d.overrideAt||'')} — rule-breaking cards can be added to this deck. <button style="padding:4px 10px;margin-left:6px" onclick="fxOverrideOff(${i},true)">Turn off</button></div>`:''}<p class="mut">The deck can still be used as it is. Removing cards here is staged like any other edit: tap <b>Save changes</b> afterwards.</p>
   ${L.map((x,k)=>`<div class="sec" style="${x.ign?'opacity:.75':''}"><b>${esc(x.title)}</b>${x.card&&!x.title.includes(x.card)?` — ${cl(x.card)}`:''}${x.ign?' <span class="mut" style="font-size:12px">· ignored</span>':''}<p style="margin:6px 0">${esc(x.msg)}</p><div class="row" style="margin:0">${x.fixes.map((f,j)=>`<button class="pri" style="padding:7px 12px" onclick="fxFix(${i},${k},${j})">${esc(f.t)}</button>`).join('')}<button style="padding:7px 12px" onclick="fxFix(${i},${k},-1)">${x.ign?'Stop ignoring':'Ignore this'}</button></div></div>`).join('')}
   <div class="row"><button onclick="fxDeckEdit(${i})">Change deck type…</button><button class="pri" onclick="closeM()">Done</button></div>`)}
 function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
@@ -733,9 +738,9 @@ function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
   return `<div class="sec" style="display:flex;gap:10px;align-items:center;border:1px solid #4a6aa8"><span style="flex:1">⏳ <b>${fxPl(need.length,'card')}</b> haven’t been checked against the ${esc(d.format)} rules yet — this needs an internet connection.</span><button onclick="fxLegalCheck(${i})">Check now</button></div>`}
 
 /* ---------- cards Scryfall doesn't recognise: find a match, or mark as a custom card ---------- */
-function fxSetCustom(name,on){const c=findCard(name);if(!c)return;c.custom=!!on;if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group`:`${c.name} is no longer marked custom`)}
+function fxSetCustom(name,on){const c=findCard(name);if(!c)return;c.custom=!!on;if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
 function fxUnknownBox(c){if(!c||RO||!findCard(c.name))return '';
-  if(c.custom)return `<div class="sec"><b style="color:#c39bff">★ Custom card</b><p class="mut" style="margin:4px 0">Kept in your Custom cards group. The app doesn’t look it up on Scryfall, and it’s flagged as not legal in official formats.</p><button onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',false);showCard('${esc(c.name).replace(/'/g,"\\'")}')">It’s a real card — unmark</button></div>`;
+  if(c.custom)return `<div class="sec"><b style="color:#c39bff">★ Custom card</b><p class="mut" style="margin:4px 0">Kept in your Custom cards group. The app doesn’t look it up on Scryfall, and it’s flagged as not legal in official formats. Add your own photo so it shows like any other card — it’s compressed (about 60 KB) and included in your backups and share files.</p><div class="row" style="margin:6px 0 0"><button class="pri" onclick="fxCustomPhoto('${esc(c.name).replace(/'/g,"\\'")}')">📷 ${CIMG[c.name]?'Retake photo':'Take a photo of this card'}</button>${CIMG[c.name]?`<button onclick="fxCustomPhotoDel('${esc(c.name).replace(/'/g,"\\'")}')">Remove photo</button>`:''}</div><button style="margin-top:8px" onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',false);showCard('${esc(c.name).replace(/'/g,"\\'")}')">It’s a real card — unmark</button></div>`;
   if(!c.legMiss||c.leg)return '';
   const q=esc(c.name).replace(/'/g,"\\'");
   return `<div class="warn"><b>? Scryfall doesn’t recognise this card</b><p style="margin:4px 0">${c.legSug?`Did you mean <b>${esc(c.legSug)}</b>?`:'It may be misspelled, or it may be a custom card (proxy, homebrew, playtest).'}</p><div class="row" style="margin:0">${c.legSug?`<button class="pri" onclick="fxUseSug('${q}')">Yes — update my card</button>`:''}<button class="${c.legSug?'':'pri'}" onclick="fxMatchUnknown('${esc(c.name).replace(/'/g,"\\'")}')">${c.legSug?'Something else':'Find a match'}</button><button onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',true);showCard('${esc(c.name).replace(/'/g,"\\'")}')">Mark as custom card</button></div></div>`}
@@ -762,3 +767,39 @@ async function fxPickMatch(k){const o=FXUNK.opts[k],e=findCard(FXUNK.name);if(!o
   const old=e.name;renameCard(old,c.name);const n=findCard(c.name)||e;delete n.legMiss;delete n.legSug;n.leg=legOf(c.legalities);n.legAt=today();fxSetPrice(n,c);
   ART[n.name]=sImg(c)||ART[n.name]||'';saveArt();const f=fullDiff(n,c,false);if(f.length)applyDiffs(n,f);save();closeM();toast(`Updated: ${old} → ${c.name}`);(FXUNK.done===undefined?()=>showCard(n.name):()=>{try{FXUNK.done()}catch(_){showCard(n.name)}})()}
 function fxUseSug(name,after){const c=findCard(name);if(!c||!c.legSug)return fxMatchUnknown(name,after);window.FXUNK={name:c.name,done:after||(()=>showCard(c.legSug)),opts:[c.legSug]};fxPickMatch(0)}
+
+/* ---------- foil display ---------- */
+const fxHasFoil=c=>{try{const fm=finMapOf(c);return Object.keys(fm).some(k=>/foil/i.test(k)&&fm[k]>0)}catch(e){return false}};
+function fxFinLabel(p){const f=p.finishes||[],nf=f.includes('nonfoil'),fo=f.includes('foil'),et=f.includes('etched');
+  const t=[nf&&'Normal',fo&&'✦ Foil',et&&'✦ Etched'].filter(Boolean);if(!t.length)return '';const only=t.length===1;
+  return `<i class="fin ${nf&&only?'n':'f'}">${only&&!nf?t[0]+' only':t.join(' + ')}</i>`}
+
+/* ---------- custom card photos (stored in IndexedDB; ~60 KB JPEG each; included in backups and share files) ---------- */
+const fxIdb=()=>new Promise((ok,no)=>{const r=indexedDB.open('mtg_imgs',1);r.onupgradeneeded=()=>r.result.createObjectStore('i');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+const fxIdbDo=(mode,fn)=>fxIdb().then(db=>new Promise((ok,no)=>{const t=db.transaction('i',mode),r=fn(t.objectStore('i'));t.oncomplete=()=>{db.close();ok(r&&r.result)};t.onerror=()=>{db.close();no(t.error)}}));
+async function fxImgLoad(){try{const keys=await fxIdbDo('readonly',st=>st.getAllKeys()),vals=await fxIdbDo('readonly',st=>st.getAll());keys.forEach((k,n)=>{CIMG[k]=vals[n]});return keys.length}catch(e){return 0}}
+const fxImgPut=(k,v)=>{if(!RO)fxIdbDo('readwrite',st=>st.put(v,k)).catch(()=>toast('Couldn’t save the photo (storage full?)'))};
+const fxImgDel=k=>{if(!RO)fxIdbDo('readwrite',st=>st.delete(k)).catch(()=>{})};
+function fxWithImgs(o){const im={};(o.cards||[]).forEach(c=>{if(c.custom&&CIMG[c.name])im[c.name]=CIMG[c.name]});return JSON.stringify(Object.keys(im).length?Object.assign({},o,{customImgs:im}):o)}
+function fxImgsIn(j){const im=j&&j.customImgs;if(!im)return;Object.keys(im).forEach(k=>{if(/^data:image\//.test(im[k])){CIMG[k]=im[k];fxImgPut(k,im[k])}});delete j.customImgs}
+function fxCompress(blob){return new Promise((ok,no)=>{const u=URL.createObjectURL(blob),im=new Image();im.onerror=()=>{URL.revokeObjectURL(u);no(new Error('image'))};
+  im.onload=()=>{URL.revokeObjectURL(u);const R=63/88;let sx=0,sy=0,sw=im.naturalWidth,sh=im.naturalHeight;
+    if(!blob.cropped){if(sw/sh>R){const w=sh*R;sx=(sw-w)/2;sw=w}else{const h=sw/R;sy=(sh-h)/2;sh=h}}
+    const W=490,H=684,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');x.imageSmoothingQuality='high';x.fillStyle='#000';x.fillRect(0,0,W,H);x.drawImage(im,sx,sy,sw,sh,0,0,W,H);
+    let q=0.82,url=cv.toDataURL('image/jpeg',q);while(url.length*0.75>65000&&q>0.42){q-=0.08;url=cv.toDataURL('image/jpeg',q)}ok(url)};im.src=u})}
+function fxCustomPhoto(name){closeM();fxCam(async b=>{const c=findCard(name);if(!c)return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
+  CIMG[c.name]=url;fxImgPut(c.name,url);c.imgAt=Date.now();save();render();showCard(c.name);toast(`Photo saved (${Math.round(url.length*0.75/1024)} KB)`)})}
+function fxCustomPhotoDel(name){const c=findCard(name);if(!c||!confirm(`Remove the photo of ${c.name}?`))return;delete CIMG[c.name];fxImgDel(c.name);c.imgAt=Date.now();save();render();showCard(c.name)}
+
+/* ---------- rule override: two approvals, once per deck ---------- */
+function fxAddProblems(i,name,dl){const d=D.decks[i],F=dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),out=[],c=findCard(name),cmdC=d.commander&&findCard(d.commander);
+  if(tot+dl>F.n)out.push(`The deck would have ${tot+dl} cards — ${F.k} decks hold ${F.n}`);
+  if(c){const have=sum(L.filter(e=>norm(e.name)===norm(c.name)));fxCardIssues(c,have+dl,F,cmdC).filter(x=>x.kind!=='unknown').forEach(x=>out.push(`${x.title}${x.title.includes(c.name)?'':' ('+c.name+')'}`))}
+  return [...new Set(out)]}
+function fxOverrideAsk(i,name,pr){const d=D.decks[i],F=dfmt(d.format);
+  if(!confirm(`Adding ${name} breaks the ${F.k} rules:\n\n• ${pr.join('\n• ')}\n\nOverride the rules for “${d.name}”?\n\nOK = override\nCancel = don’t add it`))return false;
+  if(!confirm(`Are you really sure?\n\n“${d.name}” will be marked as NOT legal for ${F.k}. Rule-breaking cards (banned, extra copies, custom cards, too many cards…) can then be added to it.\n\nThe deck will always show an “Override on” warning, and you can tap it to see every card that breaks the rules.\n\nOK = yes, override this deck\nCancel = don’t add it`))return false;
+  d.override=true;d.overrideAt=today();save();toast(`Override on for ${d.name}`);return true}
+function fxOverrideOff(i,inModal){const d=D.decks[i],n=deckIssues(i).length;
+  if(!confirm(`Turn the rule override off for “${d.name}”?\n\n${n?`The ${fxPl(n,'card or rule issue')} already in the deck stay, and stay flagged. `:''}New rule-breaking cards will need two approvals again.`))return;
+  d.override=false;delete d.overrideAt;save();render();if(inModal)fxIssues(i);toast('Override turned off')}

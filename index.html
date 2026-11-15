@@ -83,6 +83,12 @@ body.ro .bar{top:calc(var(--st) + 50px)}
 .pbar{height:12px;background:var(--card2);border-radius:8px;overflow:hidden;margin:8px 0}.pbar i{display:block;height:100%;background:var(--ac);transition:width .2s}
 details.g{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}details.g summary{cursor:pointer;font-weight:600}
 .fmt dt{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:10px}.fmt dd{margin:2px 0 0}
+.foil{position:relative;overflow:hidden}.foil::after,.frame.foil::after{content:'';position:absolute;pointer-events:none;border-radius:10px;background:linear-gradient(115deg,transparent 20%,#ff00c855 30%,#ffe60055 38%,#00ffd555 46%,#5a7bff55 54%,transparent 64%);background-size:250% 250%;mix-blend-mode:color-dodge;animation:foil 4.5s ease-in-out infinite;opacity:.55}
+.foil::after{inset:0}.frame.foil::after{inset:7px}@keyframes foil{0%{background-position:100% 0}50%{background-position:0 100%}100%{background-position:100% 0}}@media (prefers-reduced-motion:reduce){.foil::after{animation:none}}
+.foiltag{position:absolute;left:6px;bottom:6px;z-index:2;background:linear-gradient(90deg,#ff7ad9,#ffe066,#5ef0d2);color:#1a1030;font-size:9px;font-weight:800;letter-spacing:.05em;padding:2px 5px;border-radius:5px}
+.fin{display:block;font-style:normal;font-size:10px;margin-top:3px;font-weight:600}.fin.f{background:linear-gradient(90deg,#ff7ad9,#ffe066,#5ef0d2);-webkit-background-clip:text;background-clip:text;color:transparent}.fin.n{color:var(--mut)}
+.ovtag{margin-top:4px;padding:3px 9px;font-size:12px;border-radius:8px;background:#4a1818;border:1px solid #c0392b;color:#ff8a80}.ovtag.w{background:#4a2a10;border-color:#f39c12;color:#ffc56b}.ovtag.g{background:transparent;border-color:#555;color:var(--mut)}
+.ovbox{background:#4a1818;border:1px solid #c0392b;border-radius:10px;padding:10px;margin:8px 0}
 .cst{position:absolute;left:6px;top:6px;background:#6b3fc4;color:#fff;font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 5px;border-radius:5px}
 .isb{padding:2px 8px;font-size:11px;background:#5a3a10;border:1px solid #f39c12;color:#ffd08a;border-radius:8px;margin-left:4px}.isd{flex-basis:100%;font-size:13px;background:#2a2033;border-radius:8px;padding:4px 10px;margin-top:6px}.isd p{margin:6px 0}
 #stcover{position:fixed;top:0;left:0;right:0;height:var(--st);background:var(--bg);z-index:25;pointer-events:none}
@@ -115,7 +121,7 @@ const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clea
 let MBACK=null,SLD=false,KEEPSCROLL=false;
 const openM=(h,back)=>{const was=$('#modal').classList.contains('open');$('#mbody').innerHTML=h;$('#modal').classList.add('open');MBACK=back||null;if(!(KEEPSCROLL&&was))$('#modal').scrollTop=0;KEEPSCROLL=false},closeM=()=>{$('#modal').classList.remove('open');$('#modal').scrollTop=0;MBACK=null;SLD=false;SLN=null;CR=null};
 const imgErr=i=>{if(i.src.includes('/large/')){i.src=i.src.replace('/large/','/normal/');return}if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else i.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:i.alt}))};
-const artOf=n=>{const c=findCard(n);return (c&&c.art)||ART[n]||''};
+const artOf=n=>{const c=findCard(n);return (c&&c.custom&&CIMG[c.name])||(c&&c.art)||ART[n]||''};
 const imgTag=(n,cls='',big)=>{let u=artOf(n);if(!u)return '';if(big)u=u.replace('/normal/','/large/');return `<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(u)}" alt="${esc(n)}" onerror="imgErr(this)">`};
 const cl=n=>`<span class="lk" data-card="${esc(n)}">${esc(n)}</span>`;
 const symUrl=k=>'https://svgs.scryfall.io/card-symbols/'+String(k).replace(/\//g,'')+'.svg';
@@ -142,7 +148,7 @@ const backUrl=n=>{const c=findCard(n);return (c&&c.art2)||ART2[n]||''};
 async function init(){
   const s=localStorage.getItem(LS);
   try{D=s?JSON.parse(s):await startData()}catch(e){$('#main').textContent='Could not load your data.';return}
-  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();if(!s)persist();render();fetchArt();fxCheckLink();fxNativeLinks();
+  D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();if(!s)persist();render();fetchArt();fxCheckLink();fxNativeLinks();fxImgLoad().then(n=>{if(n)render()});
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
@@ -207,7 +213,7 @@ document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(b=t.closest('[data-dcd]'))return dcDetail(+b.dataset.dcd);if(t.id==='modal')tryClose()});
 
 /* ---------- collection ---------- */
-const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art">${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${c.verified?'<span class="vf" title="Artwork verified">✓</span>':''}${c.custom?'<span class="cst">CUSTOM</span>':''}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
+const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art${fxHasFoil(c)?' foil':''}">${fxHasFoil(c)?'<span class="foiltag">✦ FOIL</span>':''}${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${c.verified?'<span class="vf" title="Artwork verified">✓</span>':''}${c.custom?'<span class="cst">CUSTOM</span>':''}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
 function vCollection(m){
   const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
   m.innerHTML=`${D.owner&&!RO?`<h2 style="margin:0 0 8px">${esc(D.owner)}</h2>`:''}<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div>${fxTotalTile()}</div>
@@ -231,7 +237,7 @@ function showCard(name,keep){
   const acq=D.acq.filter(a=>norm(a.name)===norm(c.name)),real=isReal(c)&&findCard(c.name),kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   const btn=real?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
   const tags=[c.custom&&{h:'<b style="color:#c39bff">★ Custom card</b>'},c.type,has(c.subtype)&&c.subtype,has(c.colors)&&{h:colHtml(c.colors)},has(c.cost)&&{h:costHtml(c.cost)},has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean);
-  openM(`<div class="cp"><div class="frame">${imgTag(c.name,`data-zoom="${esc(c.name)}"`,true)||`<div class="ph">${esc(c.name)}</div>`}${btn}</div>
+  openM(`<div class="cp"><div class="frame${fxHasFoil(c)?' foil':''}">${imgTag(c.name,`data-zoom="${esc(c.name)}"`,true)||`<div class="ph">${esc(c.name)}</div>`}${btn}</div>
   <p class="hint mut">${artOf(c.name)?'Tap the card to view it full screen':''}</p>${backUrl(c.name)?`<button class="flipbtn" data-flip="${esc(c.name)}">↻ Show back</button>`:''}
   <h2>${esc(c.name)}</h2><div class="tags">${tags.map(x=>`<span>${x.h!==undefined?x.h:esc(x)}</span>`).join('')}</div>
   ${c.leg||!has(c.legal)||/^None/.test(c.legal)?'':`<div class="warn">${esc(c.legal)}</div>`}
@@ -264,7 +270,7 @@ function qtyChange(name,dl,fin,src){
   let msg=dl>0?`Add one ${f} copy of ${e.name}?\n(${e.qty} → ${nq})`:nq<=0?`Remove your LAST copy of ${e.name}? It will be deleted from your collection.${u.length?`\n\nIt is still listed in: ${u.map(x=>x.d.name).join(', ')} (it stays in those decks until you remove it there).`:''}\n\nThis can only be undone by restoring a backup.`:`Remove one ${f} copy of ${e.name}${src?` that came from “${src}”`:''}?\n(${e.qty} → ${nq})`;
   if(!confirm(msg))return;
   logEdit(e.name,'Quantity',e.qty,Math.max(0,nq));fm[f]=(fm[f]||0)+dl;e.qty=Math.max(0,nq);e.finish=finStr(fm);
-  if(e.qty<=0){D.acq=D.acq.filter(a=>norm(a.name)!==norm(e.name));D.cards.splice(D.cards.indexOf(e),1);IDX=null;save();closeM();render();return toast(e.name+' removed from your collection')}
+  if(e.qty<=0){if(CIMG[e.name]){delete CIMG[e.name];fxImgDel(e.name)}D.acq=D.acq.filter(a=>norm(a.name)!==norm(e.name));D.cards.splice(D.cards.indexOf(e),1);IDX=null;save();closeM();render();return toast(e.name+' removed from your collection')}
   let dropped=false;if(dl<0&&src)dropped=dropSource(e,src);
   save();render();showCard(e.name,true);toast(dl>0?'Copy added':dropped?`Copy removed — “${src}” no longer listed`:'Copy removed');
 }
@@ -286,7 +292,7 @@ function apDraw(more=''){
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'';
   const ls=AP.list.filter(p=>sm(p)&&(!q||`${p.set} ${p.set_name} ${p.collector_number}`.toLowerCase().includes(q)));
   $('#apst').textContent=`${ls.length} of ${AP.list.length} printings${more}`;
-  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-apv="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${p.id===cur?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span></div></div>`).join('');
+  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-apv="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${p.id===cur?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('');
 }
 async function apScan(file){
   if(!file)return;const say=t=>{const e=$('#apst');if(e)e.textContent=t};
@@ -426,7 +432,7 @@ function vAdd(m){
     m.innerHTML=`<h2>Verify the match</h2><div class="${A.photo?'cmp':''}">${A.photo?`<div><div class="mut">Your photo</div><img src="${A.photo}"></div>`:''}<div><div class="mut">Matched card</div><img src="${esc(sImg(c))}" style="max-width:300px"></div></div>
     <h3>${esc(c.name)}</h3><p class="mut">${esc(c.type_line)} ${costHtml(c.mana_cost||'')}</p>${c.oracle_text?`<pre>${symHtml(c.oracle_text)}</pre>`:''}
     <h3>Which printing is yours?</h3><p class="mut">${A.pstat?esc(A.pstat):A.printOK?'✓ '+esc(A.printNote||'Printing chosen.'):'Not confirmed yet — tap the artwork that matches your card (set code and number are printed at the bottom of the card).'}</p>
-    <div class="strip">${pl.map(p=>`<div class="sp ${p.id===c.id?'on':''}" data-sp="${p.id}">${sm(p)?`<img loading="lazy" src="${esc(sm(p))}" alt="">`:'<div class="ph">?</div>'}<div class="spl"><b>${esc(p.set_name||'')}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span></div></div>`).join('')}</div>
+    <div class="strip">${pl.map(p=>`<div class="sp ${p.id===c.id?'on':''}" data-sp="${p.id}">${sm(p)?`<img loading="lazy" src="${esc(sm(p))}" alt="">`:'<div class="ph">?</div>'}<div class="spl"><b>${esc(p.set_name||'')}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
     <div class="f"><label>Finish</label><select onchange="A.finish=this.value">${fins.map(f=>`<option ${A.finish===f?'selected':''}>${f}</option>`).join('')}</select>
     <label>Quantity</label><input type="number" min="1" value="${A.qty}" onchange="A.qty=Math.max(1,+this.value||1)"></div>
     <div class="row"><button onclick="A.step=A.photo?'pick':'start';A.cands=A.cands||[];render()">✗ Wrong card</button><button class="pri" onclick="A.finish=A.finish||fins0();A.step='q';A.q=A.q||{};render()">✓ Correct — next</button></div>`;
@@ -558,7 +564,7 @@ function nameDiff(e,c,fuzzy){const off=c.name,target=String(e.name).includes(' /
   const same=norm(front(e.name))===norm(front(off));if(!same&&!(fuzzy&&sim(front(e.name),front(off))>=0.85))return [];
   return [{f:'name',label:'Card name',old:e.name,now:target,val:target}]}
 const fullDiff=(e,c,fuzzy)=>isReal(e)?[...nameDiff(e,c,fuzzy),...diffEntry(e,c)]:[];
-function renameCard(old,nw){const k=norm(front(old));
+function renameCard(old,nw){const k=norm(front(old));if(CIMG[old]&&old!==nw){CIMG[nw]=CIMG[old];delete CIMG[old];fxImgPut(nw,CIMG[nw]);fxImgDel(old)}
   D.cards.forEach(c=>{if(norm(front(c.name))===k)c.name=nw});
   D.decks.forEach(d=>{d.cards.forEach(x=>{if(norm(front(x.name))===k)x.name=nw});if(d.commander&&norm(front(d.commander))===k)d.commander=nw});
   (D.loans||[]).forEach(l=>{if(norm(front(l.card))===k)l.card=nw});D.acq.forEach(a=>{if(norm(front(a.name))===k)a.name=nw});D.swaps.forEach(w=>{if(w.row&&norm(front(w.row[0]))===k)w.row[0]=nw});
@@ -798,7 +804,7 @@ async function sqliteBytes(){
   CREATE TABLE swap_log(deck TEXT,section TEXT,card TEXT,from_to TEXT,quantity TEXT,date TEXT,notes TEXT,status TEXT);
   CREATE TABLE sleeves(color TEXT,total INTEGER,assigned_deck TEXT,in_use INTEGER);`);
   const ins=(t,rows)=>{if(!rows.length)return;const st=db.prepare(`INSERT INTO ${t} VALUES(${rows[0].map(()=>'?').join(',')})`);rows.forEach(r=>st.run(r.map(v=>v??'')));st.free()};
-  ins('app_state',[['backup_json',JSON.stringify(D)],['exported',new Date().toISOString()]]);
+  ins('app_state',[['backup_json',fxWithImgs(D)],['exported',new Date().toISOString()]]);
   ins('cards',D.cards.map(c=>[c.name,c.source,c.colors,c.cost,+c.cmc||0,c.type,c.subtype,c.power,c.toughness,c.text,c.keywords,c.legal,c.qty,c.finish,c.set,c.setName,c.cn,c.scryId,c.art,c.verified?1:0]));
   ins('decks',D.decks.map((d,i)=>[i+1,d.name,d.format,d.commander,noEmoji(sleeveOf(d)?.color||d.sleeve||'')]));
   ins('deck_cards',D.decks.flatMap((d,i)=>[...d.cards.map(c=>[i+1,c.name,c.qty,c.finish,0]),...d.tokens.map(c=>[i+1,c.name,c.qty,c.finish,1])]));
@@ -822,7 +828,7 @@ async function nativeSave(blob,name,share){
 }
 async function doBackup(share){
   const ext=BKF==='json'?'json':'sqlite',name=`${fxPrefix()}backup_${tsName()}.${ext}`;let blob;
-  try{blob=BKF==='json'?new Blob([JSON.stringify(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
+  try{blob=BKF==='json'?new Blob([fxWithImgs(D)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}
   if(isNative()){
     try{const r=await nativeSave(blob,name,share);
@@ -858,7 +864,7 @@ async function autoDel(name){if(isNative())await FS().deleteFile({path:AUTO_DIR+
 function autoSchedule(){if(!autoOn()||AUTO_PAUSE||typeof D==='undefined'||!D)return;clearTimeout(AUTO_T);AUTO_T=setTimeout(autoRun,2000)}
 async function autoRun(){AUTO_T=null;if(!autoOn()||AUTO_PAUSE)return;if(AUTO_BUSY)return autoSchedule();
   const txt=JSON.stringify(D);if(txt===AUTO_LAST)return;AUTO_BUSY=true;
-  try{const d=new Date(),name=`auto-${tsName()}${p2(d.getSeconds())}.json`;await autoPut(name,txt);AUTO_LAST=txt;
+  try{const d=new Date(),name=`auto-${tsName()}${p2(d.getSeconds())}.json`;await autoPut(name,fxWithImgs(D));AUTO_LAST=txt;
     for(const old of (await autoNames()).slice(AUTO_KEEP))await autoDel(old);AUTO_ERR=false;autoRefresh()}
   catch(e){if(!AUTO_ERR)toast('Auto-backup failed: '+String(e&&e.message||e).slice(0,80));AUTO_ERR=true}
   AUTO_BUSY=false}
@@ -878,7 +884,7 @@ async function autoRefresh(){const el=$('#autolist');if(!el)return;
 async function autoRevert(name){
   let j;try{j=JSON.parse(await autoGet(name));if(!j.cards||!j.decks)throw 0}catch(e){return toast('That auto-backup could not be read')}
   if(!confirm(`Revert everything to how it was at ${autoWhen(name)}?\n\nThis replaces what is in the app now (${D.cards.length} titles, ${D.decks.length} decks) with that copy (${j.cards.length} titles, ${j.decks.length} decks). Your other auto-backups and manual backups are not changed.`))return;
-  AUTO_PAUSE=true;D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();save();AUTO_PAUSE=false;AUTO_LAST=JSON.stringify(D);IDX=null;
+  AUTO_PAUSE=true;fxImgsIn(j);D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();save();AUTO_PAUSE=false;AUTO_LAST=JSON.stringify(D);IDX=null;
   toast('Reverted to '+autoWhen(name));render();fetchArt()}
 
 /* ---------- back button (shared logic; Android uses @capacitor/app, the web version uses the browser history) ---------- */
