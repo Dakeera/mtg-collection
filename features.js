@@ -491,7 +491,7 @@ function fxVal(c){if(!c||!c.price)return 0;const u=fxUnit(c),fm=finMapOf(c);retu
 const fxEach=c=>c&&c.qty?fxVal(c)/c.qty:0;
 const fxSetPrice=(e,c)=>{if(c&&c.prices&&(!e.price||!e.scryId||e.scryId===c.id)){e.price={n:c.prices.usd||'',f:c.prices.usd_foil||'',e:c.prices.usd_etched||''};e.priceAt=today()}};
 let PRBUSY=false;
-async function fetchPrices(force){if(PRBUSY||!D)return;const stale=c=>force||!c.priceAt||(Date.now()-new Date(c.priceAt))>7*864e5,todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return;PRBUSY=true;let got=0;
+async function fetchPrices(force){if(PRBUSY||!D)return;const stale=c=>!c.custom&&(force||!c.priceAt||(Date.now()-new Date(c.priceAt))>7*864e5),todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return;PRBUSY=true;let got=0;
   const ident=c=>c.scryId?{id:c.scryId}:c.set&&c.cn?{set:String(c.set).toLowerCase(),collector_number:String(c.cn)}:{name:front(c.name)};
   try{for(let i=0;i<todo.length;i+=75){const ch=todo.slice(i,i+75),r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ch.map(ident)})});if(!r.ok)throw 0;
     const j=await r.json(),byId=new Map(),bySN=new Map(),byN=new Map();(j.data||[]).forEach(x=>{byId.set(x.id,x);bySN.set(x.set+'|'+x.collector_number,x);if(!byN.has(norm(front(x.name))))byN.set(norm(front(x.name)),x)});
@@ -578,7 +578,7 @@ async function fxSaveFriend(j,status,opt){await ocLoad();const ex=opt.separate?n
   fxFriendIndex(rec);toast(msg||`${rec.name} added to Other collections${status==='signed'?' ✓ verified':''}`);if(!opt.quiet){V.view='more';V.sub='others';render()}return rec}
 
 /* ---------- sharing: signed share files and deck links ---------- */
-async function fxShareData(scope,i){const keep=['name','colors','cost','cmc','type','subtype','power','toughness','text','keywords','qty','finish','set','setName','cn','scryId','art','art2','leg','legAt','price','priceAt','verified'];
+async function fxShareData(scope,i){const keep=['name','colors','cost','cmc','type','subtype','power','toughness','text','keywords','qty','finish','set','setName','cn','scryId','art','art2','leg','legAt','price','priceAt','verified','custom'];
   let decks=D.decks.map(d=>({name:d.name,format:d.format,commander:d.commander||'',cards:d.cards.map(e=>({name:e.name,qty:e.qty,finish:e.finish||'Normal'})),tokens:d.tokens||[]})),cards=D.cards;
   if(scope==='deck'){decks=[decks[i]];const s=new Set(decks[0].cards.map(e=>norm(e.name)));cards=cards.filter(c=>s.has(norm(c.name)))}
   const body={kind:'mtg-share',v:1,scope,uid:D.uid,name:D.owner||'Collection',updated:D.updated||Date.now(),pub:D.keys?D.keys.pub:null,cards:cards.map(c=>{const o={};keep.forEach(k=>{if(c[k]!=null)o[k]=c[k]});return o}),decks};
@@ -692,6 +692,8 @@ function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!
 /* ---------- deck rules: legality, copy limits, commander colors, deck size ---------- */
 const fxIdCols=c=>String(c&&c.colors||'').split(/[\/,\s]+/).map(x=>N2L[x]).filter(Boolean);
 function fxCardIssues(c,qty,F,cmdC){if(!F||!c)return [];const out=[],st=F.leg&&c.leg?c.leg[F.leg]:undefined,cap=copyCap(c,F);
+  if(c.custom&&F.leg)out.push({kind:'custom',title:'Custom card',msg:`${c.name} is marked as a custom card (a proxy, homebrew or playtest card). Custom cards aren’t legal in ${F.k} games or events — fine for casual play with friends who agree.`});
+  else if(c.legMiss&&!c.custom&&!c.leg)out.push({kind:'unknown',title:'Not found on Scryfall',msg:`Scryfall doesn’t recognise “${c.name}”, so its rules can’t be checked.${c.legSug?` Did you mean ${c.legSug}?`:''} It may be misspelled, or it may be a custom card.`});
   if(F.leg&&c.leg&&st==='b')out.push({kind:'banned',title:`Banned in ${F.k}`,msg:`${c.name} is on the ${F.k} banned list, so a deck that includes it can’t be played in ${F.k} games or events.`});
   else if(F.leg&&c.leg&&!st)out.push({kind:'notlegal',title:`Not legal in ${F.k}`,msg:`${c.name} isn’t part of the ${F.k} card pool${/Standard|Alchemy/.test(F.k)?' — it has rotated out, or was never in a set that is legal there':/Pauper/.test(F.k)?' — it has never been printed at common':F.k==='Pioneer'?' — it was only printed before Return to Ravnica (2012)':F.k==='Modern'?' — it was only printed before Eighth Edition (2003)':F.k==='Premodern'?' — it wasn’t printed between Fourth Edition and Scourge':''}.`});
   if(qty>cap&&cap<999)out.push(st==='r'?{kind:'restricted',title:`Restricted in ${F.k}`,msg:`${c.name} is on the ${F.k} restricted list: a deck may include only 1 copy. This deck has ${qty}.`,cap}:{kind:'copies',title:`Too many copies (${qty})`,msg:`${F.single?F.k+' is a singleton format: only 1 copy of each card, except basic lands.':F.k+' allows up to '+cap+' copies of a card, except basic lands.'} This deck has ${qty}.`,cap});
@@ -702,7 +704,7 @@ function deckIssues(i){const d=D.decks[i],F=d&&dfmt(d.format);if(!F)return [];co
   if(tot>F.n)add('',{kind:'size',title:`${tot} cards — ${F.k} decks hold ${F.n}`,msg:`${F.single?F.k+' decks must have exactly '+F.n+' cards.':'This app keeps '+F.k+' decks at '+F.n+' cards.'} This deck has ${tot-F.n} too many.`},[{t:'Open the card picker',a:'pick'}]);
   if(F.cmd){if(!d.commander)add('',{kind:'nocmd',title:`No ${F.cmdLabel.toLowerCase()} chosen`,msg:`${F.k} decks are built around a ${F.cmdLabel.toLowerCase()} (${F.cmdRule}). Choose one so the color rules can be checked.`},[{t:'Choose one',a:'edit'}]);
     else if(cmdC&&!cmdOK(cmdC,F))add(d.commander,{kind:'badcmd',title:`${cmdC.name} can’t be the ${F.cmdLabel.toLowerCase()}`,msg:`In ${F.k} the ${F.cmdLabel.toLowerCase()} must be ${F.cmdRule}. ${cmdC.name} is a ${cmdC.type}.`},[{t:'Choose another',a:'edit'}])}
-  L.forEach(e=>{const c=findCard(e.name);if(!c)return;fxCardIssues(c,e.qty,F,cmdC).forEach(x=>add(c.name,x,x.cap?[{t:`Reduce to ${x.cap}`,a:'cut',n:e.qty-x.cap}]:[{t:'Remove from deck',a:'cut',n:e.qty}]))});
+  L.forEach(e=>{const c=findCard(e.name);if(!c)return;fxCardIssues(c,e.qty,F,cmdC).forEach(x=>add(c.name,x,x.kind==='unknown'?[...(c.legSug?[{t:'Use '+c.legSug,a:'sug'}]:[]),{t:c.legSug?'Something else':'Find a match',a:'match'},{t:'Mark as custom card',a:'custom'}]:x.cap?[{t:`Reduce to ${x.cap}`,a:'cut',n:e.qty-x.cap}]:[{t:'Remove from deck',a:'cut',n:e.qty}]))});
   return out}
 function fxIssueTag(d){const i=D.decks.indexOf(d),L=deckIssues(i),a=L.filter(x=>!x.ign).length,g=L.length-a;if(!L.length)return '';
   return `<br><span style="color:${a?'#f39c12':'var(--mut)'};font-size:12px">⚠ ${a?fxPl(a,'rule issue')+' for '+esc(d.format):''}${a&&g?' · ':''}${g?g+' ignored':''}</span>`}
@@ -715,7 +717,7 @@ function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign)
   <div class="row"><button onclick="fxDeckEdit(${i})">Change deck type…</button><button class="pri" onclick="closeM()">Done</button></div>`)}
 function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
   if(j<0){const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
-  const f=x.fixes[j];if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
+  const f=x.fixes[j];if(f.a==='match')return fxMatchUnknown(x.card,()=>{render();fxIssues(i)});if(f.a==='sug')return fxUseSug(x.card,()=>{render();fxIssues(i)});if(f.a==='custom'){fxSetCustom(x.card,true);return fxIssues(i)}if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
   if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}
 
 const fxDeckNeedsLeg=i=>{const d=D.decks[i],F=d&&dfmt(d.format);if(!F||!F.leg)return [];return fxDeckCards(i).map(e=>findCard(e.name)).filter(c=>c&&isReal(c)&&!c.leg&&!c.legMiss)};
@@ -729,3 +731,34 @@ function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
   if(!need.length&&d.legPending){d.legPending=false;save()}
   if(!d.legPending||!need.length)return '';
   return `<div class="sec" style="display:flex;gap:10px;align-items:center;border:1px solid #4a6aa8"><span style="flex:1">⏳ <b>${fxPl(need.length,'card')}</b> haven’t been checked against the ${esc(d.format)} rules yet — this needs an internet connection.</span><button onclick="fxLegalCheck(${i})">Check now</button></div>`}
+
+/* ---------- cards Scryfall doesn't recognise: find a match, or mark as a custom card ---------- */
+function fxSetCustom(name,on){const c=findCard(name);if(!c)return;c.custom=!!on;if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group`:`${c.name} is no longer marked custom`)}
+function fxUnknownBox(c){if(!c||RO||!findCard(c.name))return '';
+  if(c.custom)return `<div class="sec"><b style="color:#c39bff">★ Custom card</b><p class="mut" style="margin:4px 0">Kept in your Custom cards group. The app doesn’t look it up on Scryfall, and it’s flagged as not legal in official formats.</p><button onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',false);showCard('${esc(c.name).replace(/'/g,"\\'")}')">It’s a real card — unmark</button></div>`;
+  if(!c.legMiss||c.leg)return '';
+  const q=esc(c.name).replace(/'/g,"\\'");
+  return `<div class="warn"><b>? Scryfall doesn’t recognise this card</b><p style="margin:4px 0">${c.legSug?`Did you mean <b>${esc(c.legSug)}</b>?`:'It may be misspelled, or it may be a custom card (proxy, homebrew, playtest).'}</p><div class="row" style="margin:0">${c.legSug?`<button class="pri" onclick="fxUseSug('${q}')">Yes — update my card</button>`:''}<button class="${c.legSug?'':'pri'}" onclick="fxMatchUnknown('${esc(c.name).replace(/'/g,"\\'")}')">${c.legSug?'Something else':'Find a match'}</button><button onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',true);showCard('${esc(c.name).replace(/'/g,"\\'")}')">Mark as custom card</button></div></div>`}
+function fxUnknownList(){const L=D.cards.filter(c=>isReal(c)&&c.legMiss&&!c.leg&&!c.custom),C=D.cards.filter(c=>c.custom);let h='';
+  if(L.length)h+=`<div class="sec"><h4>Not found on Scryfall (${L.length})</h4><p class="mut" style="margin:0 0 6px">Check each one: it may be misspelled, or it may be a custom card.</p>${L.map(c=>`<div class="kv"><span>${cl(c.name)}${c.legSug?`<br><span class="mut" style="font-size:12px">Did you mean ${esc(c.legSug)}? <button style="padding:2px 8px" onclick="fxUseSug('${esc(c.name).replace(/'/g,"\\'")}',()=>render())">Yes</button></span>`:''}</span><b><button style="padding:4px 8px" onclick="fxMatchUnknown('${esc(c.name).replace(/'/g,"\\'")}')">Find a match</button> <button style="padding:4px 8px" onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',true)">Custom</button></b></div>`).join('')}</div>`;
+  if(C.length)h+=`<div class="sec"><h4>★ Custom cards (${C.length})</h4><p class="mut" style="margin:0">${C.map(c=>cl(c.name)).join(', ')}</p></div>`;return h}
+// Try to match the card: exact name → close spelling (fuzzy) → list of similar names. Matching updates the EXISTING card (never creates a new one).
+async function fxMatchUnknown(name,after){const e=findCard(name);if(!e)return;const done=after||(()=>showCard(e.name)),nm=front(e.name);
+  openM(`<h3>Finding “${esc(e.name)}”…</h3><p class="mut">Checking Scryfall.</p>`);
+  let c=await scry('/cards/named?exact='+encodeURIComponent(nm));
+  if(c&&c.object==='card'){delete e.legMiss;e.leg=legOf(c.legalities);e.legAt=today();fxSetPrice(e,c);if(!ART[e.name]){ART[e.name]=sImg(c);saveArt()}save();if(!verifyEntry(e,c,done)){closeM();toast(`Found it — ${e.name} is now checked`);done()}return}
+  if(c===null&&!navigator.onLine){closeM();return toast('You’re offline — try again when connected')}
+  c=await scry('/cards/named?fuzzy='+encodeURIComponent(nm));const ac=await scry('/cards/autocomplete?q='+encodeURIComponent(nm.slice(0,Math.max(3,Math.min(nm.length,12)))));
+  const opts=[...new Set([...(c&&c.object==='card'?[c.name]:[]),...((ac&&ac.data)||[])])].slice(0,6);window.FXUNK={name:e.name,done,opts};
+  openM(`<h3>Which card is “${esc(e.name)}”?</h3><p class="mut">Scryfall has no card with exactly that name. ${opts.length?'Is it one of these? Choosing one updates your existing card — no duplicate is created.':'No close matches were found.'}</p>
+  ${opts.map((o,k)=>`<div class="res" onclick="fxPickMatch(${k})"><span>${esc(o)}</span><b>Use this</b></div>`).join('')}
+  <div class="f"><label>Or search by another name</label><input id="unkq" value="${esc(nm)}"></div><div class="row"><button onclick="fxSearchUnknown()">Search</button></div>
+  <div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="closeM();fxSetCustom(FXUNK.name,true);FXUNK.done()">★ Mark as custom card</button></div>`)}
+async function fxSearchUnknown(){const q=($('#unkq').value||'').trim();if(!q)return;const ac=await scry('/cards/autocomplete?q='+encodeURIComponent(q));FXUNK.opts=((ac&&ac.data)||[]).slice(0,8);
+  const box=FXUNK.opts.map((o,k)=>`<div class="res" onclick="fxPickMatch(${k})"><span>${esc(o)}</span><b>Use this</b></div>`).join('')||'<p class="mut">No cards found with that name.</p>';
+  document.querySelectorAll('#mbody .res').forEach(x=>x.remove());$('#mbody .f').insertAdjacentHTML('beforebegin',box)}
+async function fxPickMatch(k){const o=FXUNK.opts[k],e=findCard(FXUNK.name);if(!o||!e)return;const c=await scry('/cards/named?exact='+encodeURIComponent(o));if(!c||c.object!=='card')return toast('Couldn’t load that card — check your connection');
+  if(!confirm(`Update your existing card “${e.name}” to “${c.name}”?\n\nQuantity, finishes, sources and decks are kept.`))return;
+  const old=e.name;renameCard(old,c.name);const n=findCard(c.name)||e;delete n.legMiss;delete n.legSug;n.leg=legOf(c.legalities);n.legAt=today();fxSetPrice(n,c);
+  ART[n.name]=sImg(c)||ART[n.name]||'';saveArt();const f=fullDiff(n,c,false);if(f.length)applyDiffs(n,f);save();closeM();toast(`Updated: ${old} → ${c.name}`);(FXUNK.done===undefined?()=>showCard(n.name):()=>{try{FXUNK.done()}catch(_){showCard(n.name)}})()}
+function fxUseSug(name,after){const c=findCard(name);if(!c||!c.legSug)return fxMatchUnknown(name,after);window.FXUNK={name:c.name,done:after||(()=>showCard(c.legSug)),opts:[c.legSug]};fxPickMatch(0)}
