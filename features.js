@@ -92,7 +92,7 @@ function fxDraftSave(){
       pl.from.forEach(f=>{makeLoan(c.name,f.q,f.deck,d.name);put(inG,'From deck: '+f.deck,f.q,c.name)});
       if(pl.short>0)put(inG,'Not enough copies — you own fewer than the deck lists',pl.short,c.name)}
     const e=d.cards.find(e=>norm(e.name)===norm(x.name));e?e.qty+=n:d.cards.push({name:c?c.name:x.name,qty:n,finish:c?.finish||'Normal'})});
-  DRAFT=null;save();render();fxPullSplash(d.name,inG,outG)}
+  DRAFT=null;save();fxOverrideAuto(i);render();fxPullSplash(d.name,inG,outG)}
 function fxPullSplash(deck,inG,outG){
   const ord=G=>Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b)),tot=G=>sum(Object.values(G).flat(),x=>x.q);
   const grp=G=>ord(G).map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(or ${esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join('');
@@ -657,7 +657,7 @@ function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.n
   if(name!==old){D.loans.forEach(l=>{if(l.from===old)l.from=name;if(l.to===old)l.to=name});D.swaps.forEach(w=>{if(w.deck===old)w.deck=name;if(w.row&&w.row[1]===old)w.row[1]=name})}
   const ns=D.sleeves.find(x=>x.color===NSV);if(s&&s!==ns){s.deck='';s.inUse=0}d.sleeve=ns?ns.color:'';
   if(ns){ns.deck=sleeveLabel(name,d.format);ns.inUse=Math.min(fmtSize(d.format)||60,ns.total)}
-  save();closeM();render();toast('Deck details saved')}
+  save();fxOverrideAuto(i);closeM();render();toast('Deck details saved')}
 
 /* ---------- Add card tab: type several card names at once ---------- */
 const fxQuickAdd=()=>`<div class="sec" style="margin-top:22px"><h4>Add several cards at once</h4><div class="f"><textarea id="qadd" rows="3" placeholder="Sol Ring, Llanowar Elves, 4 Lightning Bolt">${esc(V.qadd||'')}</textarea></div>
@@ -857,3 +857,40 @@ async function fxWebHash(){const h=[];for(const f of ['index.html','features.js'
 async function fxWebCheck(){if(isNative()||WEBUPD||!/^https?:/.test(location.protocol))return;try{const h=await fxWebHash();if(WEBH==null){WEBH=h;return}if(h!==WEBH){WEBUPD=true;render()}}catch(e){}}
 function fxUpdStart(){if(isNative()){const last=+(localStorage.getItem(FX_UPDK)||0);if(Date.now()-last>20*3600e3)setTimeout(()=>fxUpdCheck(false),4000);return}
   fxWebCheck();setInterval(fxWebCheck,30*60e3);document.addEventListener('visibilitychange',()=>{if(!document.hidden)fxWebCheck()})}
+
+function fxOverrideAuto(i){const d=D.decks[i];if(!d||!d.override||deckIssues(i).length)return false;d.override=false;delete d.overrideAt;save();
+  setTimeout(()=>toast(`Every rule issue in ${d.name} is fixed — override turned off. Breaking a rule again will need two approvals.`),400);return true}
+
+/* ---------- Deck Generator: commander choices follow the same filters; Start over ---------- */
+function aiCmdChoices(F){const al=aiAllowed(),cols=aiColors();
+  return D.cards.filter(c=>isReal(c)&&cmdOK(c,F)&&okLegal(c)&&aiAvail(c,al)>0&&(!cols.length||okColor(c,cols)))}
+function aiReset(){if(!confirm('Start over?\n\nThis clears the deck type, colors, where cards may come from, theme, commander, the AI reply and the preview.\n\nYour API key (if you typed one) is kept until you close the app.\n\nOK = clear everything\nCancel = keep it'))return;
+  Object.assign(G,{fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},busy:false,res:null,reply:'',err:''});render();scrollTo(0,0);toast('Deck Generator cleared')}
+
+/* ---------- Add card tab: create a custom card by hand ---------- */
+const fxCustomAddBtn=()=>`<div class="sec" style="margin-top:14px"><h4>Custom card</h4><p class="mut" style="font-size:12px;margin:4px 0 8px">For proxies, homebrew or playtest cards that aren’t on Scryfall. They go in your ★ Custom cards group.</p><div class="row"><button class="pri" onclick="fxCustomNew()">★ Add a custom card</button></div></div>`;
+function fxCustomNew(){const types=['Creature','Legendary Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Legendary Planeswalker','Land','Basic Land','Battle','Kindred'];
+  openM(`<h3>★ Add a custom card</h3><p class="mut">Only the name is required. You can add a photo of the card on the next screen.</p><div class="f">
+  <label>Card name *</label><input id="cn_n" maxlength="80" autocomplete="off">
+  <label>Card type</label><select id="cn_t">${types.map(x=>`<option>${x}</option>`).join('')}</select>
+  <label>Subtype (optional)</label><input id="cn_s" placeholder="e.g. Elf Druid">
+  <label>Mana cost (optional)</label><input id="cn_c" placeholder="e.g. {2}{G}{G}" oninput="fxCustomCost()"><p class="mut" id="cn_cp" style="margin:4px 0 0"></p>
+  <label>Colors</label><div class="chips">${CLR.map(k=>`<button type="button" class="pipb" data-cn="${k}" onclick="this.classList.toggle('on')">${symImg(k)}</button>`).join('')}</div><p class="mut" style="font-size:12px;margin:2px 0 0">Leave all off for colorless. Colors in the mana cost are added automatically.</p>
+  <div class="row" style="margin:0"><div style="flex:1"><label>Power</label><input id="cn_p" inputmode="numeric"></div><div style="flex:1"><label>Toughness</label><input id="cn_h" inputmode="numeric"></div></div>
+  <label>Rules text (optional)</label><textarea id="cn_x" rows="3" placeholder="Use {T}, {G} etc. for symbols"></textarea>
+  <div class="row" style="margin:0"><div style="flex:1"><label>Quantity</label><input id="cn_q" type="number" min="1" value="1"></div><div style="flex:1"><label>Finish</label><select id="cn_f"><option>Normal</option><option>Foil</option></select></div></div>
+  <label>Where did it come from?</label><input id="cn_src" list="cn_srcl" placeholder="e.g. Proxy print, Gift, Homebrew set"><datalist id="cn_srcl">${allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  </div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxCustomSave()">Add to my collection</button></div>`);setTimeout(()=>{const i=$('#cn_n');if(i)i.focus()},50)}
+function fxCustomCost(){const v=$('#cn_c').value,p=$('#cn_cp');if(p)p.innerHTML=v?costHtml(v):''}
+function fxCustomSave(){const nm=($('#cn_n').value||'').trim();if(!nm)return toast('Give the card a name');
+  const ex=findCard(nm);if(ex&&!ex.custom)return toast(`“${ex.name}” is already a real card in your collection — use another name`);
+  const q=Math.max(1,parseInt($('#cn_q').value)||1),fin=$('#cn_f').value,ty=$('#cn_t').value,cost=($('#cn_c').value||'').trim(),txt=($('#cn_x').value||'').trim(),src=canonSrc(($('#cn_src').value||'').trim()||'Custom'),
+    picked=[...document.querySelectorAll('[data-cn].on')].map(b=>b.dataset.cn),fromCost=fxCI({cost,text:''}),ci=CLR.filter(k=>picked.includes(k)||fromCost.includes(k)),
+    mv=(cost.match(/\{[^}]+\}/g)||[]).reduce((a,m)=>{const k=m.slice(1,-1);return a+(/^\d+$/.test(k)?+k:/^[XYZ]$/.test(k)?0:1)},0);
+  if(ex){if(!confirm(`You already have the custom card “${ex.name}”.\n\nAdd ${q} more ${q===1?'copy':'copies'} to it?`))return;ex.finish=mergeFinish(ex.finish||'Normal',ex.qty,fin,q);ex.qty+=q;if(!cardSources(ex).includes(src))ex.source=(cardSources(ex).length?ex.source+', ':'')+src;
+    D.acq.push({date:today(),name:ex.name,set:'',cn:'',finish:fin,qty:q,source:src,price:'',notes:'Custom card',shared:true});save();closeM();render();showCard(ex.name);return toast('Copies added')}
+  const L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'};
+  D.cards.push({name:nm,source:src,colors:ci.length?ci.map(x=>L[x]).join('/'):(/Land/.test(ty)?'Land':'Colorless'),cost:cost||'None',cmc:String(mv),type:ty,subtype:($('#cn_s').value||'').trim()||'None',
+    power:($('#cn_p').value||'').trim()||'None',toughness:($('#cn_h').value||'').trim()||'None',text:txt,keywords:'None',legal:'Custom card',qty:q,finish:fin,status:'Added in app',custom:true,ci});
+  IDX=null;D.acq.push({date:today(),name:nm,set:'',cn:'',finish:fin,qty:q,source:src,price:'',notes:'Custom card',shared:false});logEdit(nm,'Custom card','','created');save();closeM();render();showCard(nm);
+  toast(`${nm} added to your Custom cards — tap “Take a photo of this card” to add its picture`)}
