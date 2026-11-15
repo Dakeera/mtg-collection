@@ -124,7 +124,8 @@ const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s
 const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
 const isReal=c=>!['Token','Accessory'].includes(c.type);
 const findCard=n=>(IDX||(IDX=new Map([...D.cards].reverse().map(c=>[norm(front(c.name)),c])))).get(norm(front(n)));
-const usage=n=>D.decks.map(d=>{const q=sum(d.cards.filter(x=>norm(x.name)===norm(n)));return {d,q,qty:q}}).filter(x=>x.q>0);
+/* copies listed in a deck but marked missing (🛒 / in another deck) aren't physically there, so they don't use up the collection */
+const usage=n=>D.decks.map(d=>{const q=Math.max(0,sum(d.cards.filter(x=>norm(x.name)===norm(n)))-(d.miss?fxMissQ(d,n):0));return {d,q,qty:q}}).filter(x=>x.q>0);
 const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600)};
 let MBACK=null,SLD=false,KEEPSCROLL=false;
 const openM=(h,back)=>{const was=$('#modal').classList.contains('open');$('#mbody').innerHTML=h;$('#modal').classList.add('open');MBACK=back||null;if(!(KEEPSCROLL&&was))$('#modal').scrollTop=0;KEEPSCROLL=false},closeM=()=>{$('#modal').classList.remove('open');$('#modal').scrollTop=0;MBACK=null;SLD=false;SLN=null;CR=null};
@@ -389,18 +390,18 @@ function vDecks(m){
   if(V.opt!=null&&D.decks[V.opt]&&!RO&&D.decks[V.opt].name===OPT.dname)return fxOptView(m,V.opt);V.opt=null;
   if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
   m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" data-rw onclick="newDeck()">＋ Build a new deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
-    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(RO?fxDeckTitle(d):d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${d.legPending?`<br><span style="color:#8fb3ff;font-size:12px">⏳ Rules not checked yet (needs internet) — tap to check</span>`:''}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
+    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(RO?fxDeckTitle(d):d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${fxMissTag(d)}${d.legPending?`<br><span style="color:#8fb3ff;font-size:12px">⏳ Rules not checked yet (needs internet) — tap to check</span>`:''}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
 }
 function vDeck(m,i){
   const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(dl),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
   const mx=Math.max(1,...cv);
   m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(RO?fxDeckTitle(d):d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${fxDeckValue(d)}${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
-  ${fxLegalBox(i)}${fxIssueBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
+  ${fxLegalBox(i)}${fxIssueBox(i)}${fxMissBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
   <div class="row" data-rw><button class="pri" onclick="fxBuilder(true)">＋ Add cards</button><button class="pri" onclick="fxOptOpen(${i})">✨ Optimize Deck</button></div><div class="row" data-rw><button onclick="fxDeckEdit(${i})">✎ Edit details</button><button onclick="fxShareDeck(${i})">📤 Share deck</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxRoDeckBtns(i)}${fxDraftNote(i)}
-  <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
+  <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:'')+(d.miss&&!RO&&fxMissQ(d,e.name)?` <i class="dl" title="missing">🛒${fxMissQ(d,e.name)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
   ${d.tokens.length?`<h3>Deck tokens (${sum(d.tokens)})</h3>${tbl(['Token','Qty','Details'],d.tokens.map(t=>[t.name,t.qty,{h:symHtml(t.text)}]))}`:''}`;
 }
 function deckSearch(first){

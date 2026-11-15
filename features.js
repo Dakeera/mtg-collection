@@ -92,6 +92,7 @@ function fxDraftSave(opt){opt=opt||{};
       pl.from.forEach(f=>{makeLoan(c.name,f.q,f.deck,d.name);put(inG,'From deck: '+f.deck,f.q,c.name)});
       if(pl.short>0)put(inG,'Not enough copies — you own fewer than the deck lists',pl.short,c.name)}
     const e=d.cards.find(e=>norm(e.name)===norm(x.name));e?e.qty+=n:d.cards.push({name:c?c.name:x.name,qty:n,finish:c?.finish||'Normal'})});
+  if(d.miss){d.miss.forEach(m=>{const have=sum(d.cards.filter(e=>norm(e.name)===norm(m.name)));m.qty=Math.min(m.qty,have)});d.miss=d.miss.filter(m=>m.qty>0);if(!d.miss.length)delete d.miss}
   DRAFT=null;save();fxOverrideAuto(i);render();fxPullSplash(d.name,inG,outG)}
 function fxPullSplash(deck,inG,outG){
   const ord=G=>Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b)),tot=G=>sum(Object.values(G).flat(),x=>x.q);
@@ -681,7 +682,7 @@ async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.
   if(rec){await roOpen(rec.id);const i=D.decks.findIndex(d=>d.name===o.n);if(i>=0){V.view='decks';V.deck=i;render()}}}
 function fxCheckLink(){try{if(/#d=/.test(location.hash)){const h=location.hash;history.replaceState(history.state,'',location.pathname+location.search);fxOpenLink(h)}}catch(e){}}
 addEventListener('hashchange',()=>fxCheckLink());
-const fxRoDeckBtns=i=>RO?`<div class="row"><button class="pri" onclick="fxCopyDeck(${i})">＋ Copy to my decks</button><button onclick="fxSimVs(${i})">⚔ Simulate vs my decks</button></div>`:'';
+const fxRoDeckBtns=i=>RO?`<div class="row"><button class="pri" onclick="fxBuildPlan(${i})">🛠 Build this deck with my cards</button><button onclick="fxSimVs(${i})">⚔ Simulate vs my decks</button></div>`:'';
 function fxCopyDeck(i){const d=D.decks[i],from=RO.name,base=fxDeckTitle(d);roExit();let nm=base,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${base} ${k++}`;
   const cards=d.cards.map(e=>({name:(findCard(e.name)||e).name,qty:e.qty,finish:'Normal'})),own=cards.filter(e=>{const c=findCard(e.name);return c&&(c.type==='Basic Land'||c.qty>=e.qty)}).length;
   D.decks.push({name:nm,format:d.format||'Casual',sleeve:'',commander:d.commander||'',info:'Copied from '+from,cards,tokens:[]});save();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
@@ -939,6 +940,60 @@ function fxOptApply(){const i=OPT.deck,d=D.decks[i],r=OPT.res;if(!d||d.name!==OP
   r.ins.filter(e=>e.n>0).forEach(e=>{const k=norm(e.c.name),x=dr.m[k]||(dr.m[k]={name:e.c.name,base:0,qty:0});x.qty+=e.n});
   const al=optAllowed();d.info=((d.info||'')+(d.info?' · ':'')+'Optimized '+today()).slice(-300);
   OPT={};V.opt=null;fxDraftSave({yes:true,allowed:al});scrollTo(0,0)}
+
+
+/* ---------- Build a deck from someone else's list: use my cards, borrow from my decks, or track the rest as missing → ordered → received ---------- */
+const fxTcg=n=>'https://www.tcgplayer.com/search/magic/product?productLineName=magic&view=grid&q='+encodeURIComponent(front(n));
+const fxTcgMass=L=>'https://www.tcgplayer.com/massentry?productline=Magic&c='+encodeURIComponent(L.map(m=>`${m.qty} ${front(m.name)}`).join('||'));
+const fxMissQ=(d,n)=>sum((d.miss||[]).filter(m=>norm(m.name)===norm(n)),m=>m.qty);
+let BP=null;
+function fxBuildPlan(i){const d=D.decks[i],snap={};d.cards.forEach(e=>{const c=findCard(e.name)||{};snap[norm(e.name)]={type:c.type||'',cmc:c.cmc||'',colors:c.colors||'',cost:c.cost||'',art:ART[c.name]||c.art||''}});
+  const src={name:d.name,format:d.format||'Casual',commander:d.commander||'',owner:RO.given||RO.name,cards:d.cards.map(e=>({name:e.name,qty:e.qty}))};roExit();
+  const rows=[];src.cards.forEach(e=>{const c=findCard(e.name),s=snap[norm(e.name)]||{},r={name:c?c.name:e.name,need:e.qty,snap:s,c};
+    if(!c||!isReal(c)){r.free=0;r.lend=[];r.buy=e.qty}
+    else{r.free=Math.min(e.qty,freeCopies(c));let left=e.qty-r.free;r.lend=[];if(c.type!=='Basic Land')D.decks.map(x=>({deck:x.name,t:takeable(c,x.name)})).filter(x=>x.t>0).sort((a,b)=>b.t-a.t).forEach(x=>{if(left<=0)return;const k=Math.min(left,x.t);r.lend.push({deck:x.deck,q:k});left-=k});r.buy=left}
+    r.borrow=false;rows.push(r)});
+  let nm=`${src.owner} - ${src.name}`,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${src.owner} - ${src.name} ${k++}`;
+  BP={src,rows,name:nm};go('decks');V.deck=null;render();fxBuildDraw()}
+function fxBuildDraw(){const B=BP;if(!B)return;const tot=k=>sum(B.rows,r=>k(r)),inDeck=B.rows.filter(r=>r.lend.length);
+  const st=r=>[r.free?`✓ ${r.free} from your collection`:'',r.lend.length?(r.borrow?'↪ borrow '+r.lend.map(x=>`${x.q} from ${esc(x.deck)}`).join(', '):'⏳ missing — '+r.lend.map(x=>`${x.q} in ${esc(x.deck)}`).join(', ')):'',r.buy?`🛒 ${r.buy} to get (you don’t own ${r.free||r.lend.length?'enough':'it'})`:''].filter(Boolean).join('<br>');
+  openM(`<h3>Build “${esc(B.src.name)}” with your cards</h3>
+  <div class="f"><label>New deck name</label><input id="bpname" value="${esc(B.name)}" oninput="BP.name=this.value"></div>
+  <div class="tags"><span>✓ ${tot(r=>r.free)} you have free</span><span>↪/⏳ ${tot(r=>sum(r.lend,x=>x.q))} in your other decks</span><span>🛒 ${tot(r=>r.buy)} you don’t own</span></div>
+  ${inDeck.length?`<div class="sec"><b>Cards that are in your other decks</b><p class="mut" style="margin:4px 0">Borrow them now (recorded as a loan — that deck gets a red ★), or leave them where they are and list them as missing in the new deck.</p><div class="row"><button onclick="BP.rows.forEach(r=>r.borrow=true);fxBuildDraw()">↪ Borrow all</button><button onclick="BP.rows.forEach(r=>r.borrow=false);fxBuildDraw()">⏳ Leave all as missing</button></div></div>`:''}
+  <div class="tblw"><table><tr><th>Qty</th><th>Card</th><th>Where it comes from</th></tr>${B.rows.map((r,k)=>`<tr><td>${r.need}</td><td>${esc(r.name)}</td><td style="font-size:13px">${st(r)}${r.lend.length?`<br><label style="margin:4px 0 0;font-weight:400"><input type="checkbox" ${r.borrow?'checked':''} onchange="BP.rows[${k}].borrow=this.checked;fxBuildDraw()">Borrow</label>`:''}${r.buy?`<br><a href="${fxTcg(r.name)}" target="_blank" rel="noopener">Find on TCGplayer ↗</a>`:''}</td></tr>`).join('')}</table></div>
+  <p class="mut">Cards you don’t have are still put on the deck list and marked missing (🛒), so you can order them and tick them off when they arrive.</p>
+  <div class="row"><button onclick="BP=null;closeM()">Cancel</button><button class="pri" onclick="fxBuildMake()">Create deck</button></div>`)}
+function fxBuildMake(){const B=BP,name=(B.name||'').trim();if(!name)return toast('Give the deck a name');if(D.decks.some(x=>x.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
+  const d={name,format:B.src.format,sleeve:'',commander:B.src.commander,info:`Built from ${B.src.owner}’s “${B.src.name}”`,cards:[],tokens:[],miss:[]};D.decks.push(d);const inG={},sec='Built from a shared deck';
+  B.rows.forEach(r=>{const e={name:r.name,qty:r.need,finish:'Normal'};if(!r.c){Object.assign(e,{type:r.snap.type,cmc:r.snap.cmc,colors:r.snap.colors})}d.cards.push(e);
+    if(r.free&&r.c){const L=fxCardLabel(r.c);fxGrpPut(inG,L.k,r.free,r.name,L.alt)}
+    r.lend.forEach(x=>{if(r.borrow){makeLoan(r.name,x.q,x.deck,name,sec+' — borrowed from another deck');fxGrpPut(inG,'From deck: '+x.deck,x.q,r.name)}else d.miss.push({name:r.name,qty:x.q,why:'deck',deck:x.deck,st:'missing',at:today()})});
+    if(r.buy)d.miss.push({name:r.name,qty:r.buy,why:'buy',st:'missing',at:today()})});
+  if(!d.miss.length)delete d.miss;BP=null;save();closeM();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
+  const nm=sum(d.miss||[],m=>m.qty);if(Object.keys(inG).length)fxPullSplash(name,inG,{});toast(nm?`Deck created — ${fxPl(nm,'card')} marked missing (🛒)`:'Deck created')}
+/* Missing-cards box on the deck page */
+function fxMissBox(i){const d=D.decks[i];if(RO||!d||!(d.miss||[]).length)return '';const L=d.miss,mi=L.filter(m=>m.st==='missing'),buy=mi.filter(m=>m.why==='buy');
+  const row=(m,k)=>{const c=findCard(m.name),fr=c?freeCopies(c):0,canB=m.why==='deck'&&m.deck&&c&&takeable(c,m.deck)>0;
+    return `<div class="sec" style="margin:6px 0"><b>${m.qty}× ${cl(m.name)}</b> <span class="mut">· ${m.st==='ordered'?`📦 ordered ${esc(m.od||'')}`:m.why==='deck'?`⏳ in ${esc(m.deck||'another deck')}`:'🛒 you don’t own it'}</span>
+    <div class="row" style="margin-top:6px">${m.st==='missing'?`<a class="btn" href="${fxTcg(m.name)}" target="_blank" rel="noopener">TCGplayer ↗</a><button onclick="fxMissOrdered(${i},${k})">Ordered</button>${canB?`<button onclick="fxMissBorrow(${i},${k})">↪ Borrow from ${esc(m.deck)}</button>`:''}${fr>0?`<button onclick="fxMissUseFree(${i},${k})">✓ Use my free copy</button>`:''}`
+      :`<button onclick="fxMissCancel(${i},${k})">Order cancelled</button><button class="pri" onclick="fxMissGot(${i},${k})">Card received</button>`}</div></div>`};
+  return `<div class="redbox" style="border-color:#f39c12"><b>🛒 Missing cards — ${fxPl(sum(L,m=>m.qty),'card')}</b><p class="mut" style="margin:4px 0">They’re on the deck list but not in the deck yet. Order them, then tap <b>Card received</b> to add them to your collection.</p>
+  ${buy.length?`<div class="row"><a class="btn pri" href="${fxTcgMass(buy)}" target="_blank" rel="noopener">🛒 Buy all ${fxPl(sum(buy,m=>m.qty),'card')} on TCGplayer ↗</a><button onclick="fxMissOrderAll(${i})">Mark all as ordered</button></div>`:''}
+  ${L.map(row).join('')}</div>`}
+const fxMissTag=d=>(d.miss||[]).length?` <span style="color:#f39c12;font-size:12px">🛒 ${sum(d.miss,m=>m.qty)} missing${d.miss.some(m=>m.st==='ordered')?' · 📦 '+sum(d.miss.filter(m=>m.st==='ordered'),m=>m.qty)+' ordered':''}</span>`:'';
+function fxMissDone(d,k){d.miss.splice(k,1);if(!d.miss.length)delete d.miss}
+function fxMissOrdered(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Mark ${m.qty}× ${m.name} as ordered?`))return;m.st='ordered';m.od=today();save();render()}
+function fxMissOrderAll(i){const d=D.decks[i],L=d.miss.filter(m=>m.st==='missing'&&m.why==='buy');if(!confirm(`Mark all ${fxPl(sum(L,m=>m.qty),'card')} you don’t own as ordered?\n\n${L.map(m=>m.qty+'× '+m.name).join('\n')}`))return;L.forEach(m=>{m.st='ordered';m.od=today()});save();render()}
+function fxMissCancel(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Order cancelled for ${m.qty}× ${m.name}?\n\nIt goes back to missing.`))return;m.st='missing';delete m.od;save();render()}
+function fxMissBorrow(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,takeable(c,m.deck));if(!q)return toast(`${m.deck} has no copy to lend right now`);
+  if(!confirm(`Borrow ${q}× ${c.name} from ${m.deck}?\n\n${m.deck} will show a red ★ until it’s returned.`))return;makeLoan(c.name,q,m.deck,d.name,'Built from a shared deck — borrowed from another deck');m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
+function fxMissUseFree(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,freeCopies(c));if(!confirm(`Use ${q}× ${c.name} from your collection (not in any deck)?`))return;m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
+async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Card received: add ${m.qty}× ${m.name} to your collection and to ${d.name}?\n\nIt’s filed under “Singles Orders”.`))return;
+  toast('Looking the card up…');const c=await scry('/cards/named?exact='+encodeURIComponent(front(m.name)));if(!c||c.object!=='card')return toast(navigator.onLine?'Couldn’t find that card on Scryfall — try again later':'You’re offline — try again when connected');
+  const e=d.cards.find(x=>norm(x.name)===norm(m.name));if(e){['type','cmc','colors'].forEach(x=>delete e[x])}
+  fxAddCard(c,m.qty,'Normal','Singles Orders','','Ordered for '+d.name);fxMissDone(d,k);IDX=null;saveArt();save();render();
+  if(confirm(`${m.qty}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`))artPicker(c.name)}
 
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
