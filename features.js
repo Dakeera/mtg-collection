@@ -242,7 +242,7 @@ function fxAddCard(c,n,fin,src,price,notes){
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   if(!e.set||!e.art)Object.assign(e,{art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id});
-  if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
+  if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
 const fxImpProg=(d,t)=>{const b=document.getElementById('impb'),x=document.getElementById('impt');if(b)b.style.width=Math.max(3,Math.round(d/Math.max(1,t)*100))+'%';if(x)x.textContent=`Looking cards up… ${Math.min(d,t)} of ${t}`};
@@ -691,14 +691,20 @@ function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!
   fxAsk(empty?'Your collection from another device':'Update this device?',body,[{t:empty?'Use it on this device':'Update this device',cls:same&&!newer?'danger':'pri',fn:()=>{if(D.cards.length&&!same&&!confirm('Replace the collection on this device? It cannot be undone unless you have a backup.'))return;delete j.xfer;fxRestore(j)}},{t:'Cancel'}])}
 
 /* ---------- deck rules: legality, copy limits, commander colors, deck size ---------- */
-const fxIdCols=c=>String(c&&c.colors||'').split(/[\/,\s]+/).map(x=>N2L[x]).filter(Boolean);
+// Color identity (Commander rule 903.4): every colored mana symbol in the mana cost and rules text (reminder text in parentheses doesn't count).
+// Scryfall's color_identity (c.ci) is used when known; otherwise it is worked out from the card, plus any color names in the "colors" field.
+function fxCI(c){if(!c)return [];if(Array.isArray(c.ci))return c.ci;const out=new Set();
+  String(c.colors||'').split(/[\/,\s]+/).forEach(x=>{if(N2L[x])out.add(N2L[x])});
+  const txt=String(c.cost||'')+' '+String(c.text||'').replace(/\([^)]*\)/g,' ');(txt.match(/\{[^}]+\}/g)||[]).forEach(m=>(m.match(/[WUBRG]/g)||[]).forEach(x=>out.add(x)));
+  return ['W','U','B','R','G'].filter(x=>out.has(x))}
+const fxIdCols=c=>fxCI(c);
 function fxCardIssues(c,qty,F,cmdC){if(!F||!c)return [];const out=[],st=F.leg&&c.leg?c.leg[F.leg]:undefined,cap=copyCap(c,F);
   if(c.custom&&F.leg)out.push({kind:'custom',title:'Custom card',msg:`${c.name} is marked as a custom card (a proxy, homebrew or playtest card). Custom cards aren’t legal in ${F.k} games or events — fine for casual play with friends who agree.`});
   else if(c.legMiss&&!c.custom&&!c.leg)out.push({kind:'unknown',title:'Not found on Scryfall',msg:`Scryfall doesn’t recognise “${c.name}”, so its rules can’t be checked.${c.legSug?` Did you mean ${c.legSug}?`:''} It may be misspelled, or it may be a custom card.`});
   if(F.leg&&c.leg&&st==='b')out.push({kind:'banned',title:`Banned in ${F.k}`,msg:`${c.name} is on the ${F.k} banned list, so a deck that includes it can’t be played in ${F.k} games or events.`});
   else if(F.leg&&c.leg&&!st)out.push({kind:'notlegal',title:`Not legal in ${F.k}`,msg:`${c.name} isn’t part of the ${F.k} card pool${/Standard|Alchemy/.test(F.k)?' — it has rotated out, or was never in a set that is legal there':/Pauper/.test(F.k)?' — it has never been printed at common':F.k==='Pioneer'?' — it was only printed before Return to Ravnica (2012)':F.k==='Modern'?' — it was only printed before Eighth Edition (2003)':F.k==='Premodern'?' — it wasn’t printed between Fourth Edition and Scourge':''}.`});
   if(qty>cap&&cap<999)out.push(st==='r'?{kind:'restricted',title:`Restricted in ${F.k}`,msg:`${c.name} is on the ${F.k} restricted list: a deck may include only 1 copy. This deck has ${qty}.`,cap}:{kind:'copies',title:`Too many copies (${qty})`,msg:`${F.single?F.k+' is a singleton format: only 1 copy of each card, except basic lands.':F.k+' allows up to '+cap+' copies of a card, except basic lands.'} This deck has ${qty}.`,cap});
-  if(F.cmd&&cmdC&&norm(c.name)!==norm(cmdC.name)){const cc=fxIdCols(cmdC);if(!okColor(c,cc))out.push({kind:'color',title:'Outside the commander’s colors',msg:`${F.k} decks may only use cards inside the ${F.cmdLabel.toLowerCase()}’s color identity (${cc.length?cc.map(x=>CLRN[x]).join(', '):'colorless'}). ${c.name} is ${c.colors||'a different color'}.`})}
+  if(F.cmd&&cmdC&&norm(c.name)!==norm(cmdC.name)){const cc=fxIdCols(cmdC);if(!okColor(c,cc))out.push({kind:'color',title:'Outside the commander’s colors',msg:`${F.k} decks may only use cards inside the ${F.cmdLabel.toLowerCase()}’s color identity (${cc.length?cc.map(x=>CLRN[x]).join(', '):'colorless'}). ${c.name} is ${fxCI(c).map(x=>CLRN[x]).join('/')||'colorless'}.`})}
   return out}
 function deckIssues(i){const d=D.decks[i],F=d&&dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),ign=d.ok||[],out=[],cmdC=d.commander&&findCard(d.commander),
   add=(card,x,fixes)=>out.push(Object.assign({card,fixes,ign:ign.includes(x.kind+'|'+norm(card||''))},x));
@@ -725,7 +731,7 @@ function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
   const f=x.fixes[j];if(f.a==='match')return fxMatchUnknown(x.card,()=>{render();fxIssues(i)});if(f.a==='sug')return fxUseSug(x.card,()=>{render();fxIssues(i)});if(f.a==='custom'){fxSetCustom(x.card,true);return fxIssues(i)}if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
   if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}
 
-const fxDeckNeedsLeg=i=>{const d=D.decks[i],F=d&&dfmt(d.format);if(!F||!F.leg)return [];return fxDeckCards(i).map(e=>findCard(e.name)).filter(c=>c&&isReal(c)&&!c.leg&&!c.legMiss)};
+const fxDeckNeedsLeg=i=>{const d=D.decks[i],F=d&&dfmt(d.format);if(!F||!F.leg)return [];return fxDeckCards(i).map(e=>findCard(e.name)).filter(c=>c&&isReal(c)&&!c.custom&&(!c.leg||F.cmd&&!c.ci)&&!c.legMiss)};
 async function fxLegalCheck(i,list,quiet){const d=D.decks[i];if(!d||RO)return true;const need=list||fxDeckNeedsLeg(i);
   if(!need.length){if(d.legPending){d.legPending=false;save();render()}return true}
   const ok=await ensureLegal(need);

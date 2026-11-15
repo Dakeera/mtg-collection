@@ -171,17 +171,17 @@ const FMTS=[['standard','Standard'],['pioneer','Pioneer'],['modern','Modern'],['
 const legOf=l=>{const o={};FMTS.forEach(([k])=>{const v=l&&l[k];if(v==='legal')o[k]='l';else if(v==='banned')o[k]='b';else if(v==='restricted')o[k]='r'});return o};
 let LEGBUSY=false;
 async function fetchLegal(onProg,onlyMissing,list){
-  if(LEGBUSY||!D)return true;const stale=c=>onlyMissing?!c.leg&&!c.legMiss:!c.leg||!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5,todo=(list||D.cards).filter(c=>isReal(c)&&!c.custom&&stale(c));if(!todo.length)return true;
+  if(LEGBUSY||!D)return true;const stale=c=>onlyMissing?(!c.leg||!c.ci)&&!c.legMiss:!c.leg||!c.ci||!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5,todo=(list||D.cards).filter(c=>isReal(c)&&!c.custom&&stale(c));if(!todo.length)return true;
   LEGBUSY=true;const names=[...new Set(todo.map(c=>front(c.name)))];let ok=true;
   try{for(let i=0;i<names.length;i+=75){onProg&&onProg(i,names.length);
     const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:names.slice(i,i+75).map(name=>({name}))})});
-    if(!r.ok)throw 0;const j=await r.json(),m=new Map((j.data||[]).map(c=>[norm(front(c.name)),legOf(c.legalities)]));
-    const asked=new Set(names.slice(i,i+75).map(norm));todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today();delete c.legMiss}else if(asked.has(norm(front(c.name))))c.legMiss=today()});persist()}onProg&&onProg(names.length,names.length)}catch(e){ok=false}
+    if(!r.ok)throw 0;const j=await r.json(),m=new Map((j.data||[]).map(c=>[norm(front(c.name)),legOf(c.legalities)])),ci=new Map((j.data||[]).map(c=>[norm(front(c.name)),c.color_identity||[]]));
+    const asked=new Set(names.slice(i,i+75).map(norm));todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today();c.ci=ci.get(norm(front(c.name)));delete c.legMiss}else if(asked.has(norm(front(c.name))))c.legMiss=today()});persist()}onProg&&onProg(names.length,names.length)}catch(e){ok=false}
   if(ok)try{for(const c of todo.filter(c=>c.legMiss&&!c.legSugTried).slice(0,25)){c.legSugTried=today();const x=await scry('/cards/named?fuzzy='+encodeURIComponent(front(c.name)));if(x&&x.object==='card'&&norm(x.name)!==norm(c.name))c.legSug=x.name}persist()}catch(e){}
   LEGBUSY=false;return ok}
 // Before building a legality-filtered deck: load any missing legality data right now, with a progress screen, so no card is left out.
 async function ensureLegal(list){
-  const miss=()=>(list||D.cards).filter(c=>isReal(c)&&!c.leg&&!c.legMiss).length;if(!miss())return true;
+  const miss=()=>(list||D.cards).filter(c=>isReal(c)&&(!c.leg||!c.ci)&&!c.legMiss).length;if(!miss())return true;
   const ov=document.createElement('div');ov.id='legload';ov.style.cssText='position:fixed;inset:0;background:#000d;z-index:90;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML='<div class="sheet" style="margin:0;width:100%;max-width:420px"><h3 style="margin-top:0">Loading format legality…</h3><p class="mut" id="lgt">Getting ban lists for your cards so none are left out.</p><div style="height:12px;background:var(--card2);border-radius:8px;overflow:hidden"><div id="lgb" style="height:100%;width:3%;background:var(--ac);transition:width .3s"></div></div></div>';document.body.appendChild(ov);
   while(LEGBUSY)await new Promise(r=>setTimeout(r,300));
@@ -626,7 +626,7 @@ function commit(){
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
   if(A.printOK&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
-  if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
+  if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||'',shared:had});
   if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n);save();
@@ -645,7 +645,7 @@ function aiRand(){G.rand=!G.rand;if(G.rand)G.colors=[];G.rc=null;render()}
 function aiFrom(i,v){G.from[D.decks[i].name]=v}
 function randColors(){const n=[1,2,2,2,3,3][Math.floor(Math.random()*6)],pool=[...CLR],out=[];while(out.length<n){out.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0])}return CLR.filter(x=>out.includes(x))}
 const okLegal=c=>!G.legal||!!(c.leg&&(c.leg[G.legal]==='l'||c.leg[G.legal]==='r'));
-const okColor=(c,cols)=>String(c.colors||'').split(/[\/,\s]+/).filter(Boolean).every(t=>!N2L[t]||cols.includes(N2L[t]));
+const okColor=(c,cols)=>fxCI(c).every(x=>cols.includes(x));
 function aiAvail(c,al){return freeCopies(c)+(c.type==='Basic Land'?0:sum(al,n=>takeable(c,n)))}
 function vAI(m){
   const F=dfmt(G.fmt);
