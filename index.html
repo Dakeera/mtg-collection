@@ -383,12 +383,15 @@ function deckSearch(first){
     return `<div class="res" data-adc="${esc(c.name)}"><span>${esc(c.name)}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${free>0?free+' free':'<b style="color:#f39c12">all in decks</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span><b>＋</b></div>`}).join('');
 }
 function newDeck(){
-  openM(`<h3>New deck</h3><div class="f"><label>Name</label><input id="nd" placeholder="e.g. Mono-White Angels"><label>Format</label><select id="nf" onchange="sleeveOpts()"><option>Casual</option><option>Commander</option></select><label>Commander (optional)</label><input id="nc" list="ncl" placeholder="Type or pick a legendary creature"><datalist id="ncl">${D.cards.filter(c=>/legendary/i.test(c.type+' '+(c.subtype||''))&&/creature/i.test(c.type)).map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist><label>Sleeve color <span id="sl" class="mut"></span></label><div class="swr" id="ns"></div></div><br><button class="pri big" onclick="mkDeck()">Create deck</button>`);sleeveOpts();
+  NSA=true;openM(`<h3>New deck</h3><div class="f"><label>Name</label><input id="nd" placeholder="e.g. Mono-White Angels"><label>Format</label><select id="nf" onchange="sleeveOpts()"><option>Casual</option><option>Commander</option></select><label>Commander (optional)</label><input id="nc" list="ncl" placeholder="Type or pick a legendary creature"><datalist id="ncl">${D.cards.filter(c=>/legendary/i.test(c.type+' '+(c.subtype||''))&&/creature/i.test(c.type)).map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist>
+  <label>Sleeves <span id="sl" class="mut"></span></label><label style="margin:2px 0 4px;font-weight:400"><input type="checkbox" id="nsa" checked onchange="NSA=this.checked;sleeveOpts()">Auto-select from available sleeves</label><div class="swr" id="ns"></div></div><br><button class="pri big" onclick="mkDeck()">Create deck</button>`);sleeveOpts();
 }
-let NSV='';
-function sleeveOpts(){const need=$('#nf').value==='Commander'?100:60,ok=D.sleeves.filter(s=>!s.deck&&s.total>=need);if(!ok.some(s=>s.color===NSV))NSV=ok[0]?.color||'';
-  $('#ns').innerHTML=ok.map(s=>`<button type="button" class="sw ${s.color===NSV?'on':''}" title="${esc(noEmoji(s.color))}" style="background:${sleeveBg(s)}" onclick="pickSleeve(${D.sleeves.indexOf(s)})"></button>`).join('')||'<span class="mut">None free with enough sleeves</span>';
-  $('#sl').textContent=NSV?'· '+title(noEmoji(NSV))+' (first available is pre-selected)':''}
+let NSV='',NSA=true;
+// Free sleeve sets (not on a deck). With "auto" ticked, the first free set with enough sleeves is chosen; tapping a swatch picks one by hand.
+function sleeveOpts(cur){const need=($('#nf')||$('#ef')).value==='Commander'?100:60,free=D.sleeves.filter(s=>!s.deck||(cur&&s.color===cur)),ok=free.filter(s=>s.total>=need);
+  if(NSA)NSV=ok[0]?.color||'';else if(NSV&&!free.some(s=>s.color===NSV))NSV='';
+  $('#ns').innerHTML=free.map(s=>`<button type="button" class="sw ${s.color===NSV?'on':''}" title="${esc(noEmoji(s.color))} · ${s.total} sleeves${s.total<need?' (not enough for '+need+')':''}" style="background:${sleeveBg(s)};${s.total<need?'opacity:.45':''}" onclick="pickSleeve(${D.sleeves.indexOf(s)})"></button>`).join('')+`<button type="button" class="sw ${!NSV?'on':''}" title="No sleeves" style="background:#222;font-size:18px;color:var(--mut)" onclick="NSA=false;$('#nsa').checked=false;NSV='';sleeveOpts(${cur?`'${esc(cur)}'`:''})">∅</button>`;
+  const s=D.sleeves.find(x=>x.color===NSV);$('#sl').textContent=NSV?`· ${title(noEmoji(NSV))} (${s?s.total:'?'} sleeves${s&&s.total<need?', fewer than '+need:''})${NSA?' — auto-selected':''}`:free.length?'· none':'· no free sleeve sets — add some in More → Sleeves'}
 function mkDeck(){
   const name=$('#nd').value.trim();if(!name)return toast('Give the deck a name');const f=$('#nf').value,col=NSV,s=D.sleeves.find(x=>x.color===col);
   D.decks.push({name,format:f,sleeve:col,commander:$('#nc').value.trim(),info:'',cards:[],tokens:[]});
@@ -427,7 +430,7 @@ function vAdd(m){
     <label>Where was it pulled from? *</label>
     <select onchange="grpSel(this.value)"><option value="">Select a set or source…</option>${G['Singles Orders']?`<option ${q.grp==='Singles Orders'?'selected':''}>Singles Orders</option>`:''}${gs.map(k=>`<option value="${esc(k)}" ${q.grp===k?'selected':''}>${esc(k)}</option>`).join('')}${G.Other?`<option value="Other" ${q.grp==='Other'?'selected':''}>Trade, Gift &amp; other</option>`:''}<option value="__newgrp__" ${isNewG?'selected':''}>＋ Add a new set / source</option></select>
     ${showItems?`<select style="margin-top:8px" onchange="srcSel(this.value)"><option value="">Select a source…</option>${(G[q.grp]||[]).map(x=>`<option value="${esc(x)}" ${q.sel===x?'selected':''}>${esc(x)}</option>`).join('')}<option value="__new__" ${q.sel==='__new__'?'selected':''}>＋ Add a new source</option></select>`:''}
-    ${showNew?`<input id="newsrc" style="margin-top:8px" value="${esc(q.newSrc||'')}" oninput="newSrcIn(this.value)" placeholder="Type the new source name"><p id="srcnote" class="mut" style="margin:4px 0 0"></p>`:''}
+    ${showNew?`<input id="newsrc" style="margin-top:8px" value="${esc(q.newSrc||'')}" oninput="newSrcIn(this.value)" placeholder="Type the new source name" autocomplete="off"><div id="srcsug"></div><p id="srcnote" class="mut" style="margin:4px 0 0"></p>`:''}
     <label>Date acquired</label><input type="date" value="${q.date||today()}" onchange="A.q.date=this.value">
     <label>Price paid (optional)</label><input inputmode="decimal" value="${esc(q.price||'')}" oninput="A.q.price=this.value" placeholder="$0.00">
     <label>Add straight to a deck?</label><select onchange="A.q.deck=this.value"><option value="">No — just the collection</option>${D.decks.map((d,i)=>`<option value="${i}" ${q.deck==i?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
@@ -440,7 +443,7 @@ const focusSrc=()=>{const i=$('#newsrc');if(i){i.focus();i.setSelectionRange(i.v
 function autoPrint(src){if(A.printOK||!A.prints)return;const r=printBySource(A.prints,src);if(r&&r.id!==A.card.id){A.card=r;A.printNote='Printing matched to “'+src+'” — go Back to change it if it looks wrong.'}}
 function grpSel(v){const q=A.q;q.grp=v;q.sel=v==='Singles Orders'?'Singles Orders':'';q.newSrc='';if(q.sel)autoPrint(q.sel);render();if(v==='__newgrp__')focusSrc()}
 function srcSel(v){const q=A.q;q.sel=v;if(v==='__new__')q.newSrc=q.grp&&q.grp!=='Other'?q.grp+' ':'';else if(v)autoPrint(v);render();if(v==='__new__')focusSrc()}
-function newSrcIn(v){A.q.newSrc=v;const n=$('#srcnote');if(n){const r=resolveSrc();n.textContent=r&&r!==v.trim()?`Will be saved as: ${r} — numbered so each pull stays separate. To add to an earlier one, pick it from the list instead.`:''}}
+function newSrcIn(v){A.q.newSrc=v;fxSrcSuggest(v);const n=$('#srcnote');if(n){const r=resolveSrc();n.textContent=r&&r!==v.trim()?`Will be saved as: ${r} — numbered so each pull stays separate. To add to an earlier one, pick it from the list instead.`:''}}
 const fins0=()=>finMap[(A.card.finishes||['nonfoil'])[0]]||'Normal';
 function setPrint(id){A.card=A.prints.find(p=>p.id===id)||A.card;A.finish=null;A.printOK=true;A.printNote='You chose this printing.';render()}
 async function pickName(n){const c=await scry('/cards/named?exact='+encodeURIComponent(n));if(!c)return toast('Lookup failed — check your connection');A.cands=[c];A.photo=null;pick(0)}
@@ -735,7 +738,7 @@ function vMore(m){
 }
 const PAL=[['Pink','#ff5fa2'],['Light Pink','#ffc2dd'],['Magenta','#d6249f'],['Purple','#8e44ad'],['Lavender','#b9a3e3'],['Navy','#1b2a6b'],['Blue','#2f6df6'],['Light Blue','#7fc8ff'],['Teal','#1abc9c'],['Mint','#98ffcc'],['Green','#2e9e44'],['Light Green','#9be37a'],['Yellow','#ffd400'],['Gold','#d4af37'],['Orange','#ff8c1a'],['Peach','#ffb38a'],['Red','#e53935'],['Maroon','#800000'],['Brown','#8b5a2b'],['Gray','#7f8c8d'],['Silver','#c0c0c0'],['White','#ffffff'],['Black','#0b0b0b'],['Clear','#dff3f7']];
 let SLN=null,SLN0='';
-const pickSleeve=i=>{NSV=D.sleeves[i].color;sleeveOpts()};
+const pickSleeve=i=>{NSV=D.sleeves[i].color;NSA=false;const b=$('#nsa');if(b)b.checked=false;sleeveOpts($('#ef')?window.FXCUR:undefined)};
 function slEdit(i){const s=i==null?null:D.sleeves[i];SLN={idx:i,name:s?noEmoji(s.color):'',total:s?s.total:100,hex:s?(s.img?'':(s.hex||SLV[noEmoji(s.color).toLowerCase()]||'')):'#2f6df6',img:s?.img||'',auto:false};slDraw(true);SLN0=JSON.stringify(SLN);SLD=true}
 function slDraw(open){
   const n=SLN,bg=n.img?`url(${n.img}) center/cover`:(n.hex||'#888'),cv=/^#[0-9a-f]{6}$/i.test(n.hex)?n.hex:'#888888';

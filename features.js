@@ -514,7 +514,7 @@ const fxWho=(name,uid)=>`<b>${esc(name||'(no name)')}</b>${uid?` <span class="mu
 
 /* ---------- one way in for every file: backup, share file, or someone else's backup ---------- */
 async function fxOpenFile(f,hint){if(!f)return;let j;try{j=await fxReadBackup(f)}catch(e){return toast('That file isn’t a MtG DeckMaster backup or share file')}
-  if(j.kind==='mtg-share')return fxGotShare(j);return fxGotBackup(j,f,hint)}
+  if(j.kind==='mtg-share')return fxGotShare(j);if(j.xfer)return fxGotDevice(j);return fxGotBackup(j,f,hint)}
 function fxRestoreAsk(j){let m=`Restore this backup? It replaces everything currently in the app (${D.cards.length} card titles, ${fxPl(D.decks.length,'deck')}).`;
   if(j.updated&&D.updated&&j.updated<D.updated-60000&&D.cards.length)m+=`\n\n⚠ This backup is OLDER than what is in the app now.\nBackup last changed: ${new Date(j.updated).toLocaleString()}\nApp last changed: ${new Date(D.updated).toLocaleString()}\nAnything you changed since then will be lost.`;
   if(confirm(m))fxRestore(j)}
@@ -593,8 +593,10 @@ function fxProfileView(){if(!D.uid)return `<p class="mut">You’re just looking 
   ${kv('Collection ID',`${esc(fxCode(D.uid))} <button style="padding:3px 8px;margin-left:6px" onclick="navigator.clipboard.writeText('${esc(fxCode(D.uid))}').then(()=>toast('ID copied'))">Copy</button>`)}${kv('Created',esc(D.created||'—'))}${kv('Cards',`${sum(D.cards)} <span class="mut">(${D.cards.length} titles)</span>`)}${kv('Decks',D.decks.length)}${v?kv('Estimated value',fxMoney(v)):''}${kv('Last changed',D.updated?esc(new Date(D.updated).toLocaleString()):'—')}${kv('Signature',D.keys?'✓ files you share are signed':'<span class="mut">not available on this device</span>')}</div>
   <p class="mut">The name can change whenever you like. The ID never changes: it is stored inside your data, appears in your file names, and comes back when you restore a backup — even on a new phone.</p>
   <div class="row"><button class="pri" onclick="V.sub='backup';render();scrollTo(0,0)">💾 Back up</button><button onclick="fxShareFile('all')">📤 Share my collection</button></div>
+  <div class="row"><button onclick="fxSendDevice()">📲 Send to my other device</button></div>
   <div class="row"><label class="btn">📂 Open a file (backup or share file)<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="fxOpenFile(this.files[0]);this.value=''"></label></div>
-  <details class="g"><summary>Backup file or share file — which one?</summary><p class="mut"><b>Backup</b> (More → Backup): private and complete. It includes your notes, logs, sleeves and the secret key that signs your files. Keep it to yourself and use it to restore.</p><p class="mut"><b>Share file</b>: made for other people. It has your cards and decks only, and it is signed so their app can tell it really came from you. To share one deck, open the deck and tap “Share deck”.</p></details>`}
+  <details class="g"><summary>Backup file or share file — which one?</summary><p class="mut"><b>Backup</b> (More → Backup): private and complete. It includes your notes, logs, sleeves and the secret key that signs your files. Keep it to yourself and use it to restore.</p><p class="mut"><b>Share file</b>: made for other people. It has your cards and decks only, and it is signed so their app can tell it really came from you. To share one deck, open the deck and tap “Share deck”.</p></details>
+  <details class="g"><summary>Using more than one device</summary><p class="mut">Your collection lives on each device separately — there is no account or cloud sync. To move it, tap <b>Send to my other device</b> here, send the file to yourself, then on the other device open it with <b>Open a file</b> (or “Restore my backup” on a new device). The app checks it is the same collection ID and tells you which copy is newer before replacing anything.</p><p class="mut">Tip: treat one device as your “main” one, and send from it after a session of changes. Changes made on two devices at the same time can’t be merged — the copy you send replaces the other.</p></details>`}
 
 /* ---------- deck links that open the Android app ---------- */
 function fxNativeLinks(){try{if(!isNative())return;const A=window.Capacitor.Plugins.App;if(!A)return;const go=u=>{if(/[#?&]d=[A-Za-z0-9_\-]+/.test(String(u||'')))fxOpenLink(u)};
@@ -617,11 +619,14 @@ function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
     <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span></div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||'<p class="mut">No cards match.</p>'}
 function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
 function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef"><option ${d.format==='Casual'?'selected':''}>Casual</option><option ${d.format==='Commander'?'selected':''}>Commander</option></select>
-  <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`)}
+  <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
+  <label>Sleeves <span id="sl" class="mut"></span></label><label style="margin:2px 0 4px;font-weight:400"><input type="checkbox" id="nsa" onchange="NSA=this.checked;sleeveOpts(window.FXCUR)">Auto-select from available sleeves</label><div class="swr" id="ns"></div></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`);
+  const cur=sleeveOf(d);window.FXCUR=cur?cur.color:'';NSA=false;NSV=window.FXCUR;$('#ef').onchange=()=>sleeveOpts(window.FXCUR);sleeveOpts(window.FXCUR)}
 function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.name;if(!name)return toast('Give the deck a name');if(D.decks.some((x,k)=>k!==i&&x.name.toLowerCase()===name.toLowerCase()))return toast('Another deck already has that name');
   const s=sleeveOf(d);d.name=name;d.format=$('#ef').value;d.commander=$('#ec').value.trim();
   if(name!==old){D.loans.forEach(l=>{if(l.from===old)l.from=name;if(l.to===old)l.to=name});D.swaps.forEach(w=>{if(w.deck===old)w.deck=name;if(w.row&&w.row[1]===old)w.row[1]=name})}
-  if(s){const need=d.format==='Commander'?100:60;s.deck=`${name} (${d.format==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;s.inUse=need}
+  const ns=D.sleeves.find(x=>x.color===NSV);if(s&&s!==ns){s.deck='';s.inUse=0}d.sleeve=ns?ns.color:'';
+  if(ns){const need=d.format==='Commander'?100:60;ns.deck=`${name} (${d.format==='Commander'?'Commander - 100 Cards':'Casual - 60 Cards'})`;ns.inUse=Math.min(need,ns.total)}
   save();closeM();render();toast('Deck details saved')}
 
 /* ---------- Add card tab: type several card names at once ---------- */
@@ -629,3 +634,28 @@ const fxQuickAdd=()=>`<div class="sec" style="margin-top:22px"><h4>Add several c
   <p class="mut" style="font-size:12px;margin:6px 0">Type the card names with a comma between each one. Don’t use commas inside a card’s name — they are only for separating cards. Put a number in front for more than one copy (“4 Lightning Bolt”). You’ll see a preview before anything is added.</p><div class="row"><button class="pri" onclick="fxQuickGo()">Look up these cards</button></div></div>`;
 function fxQuickGo(){const txt=(document.getElementById('qadd').value||'').trim();if(!txt)return toast('Type one or more card names first');const items=fxParseList(txt.split(/[,\n]+/).map(x=>x.trim()).filter(Boolean).join('\n'));if(!items.length)return toast('I couldn’t find any card names in that');
   V.qadd='';go('more');V.sub='import';fxImpStart(items,'collection')}
+
+/* ---------- new source name: suggest similar existing sources as you type ---------- */
+function fxSrcSuggest(v){const el=document.getElementById('srcsug');if(!el)return;v=String(v||'').trim();const lv=v.toLowerCase();if(lv.length<2){el.innerHTML='';return}
+  const srcs=allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())),bases={};
+  srcs.forEach(x=>{const m=x.match(NUMRE),b=m?m[1].trim():x,k=b.toLowerCase();(bases[k]=bases[k]||{b,items:[]}).items.push(x)});
+  const words=lv.split(/\s+/).filter(Boolean),score=b=>{const l=b.toLowerCase();if(l===lv)return 3;if(l.startsWith(lv))return 2.5;if(words.every(w=>l.includes(w)))return 2;const s=sim(lv,l.slice(0,Math.max(lv.length,4)));return s>=0.7?s:0};
+  const hits=Object.values(bases).map(o=>({o,s:score(o.b)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s||a.o.b.localeCompare(b.o.b)).slice(0,4);
+  if(!hits.length){el.innerHTML='';return}
+  el.innerHTML=`<div class="mut" style="font-size:12px;margin:6px 0 2px">Matching sources — tap one:</div>`+hits.map(({o})=>{const nx=autoNumber(o.b),last=o.items.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).slice(-1)[0];
+    return `<div class="res" style="padding:8px 10px;cursor:default;gap:6px;flex-wrap:wrap"><span><b>${esc(o.b)}</b> <span class="mut" style="font-size:12px">${o.items.length} so far</span></span><span style="display:flex;gap:6px;flex-wrap:wrap">
+      ${nx!==o.b||!o.items.includes(o.b)?`<button style="padding:5px 9px;font-size:12px" class="pri" onclick="fxSrcPick('new','${esc(o.b).replace(/'/g,"\\'")}')">New pull: ${esc(nx)}</button>`:''}
+      <button style="padding:5px 9px;font-size:12px" onclick="fxSrcPick('old','${esc(last).replace(/'/g,"\\'")}')">Add to ${esc(last)}</button></span></div>`}).join('')}
+function fxSrcPick(kind,x){const q=A.q;if(kind==='new'){q.newSrc=x;const i=document.getElementById('newsrc');if(i)i.value=x;newSrcIn(x);document.getElementById('srcsug').innerHTML='';return}
+  const g=srcGroup(x);q.grp=g==='Singles Orders'?'Singles Orders':g;q.sel=x;q.newSrc='';autoPrint(x);render()}
+
+/* ---------- send my collection to my other device ---------- */
+async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
+  if(!confirm('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.'))return;
+  const j=Object.assign(JSON.parse(JSON.stringify(D)),{xfer:{from:isNative()?'Android app':(/iPhone|iPad/i.test(navigator.userAgent)?'iPhone / iPad':'web browser'),at:Date.now()}});
+  await fxSend(JSON.stringify(j),`${fxPrefix()}to-my-device_${tsName()}.json`);try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}}
+function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!D.decks.length,newer=!D.updated||(j.updated||0)>=D.updated,when=x=>x?new Date(x).toLocaleString():'unknown';
+  const body=`<div class="sec">${fxWho(j.owner,j.uid)}<br><span class="mut">Sent from your ${esc(j.xfer.from)} · ${esc(when(j.xfer.at))}</span></div>
+  ${tbl(['','On this device','In the file'],[['Card titles',D.cards.length,j.cards.length],['Decks',D.decks.length,j.decks.length],['Last changed',when(D.updated),when(j.updated)]])}
+  ${empty?'':same?(newer?'<p>The file is <b>newer</b> than this device. Updating replaces what is here with it.</p>':'<p style="color:#ff6b6b"><b>⚠ This device has newer changes than the file.</b> Updating would lose them. Usually you want to send from <i>this</i> device to the other one instead.</p>'):`<p style="color:#f39c12">This device has a <b>different collection</b> (${fxWho(D.owner,D.uid)}). Updating replaces it with the one in the file — back it up first if you want to keep it.</p>`}`;
+  fxAsk(empty?'Your collection from another device':'Update this device?',body,[{t:empty?'Use it on this device':'Update this device',cls:same&&!newer?'danger':'pri',fn:()=>{if(D.cards.length&&!same&&!confirm('Replace the collection on this device? It cannot be undone unless you have a backup.'))return;delete j.xfer;fxRestore(j)}},{t:'Cancel'}])}
