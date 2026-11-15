@@ -36,7 +36,7 @@ const fxPl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 function fxMigrate(){if(!D)return;D.matchups=D.matchups||[];D.sims=D.sims||[];D.swaps=D.swaps||[];D.sleeves=D.sleeves||[];
   // Matchup log: only matchups that have actually been run are listed (drops old "Template / Pending" rows).
   D.matchups.forEach(s=>{if(/MASTER MATCHUP/i.test(s.title||'')&&s.rows)s.rows=s.rows.filter((r,i)=>i===0||!(/template|pending/i.test(String(r[r.length-1]))||String(r[5]).trim()==='-'))})}
-function fxBack(){if(CAM){CAM.close();return true}const qf=$('#qafull');if(qf){qf.remove();return true}if(IMP.stage==='pick'&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')&&!$('#modal').classList.contains('open')){fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
+function fxBack(){if(CAM){CAM.close();return true}if(V.view==='decks'&&V.opt!=null&&!$('#modal').classList.contains('open')&&!$('#qafull')){if(OPT.step==='confirm'){OPT.step='';render()}else fxOptClose();return true}const qf=$('#qafull');if(qf){qf.remove();return true}if(IMP.stage==='pick'&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')&&!$('#modal').classList.contains('open')){fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
 async function fxDownload(text,name,type){const blob=new Blob([text],{type:type||'text/plain'});
   if(isNative()){try{const r=await nativeSave(blob,name,false);return toast(r.where?'Saved to '+r.where:'File shared')}catch(e){return toast('Could not save the file: '+String(e&&e.message||e).slice(0,80))}}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();toast('Saved to Downloads')}
@@ -70,11 +70,11 @@ const fxDraftNote=i=>RO?'':'<p class="mut" data-rw>Use + / − or “Add card”
 function fxDraftBar(i){if(!DRAFT||DRAFT.deck!==i||!fxDraftDirty())return '';const ch=Object.values(DRAFT.m),a=sum(ch,x=>Math.max(0,x.qty-x.base)),r=sum(ch,x=>Math.max(0,x.base-x.qty));
   return `<div style="height:76px"></div><div id="dbar"><span><b>Not saved:</b> ${a?'+'+a:''}${a&&r?' / ':''}${r?'−'+r:''} card${a+r===1?'':'s'}</span><button onclick="fxDraftDiscard()">Discard</button><button class="pri" onclick="fxDraftSave()">Save changes</button></div>`}
 function fxDraftDiscard(){if(!confirm('Discard all the changes you made to this deck?\n\nOK = discard\nCancel = keep editing'))return;DRAFT=null;render();toast('Changes discarded')}
-function fxDraftSave(){
+function fxDraftSave(opt){opt=opt||{};
   if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],ch=Object.values(DRAFT.m).filter(x=>x.qty!==x.base),adds=ch.filter(x=>x.qty>x.base),rems=ch.filter(x=>x.qty<x.base);
   const na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty);
-  if(!confirm(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.\n\nOK = save\nCancel = keep editing`))return;
-  const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=D.decks.filter(x=>x!==d).map(x=>x.name);
+  if(!opt.yes&&!confirm(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.\n\nOK = save\nCancel = keep editing`))return;
+  const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=opt.allowed||D.decks.filter(x=>x!==d).map(x=>x.name);
   // 1) removals: decide where each physical copy goes, then take it off the list
   rems.forEach(x=>{const n=x.base-x.qty,c=findCard(x.name),lo=loanedOut(d.name,x.name);let perm=Math.max(0,lo-x.qty),phys=n-Math.min(n,perm);perm=Math.min(n,perm);
     if(perm>0)actLoans().filter(l=>l.from===d.name&&norm(l.card)===norm(x.name)).forEach(l=>{if(perm<=0)return;const k=Math.min(perm,l.qty);perm-=k;put(outG,'Nothing to move — already in deck: '+l.to,k,x.name);
@@ -134,7 +134,7 @@ const fxTx=(mode,fn)=>fxDb().then(db=>new Promise((ok,no)=>{const t=db.transacti
 async function ocLoad(){try{OC=((await fxTx('readonly',st=>st.getAll()))||[]).sort((a,b)=>(b.added||0)-(a.added||0))}catch(e){OC=[]}return OC}
 function fxOthersView(){return `<p class="mut">Open a backup file someone shared with you to browse their collection and decks. It is view-only and kept separate from your own collection — nothing here can change your data.</p>
   <div class="row"><label class="btn pri">⬆ Import someone’s collection<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="fxOpenFile(this.files[0],'view');this.value=''"></label></div>
-  <div class="f"><label>…or paste a deck link someone sent you</label><input id="oclink" placeholder="https://…#d=…"></div><div class="row"><button onclick="fxOpenLink(document.getElementById('oclink').value)">Open deck link</button></div>
+  <div class="f"><label>…or paste a deck link someone sent you</label><input id="oclink" placeholder="https://tinyurl.com/… or another deck link"></div><div class="row"><button onclick="fxOpenLink(document.getElementById('oclink').value)">Open deck link</button></div>
   <p class="mut" style="font-size:12px">Tap a collection to open it. Slide a row to the left to delete it.</p><div id="oclist"><p class="mut">Loading…</p></div>`}
 async function ocDraw(){await ocLoad();const el=document.getElementById('oclist');if(!el)return;
   el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)} ${r.status==='signed'?'<span title="Signed by its owner" style="color:#2ecc71">✓</span>':'<span class="mut" style="font-weight:400;font-size:11px">unverified</span>'}<br><span>${r.partial?fxPl(r.data.decks.length,'deck')+' only':r.data.cards.length+' titles · '+fxPl(r.data.decks.length,'deck')}${r.uid&&!/^(old|link)-/.test(r.uid)?' · ID '+esc(fxCode(r.uid)):''}</span></b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
@@ -611,19 +611,50 @@ async function fxShareFile(scope,i){if(!D.uid)fxIdentity();if(!D.keys)await fxKe
   const name=`${fxPrefix()}${scope==='deck'?'deck-'+(fxSlug(D.decks[i].name).replace(/-$/,'')||'deck')+'_':''}share_${tsName()}.json`;fxSend(await fxShareData(scope,i),name)}
 async function fxPack(o){const b=new TextEncoder().encode(JSON.stringify(o));let out=b,z='j';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='z'}}catch(e){out=b;z='j'}
   return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
-async function fxUnpack(s){const z=s[0];let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
-async function fxDeckLink(i){const d=D.decks[i];if(!D.uid)fxIdentity();const base=!isNative()&&/^https?:/.test(location.protocol)?new URL('d/',location.origin+location.pathname).href:FX_SITE+'d/',url=base+'#d='+await fxPack({n:d.name,f:d.format,c:d.commander||'',o:D.owner||'',u:D.uid||'',l:d.cards.map(e=>[e.qty,e.name])});
-  try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title:d.name,text:`${d.name} — a MtG DeckMaster deck`,url,dialogTitle:'Share deck link'});return}
+/* Compact deck code (prefix c / C): cards with a known set + number are sent as “#set:number”, others by name; qty 1 is left out. */
+async function fxPackDeck(d){const lines=[d.name,d.format||'',d.commander||'',D.owner||'',(D.uid||'').replace(/-/g,'')].map(x=>String(x).replace(/[\n|]/g,' '));
+  const L=d.cards.map(e=>{const c=findCard(e.name),id=c&&!c.custom&&c.set&&c.cn?'#'+c.set+':'+c.cn:e.name.replace(/[\n|]/g,' ');return (e.qty>1?e.qty+'*':'')+id});
+  const b=new TextEncoder().encode(lines.join('\n')+'\n'+L.join('|'));let out=b,z='C';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='c'}}catch(e){}
+  return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+async function fxUnpack(s){const z=s[0];
+  if(z==='c'||z==='C'){let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='c')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    const t=new TextDecoder().decode(b).split('\n'),u=t[4]||'',uid=u.length===32?u.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5'):u;
+    return {n:t[0],f:t[1],c:t[2],o:t[3],u:uid,l:(t.slice(5).join('\n')).split('|').filter(Boolean).map(x=>{const m=x.match(/^(\d+)\*(.*)$/),q=m?+m[1]:1,v=m?m[2]:x;const k=v.match(/^#([^:]+):(.+)$/);return k?[q,'',k[1],k[2]]:[q,v]})}}let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
+/* Deck links: a TinyURL short link (needs internet). Offline, the app offers an app-only link that carries the compact deck code itself. */
+const fxLinkBase=()=>!isNative()&&/^https?:/.test(location.protocol)?new URL('d/',location.origin+location.pathname).href:FX_SITE+'d/';
+async function fxShortUrl(url){const api='https://tinyurl.com/api-create.php?url='+encodeURIComponent(url),ok=s=>/^https:\/\/(tinyurl\.com|is\.gd)\/[A-Za-z0-9_\-]+$/.test(String(s||'').trim())?String(s).trim():'';
+  const H=isNative()&&window.Capacitor.Plugins.CapacitorHttp;
+  if(H){try{const r=await H.get({url:api,responseType:'text'});const s=ok(r&&r.data);if(s)return s}catch(e){}}
+  try{const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),12000),r=await fetch(api,{signal:ctl.signal});clearTimeout(t);if(r.ok){const s=ok(await r.text());if(s)return s}}catch(e){}
+  /* web fallback when TinyURL doesn't allow browser requests: is.gd via JSONP */
+  return await new Promise(res=>{const cb='fxIsgd'+Date.now(),s=document.createElement('script'),done=v=>{delete window[cb];s.remove();res(v)};const t=setTimeout(()=>done(''),12000);
+    window[cb]=j=>{clearTimeout(t);done(ok(j&&j.shorturl))};s.onerror=()=>{clearTimeout(t);done('')};s.src='https://is.gd/create.php?format=json&callback='+cb+'&url='+encodeURIComponent(url);document.head.appendChild(s)})}
+async function fxSendLink(d,url,short){const text=`${d.name} — a MtG DeckMaster deck`;
+  try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title:d.name,text,url,dialogTitle:'Share deck link'});return}
     if(navigator.share){await navigator.share({title:d.name,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
-  navigator.clipboard.writeText(url).then(()=>toast('Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
-function fxShareDeck(i){const d=D.decks[i];fxAsk(`Share “${esc(d.name)}”`,'<p class="mut"><b>File</b>: signed, includes the card details, opens in the app under Other collections.<br><b>Link</b>: quickest — opens the web version with the deck ready to view. Links aren’t signed.</p>',[{t:'📄 Send as a file',cls:'pri',fn:()=>fxShareFile('deck',i)},{t:'🔗 Share as a link',fn:()=>fxDeckLink(i)},{t:'Cancel'}])}
+  navigator.clipboard.writeText(url).then(()=>toast(short?'Short link copied — paste it into a message':'Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
+async function fxAppLink(i){const d=D.decks[i];fxSendLink(d,fxLinkBase()+'#d='+await fxPackDeck(d),false)}
+async function fxDeckLink(i){const d=D.decks[i];if(!D.uid)fxIdentity();
+  const offline=()=>fxAsk('You’re offline',`<p>A short link needs the internet.</p><p class="mut">You can share an <b>app-only link</b> instead: it carries the deck list itself, so it’s longer, but it works without any outside service and opens in MtG DeckMaster (app or web).</p>`,[{t:'🔗 Share app-only link',cls:'pri',fn:()=>fxAppLink(i)},{t:'Cancel'}]);
+  if(!navigator.onLine)return offline();
+  toast('Making a short link…');const long=fxLinkBase()+'?d='+await fxPackDeck(d),s=await fxShortUrl(long);
+  if(s)return fxSendLink(d,s,true);
+  if(!navigator.onLine)return offline();
+  fxAsk('Couldn’t make a short link','<p class="mut">The link service (TinyURL) didn’t answer. Try again in a moment, or send the deck as a file.</p>',[{t:'↻ Try again',cls:'pri',fn:()=>fxDeckLink(i)},{t:'📄 Send as a file',fn:()=>fxShareFile('deck',i)},{t:'Cancel'}])}
+/* A pasted / opened short link: the Android app asks TinyURL where it leads; otherwise the link is opened and comes back through the deck-link page. */
+async function fxOpenShort(u){const H=isNative()&&window.Capacitor.Plugins.CapacitorHttp;
+  if(H){try{toast('Opening the short link…');const r=await H.get({url:u,responseType:'text'}),fin=String(r&&r.url||''),m=fin.match(/[#?&]d=[A-Za-z0-9_\-]+/)||String(r&&r.data||'').match(/[#?&]d=[A-Za-z0-9_\-]+/);if(m)return fxOpenLink(m[0])}catch(e){}}
+  if(!navigator.onLine)return toast('You’re offline — short links need the internet to open');
+  if(isNative())window.open(u,'_system');else location.href=u}
+function fxShareDeck(i){const d=D.decks[i];fxAsk(`Share “${esc(d.name)}”`,'<p class="mut"><b>File</b>: signed, includes the card details, opens in the app under Other collections.<br><b>Link</b>: quickest — a short TinyURL link (needs internet) that opens the deck in the app or on the web. Links aren’t signed.</p>',[{t:'📄 Send as a file',cls:'pri',fn:()=>fxShareFile('deck',i)},{t:'🔗 Share as a link',fn:()=>fxDeckLink(i)},{t:'Cancel'}])}
 function fxCardObj(c,src,n,fin){const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/'),tl=c.type_line||f.type_line||'';
   return {name:c.name,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
     text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin||'Normal',status:'Added in app'}}
-async function fxOpenLink(text){const m=String(text||'').match(/[#?&]d=([A-Za-z0-9_\-]+)/);if(!m)return toast('That doesn’t look like a deck link');let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
+async function fxOpenLink(text){const m=String(text||'').match(/[#?&]d=([A-Za-z0-9_\-]+)/);if(!m){const sh=String(text||'').match(/https?:\/\/(?:www\.)?(?:tinyurl\.com|is\.gd)\/[A-Za-z0-9_\-]+/i);if(sh)return fxOpenShort(sh[0]);return toast('That doesn’t look like a deck link')}let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
   const n=sum(o.l,x=>+x[0]||0);fxAsk('A deck was shared with you',`<div class="sec"><b>${esc(o.n)}</b> <span class="mut">· ${esc(o.f||'')} · ${fxPl(n,'card')}</span><br>from ${fxWho(o.o||'someone',o.u)}</div><p class="mut">Links aren’t signed, so the sender can’t be verified. The deck is view-only until you copy it to your own decks.</p>`,[{t:'👁 View the deck',cls:'pri',fn:()=>fxLinkImport(o)},{t:'Cancel'}])}
-async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.map(([q,nm])=>({name:String(nm),qty:+q||1,set:'',num:'',sid:''})),need=[];
-  items.forEach(x=>{const c=findCard(x.name);if(c)x.own=c;else need.push(x)});try{if(need.length)await fxResolve(need)}catch(e){return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection')}
+async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.map(([q,nm,st,cn])=>({name:String(nm||''),qty:+q||1,set:st||'',num:cn||'',sid:''})),need=[];
+  items.forEach(x=>{const c=x.name&&findCard(x.name);if(c)x.own=c;else need.push(x)});try{if(need.length)await fxResolve(need)}catch(e){return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection')}
+  items.forEach(x=>{if(!x.own&&x.card){const c=findCard(x.card.name);if(c)x.own=c;else if(!x.name)x.name=x.card.name}});
   const cards=[],seen=new Set();items.forEach(x=>{const src=x.own||(x.card&&Object.assign(fxCardObj(x.card,'',x.qty),{art:sImg(x.card),set:x.card.set,setName:x.card.set_name,cn:x.card.collector_number,scryId:x.card.id,leg:legOf(x.card.legalities)}));if(!src)return;x.name=src.name;if(seen.has(norm(src.name)))return;seen.add(norm(src.name));const c=JSON.parse(JSON.stringify(src));delete c.source;c.qty=x.qty;cards.push(c)});
   const uid=o.u||('link-'+fxUuid()),rec=await fxSaveFriend({uid,name:o.o||'Shared decks',updated:Date.now(),pub:null,scope:'deck',cards,decks:[{name:o.n,format:o.f||'Casual',commander:o.c||'',cards:items.map(x=>({name:x.name,qty:x.qty,finish:'Normal'})),tokens:[]}]},'unverified',{link:true,quiet:true,nick:(o.o||'Someone')+' — shared by link'});
   if(rec){await roOpen(rec.id);const i=D.decks.findIndex(d=>d.name===o.n);if(i>=0){V.view='decks';V.deck=i;render()}}}
@@ -763,6 +794,130 @@ function fxSrcView(){return `<div class="sec"><h4>Verify artwork from pull sourc
   <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from pull sources'}</button></div><p id="svmsg" class="mut">${esc(SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
+
+
+/* ---------- pop-ups: the page behind never scrolls while one is open ---------- */
+function fxLockCheck(){const on=!!document.querySelector('.modal.open,#cam,#apfull,#qafull,#zoom,#legload');document.documentElement.classList.toggle('lock',on)}
+(()=>{let q=0;const mo=new MutationObserver(()=>{if(q)return;q=requestAnimationFrame(()=>{q=0;fxLockCheck()})});const go=()=>mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});document.body?go():addEventListener('DOMContentLoaded',go)})();
+
+/* ---------- shared rule check + grouped “where it comes from / goes back to” lists ---------- */
+/* Returns why a card may not be added under the deck’s rules (banned, not legal, outside commander colors, custom card in an official format), or ''. */
+function fxRuleBlock(c,qty,F,cmdC){const x=fxCardIssues(c,qty,F,cmdC).find(i=>['banned','notlegal','color','custom'].includes(i.kind));return x?x.title.toLowerCase():''}
+const fxGrpPut=(G,k,q,name,alt)=>{if(q>0)(G[k]=G[k]||[]).push({q,name,alt:alt||[]})};
+const fxGrpHtml=G=>{const ks=Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b));return ks.length?ks.map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(or ${esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join(''):'<p class="mut">None.</p>'};
+
+/* ---------- ✨ Optimize Deck: the Deck Generator’s tools pointed at an existing deck ---------- */
+let OPT={};
+function fxOptOpen(i){if(RO)return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your unsaved deck changes first');DRAFT=null;
+  if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:true,from:{},reply:'',res:null,step:'',err:''};
+  V.opt=i;render();scrollTo(0,0);const F=dfmt(D.decks[i].format);if(F&&F.leg)ensureLegal().then(()=>render())}
+function fxOptClose(){if(OPT.busy)aiCancel2();V.opt=null;OPT.step='';render();scrollTo(0,0)}
+const optAllowed=()=>OPT.noDecks?[]:D.decks.filter((d,k)=>k!==OPT.deck&&OPT.from[d.name]).map(d=>d.name);
+function optCols(d,F){const cmdC=F&&F.cmd&&d.commander&&findCard(d.commander);if(cmdC)return {cols:fxIdCols(cmdC),why:'the '+F.cmdLabel.toLowerCase()+'’s colors'};
+  if(OPT.colors.length)return {cols:OPT.colors,why:'the colors you picked'};const s=new Set();d.cards.forEach(e=>{const c=findCard(e.name);if(c)fxCI(c).forEach(x=>s.add(x))});return {cols:CLR.filter(x=>s.has(x)),why:'the deck’s current colors',soft:true}}
+const optLegal=(c,F)=>{const k=F&&F.leg||OPT.legal;return !k||!!(c.leg&&(c.leg[k]==='l'||c.leg[k]==='r'))};
+function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=sum(L),cc=optCols(d,F);
+  if(OPT.step==='confirm')return fxOptConfirm(m,i);
+  m.innerHTML=`<button onclick="fxOptClose()">← ${esc(d.name)}</button><h2 style="margin:10px 0 4px">✨ Optimize Deck</h2>
+  <div class="tags"><span>${esc(d.format)}</span><span>${tot}${F&&F.n?'/'+F.n:''} cards</span>${d.commander?`<span>${esc(F&&F.cmdLabel||'Commander')}: ${cl(d.commander)}</span>`:''}</div>
+  <p class="mut">An AI looks at this deck and the cards you can use, and suggests what to take out and put in. Nothing changes until you check every change and confirm.</p>
+  <div class="f">${F?`<p class="mut" style="margin:0 0 6px">Rules for this deck: ${esc(fmtRuleText(F))}${F.leg?` Only cards legal in ${esc(F.k)} are suggested.`:''}</p>`:'<div class="warn">This deck has no deck type, so no rules can be checked. Set one with ✎ Edit details.</div>'}
+  ${F&&!F.leg?`<label>Card legality</label><select onchange="OPT.legal=this.value;render();if(OPT.legal)ensureLegal().then(()=>render())"><option value="">Any card — casual, no restrictions</option><optgroup label="Only cards that can be played in…">${FMTS.map(([k,n])=>`<option value="${k}" ${OPT.legal===k?'selected':''}>${n}</option>`).join('')}</optgroup></select>`:''}
+  ${F&&F.cmd&&d.commander?`<p class="mut">Colors: only cards inside ${esc(d.commander)}’s color identity (${cc.cols.length?cc.cols.map(symImg).join(''):'colorless'}).</p>`:`<label>Colors <span class="mut">(none selected = keep the deck’s current colors)</span></label><div class="chips">${CLR.map(k=>`<button class="pipb ${OPT.colors.includes(k)?'on':''}" title="${CLRN[k]}" onclick="OPT.colors=OPT.colors.includes('${k}')?OPT.colors.filter(x=>x!=='${k}'):[...OPT.colors,'${k}'];render()">${symImg(k)}</button>`).join('')}</div>`}
+  <label>Where may new cards come from?</label>
+  <label style="margin:2px 0"><input type="checkbox" ${OPT.noDecks?'checked':''} onchange="OPT.noDecks=this.checked;render()">Don't use cards already in other decks</label>
+  ${OPT.noDecks?'<p class="mut">Only cards that are not in any deck will be suggested.</p>':`<p class="mut">Cards not in any deck are always available. Also allow taking cards from:</p>${D.decks.map((x,k)=>k===i?'':`<label style="margin:2px 0"><input type="checkbox" ${OPT.from[x.name]?'checked':''} onchange="OPT.from[${JSON.stringify(x.name).replace(/"/g,'&quot;')}]=this.checked">${esc(x.name)} <span class="mut">· ${sum(x.cards)} cards</span></label>`).join('')||'<p class="mut">No other decks.</p>'}<p class="mut">Cards taken from a deck are recorded as a loan; that deck gets a red ★ until you return them or make it permanent.</p>`}
+  <label>Goal</label><textarea rows="3" oninput="OPT.goal=this.value" placeholder="How do you want to optimize?">${esc(OPT.goal)}</textarea>
+  <p class="mut" style="font-size:12px;margin:4px 0 0">Describe a problem (“runs out of cards”, “too slow”), or a play style or ability to balance. Leave it blank and the AI looks for a more optimal build overall.</p>
+  <label><input type="checkbox" ${OPT.own?'checked':''} onchange="OPT.own=this.checked">Only use cards I own</label></div>
+  <h3>Option A — use your own AI chat (no key needed)</h3><ol class="st"><li>Set the options above.</li><li>Tap <b>Copy prompt</b>.</li><li>Paste it into a new chat in your AI app (Gemini, ChatGPT, Claude, etc.) and send.</li><li>Copy its whole answer, paste it into the <b>AI reply</b> box below and tap <b>Read reply</b>.</li></ol><button class="pri" onclick="fxOptCopy()">📋 Copy prompt</button>
+  <h3>Option B — optimize here (needs an API key)</h3><p class="mut">Uses the same provider, model and key as the Deck Generator.</p>
+  ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}
+  <h3>AI reply</h3><textarea id="oreply" rows="6" oninput="OPT.reply=this.value" placeholder="Paste the AI's answer here (Option B fills this in for you)">${esc(OPT.reply)}</textarea><br><br><button onclick="fxOptRead()">Read reply</button><div id="oprev"></div>`;
+  if(OPT.res)fxOptPrev()}
+function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=sum(d.cards);
+  d.cards.forEach(e=>{const k=norm(e.name);inDeck[k]=(inDeck[k]||0)+e.qty});
+  const desc=c=>`${c.type} | ${c.colors} | MV ${c.cmc}`;
+  const deckRows=d.cards.map(e=>{const c=findCard(e.name);return `${e.qty} ${e.name}${c?' | '+desc(c):''}`});
+  const rows=D.cards.filter(c=>isReal(c)&&optLegal(c,F)&&!(F.leg&&c.custom)&&(!cc.cols.length||okColor(c,cc.cols)))
+    .map(c=>({c,a:Math.min(aiAvail(c,al),Math.max(0,copyCap(c,F)-(inDeck[norm(c.name)]||0)))})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${desc(c)} | available ${a}`);
+  const legal=F.leg?F.k:OPT.legal?(FMTS.find(x=>x[0]===OPT.legal)||[])[1]:'';
+  return `You are an expert Magic: The Gathering deck builder. Improve my existing ${F.k} deck. Follow the official ${F.k} deck-building rules exactly.
+Deck rules: ${fmtRuleText(F)}${F.prompt?' '+F.prompt:''}
+Deck: ${d.name}${d.commander?`\n${F.cmdLabel||'Commander'}: ${d.commander} (keep it — never remove it)`:''}
+Goal: ${OPT.goal.trim()||'Review the cards available in my collection and the cards already in my deck, and find a more optimal build: better synergy, a smoother mana curve, the right number of lands and better card quality. Only change what clearly improves the deck.'}
+Format legality: ${legal?'only cards legal in '+legal+' (the list below is already filtered; a card marked restricted may appear only once)':'none — any card is fine'}
+Colors: ${cc.cols.length?(cmdC?'only cards inside the '+(F.cmdLabel||'commander').toLowerCase()+'’s color identity: ':'stay within ')+cc.cols.map(x=>CLRN[x]).join(', ')+(cmdC?'':' (colorless cards and lands are fine)'):'any'}
+${OPT.own?'New cards must come ONLY from MY AVAILABLE CARDS below, spelled exactly as listed, never more copies than "available".':'Prefer cards from MY AVAILABLE CARDS below; you may suggest a few cards I do not own — put * at the end of those lines (I would have to get them first).'}
+The deck has ${tot} cards now and must have exactly ${F.n||tot} cards after your changes.
+
+OUTPUT FORMAT: list only the changes, one per line:
+OUT <quantity> <card name>   (a card to take out of the deck)
+IN <quantity> <card name>    (a card to put into the deck)
+No headings or bullets. Then write a line containing only --- and explain the changes and why they help (under 200 words).
+
+CURRENT DECK (quantity name | type | colors | mana value):
+${deckRows.join('\n')}
+
+MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
+${rows.join('\n')||'(none)'}`}
+async function fxOptCopy(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');if((F.leg||OPT.legal)&&!(await ensureLegal()))return;const p=fxOptPrompt();
+  try{await navigator.clipboard.writeText(p);toast('Prompt copied — paste it into your AI')}catch(e){openM(`<h3>Copy this prompt</h3><textarea rows="12" readonly style="width:100%" onfocus="this.select()">${esc(p)}</textarea>`)}}
+function aiCancel2(){if(OPT.ctl){OPT.cancelled=true;OPT.ctl.abort()}}
+async function fxOptRun(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
+  const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)return toast('Enter a model and your API key first');if((F.leg||OPT.legal)&&!(await ensureLegal()))return;
+  OPT.busy=true;OPT.err='';OPT.t0=Date.now();OPT.ctl=new AbortController();render();const tick=setInterval(()=>{const b=$('#obusy');if(b)b.textContent='Waiting for the AI… '+fxElapsed(OPT.t0)},1000);let txt='';
+  try{txt=await fxCallAI(fxOptPrompt(),{signal:OPT.ctl.signal,timeout:180000,maxTokens:6000})}
+  catch(e){OPT.err=e&&e.name==='AbortError'?(OPT.cancelled?'Cancelled.':'The AI took longer than 3 minutes, so I stopped waiting. Try again, or pick a faster model.'):String(e&&e.message||e)}
+  clearInterval(tick);OPT.busy=false;OPT.cancelled=false;OPT.ctl=null;if(txt&&!OPT.err){OPT.reply=txt;OPT.res=null}render();if(txt&&!OPT.err)fxOptRead()}
+function fxOptRead(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
+  OPT.reply=$('#oreply')?.value??OPT.reply;const parts=OPT.reply.split(/^\s*---+\s*$/m),why=(parts.slice(1).join('\n')).trim(),al=optAllowed(),cmdC=F.cmd&&d.commander&&findCard(d.commander),cc=optCols(d,F);
+  const inDeck={};d.cards.forEach(e=>{const k=norm(e.name);inDeck[k]=(inDeck[k]||0)+e.qty});
+  const outs=[],ins=[],byO={},byI={};
+  parts[0].split('\n').forEach(l=>{l=l.replace(/^[\s•*]+/,'').replace(/\*\*/g,'');const m=l.match(/^(OUT|IN|REMOVE|ADD|CUT|[-−+])\s*:?\s*(\d+)?\s*x?\s+(.+?)\s*$/i);if(!m)return;
+    const isOut=/^(OUT|REMOVE|CUT|-|−)$/i.test(m[1]),q=+(m[2]||1),nm=m[3].replace(/\*+$/,'').replace(/\s*\(.*\)\s*$/,'').trim(),k=norm(nm),B=isOut?byO:byI,A=isOut?outs:ins;
+    if(B[k])B[k].want+=q;else{B[k]={name:nm,want:q,c:findCard(nm)};A.push(B[k])}});
+  const after=Object.assign({},inDeck);
+  outs.forEach(e=>{const k=norm(e.name),have=inDeck[k]||0;if(e.c)e.name=e.c.name;
+    if(!have){e.n=0;e.st='✗ not in this deck (skipped)';return}
+    if(cmdC&&k===norm(cmdC.name)){e.n=0;e.st='✗ the '+(F.cmdLabel||'commander').toLowerCase()+' stays (skipped)';return}
+    e.n=Math.min(e.want,have);after[k]-=e.n;const src=e.c?(loanedIn(d.name,e.c.name)?'↩ back to the deck it was borrowed from':'↩ back to '+fxCardLabel(e.c).k):'';e.st=(e.n<e.want?`⚠ the deck only has ${have} (removing ${e.n}) · `:'')+(src||'✓ removed')});
+  let total=sum(Object.values(after),x=>x);
+  ins.forEach(e=>{const c=e.c;if(!c||!isReal(c)){e.n=0;e.st=OPT.own?'✗ not in your collection (skipped)':'✗ you don’t own it — add it to your collection first (skipped)';return}e.name=c.name;const k=norm(c.name);
+    if(!optLegal(c,F)){e.n=0;e.st='✗ not legal'+(F.leg?' in '+F.k:'')+' (skipped)';return}
+    if(!cmdC&&cc.cols.length&&!okColor(c,cc.cols)){e.n=0;e.st='✗ outside '+cc.why+' (skipped)';return}
+    const bad=fxRuleBlock(c,(after[k]||0)+e.want,F,cmdC);if(bad){e.n=0;e.st='✗ '+bad+' (skipped)';return}
+    const cap=copyCap(c,F),room=Math.max(0,cap-(after[k]||0));let n=Math.min(e.want,room);const note=[];if(n<e.want)note.push(`${F.k} allows ${cap}`);
+    const pl=planCard(c,n,al);if(pl.got<n){note.push(`only ${pl.got} available`);n=pl.got}
+    if(F.n&&total+n>F.n){const k2=Math.max(0,F.n-total);note.push(`the deck would go over ${F.n} cards`);n=Math.min(n,k2)}
+    e.n=n;after[k]=(after[k]||0)+n;total+=n;if(!n){e.st='✗ '+note.join(', ')+' (skipped)';return}
+    const p2=planCard(c,n,al);e.st=(note.length?'⚠ '+note.join(', ')+` (adding ${n}) · `:'')+(p2.from.length?'↪ '+p2.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(p2.free?` + ${p2.free} free`:''):'✓ free in your collection')});
+  OPT.res={outs,ins,why,total};fxOptPrev()}
+function fxOptPrev(){const r=OPT.res,el=$('#oprev'),d=D.decks[OPT.deck],F=dfmt(d.format);if(!el)return;const no=sum(r.outs,e=>e.n),ni=sum(r.ins,e=>e.n);
+  if(!r.outs.length&&!r.ins.length){el.innerHTML='<div class="warn">I couldn’t find any “OUT 1 Card” / “IN 1 Card” lines in that reply.</div>';return}
+  el.innerHTML=`<h3>Suggested changes</h3>${r.why?`<div class="sec" style="white-space:pre-wrap">${esc(r.why)}</div>`:''}
+  <h4>Take out (${no})</h4>${r.outs.length?tbl(['Qty','Card','Status'],r.outs.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
+  <h4>Put in (${ni})</h4>${r.ins.length?tbl(['Qty','Card','Comes from'],r.ins.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
+  <p class="mut">After these changes the deck has <b>${r.total}${F&&F.n?'/'+F.n:''}</b> cards.${F&&F.n&&r.total<F.n?` That’s ${F.n-r.total} short — you can add cards by hand afterwards.`:''}</p>
+  ${no+ni?'<button class="pri big" onclick="OPT.step=\'confirm\';render();scrollTo(0,0)">Accept these changes ›</button>':'<div class="warn">None of the suggested changes can be made (see the reasons above).</div>'}`}
+function fxOptGroups(){const r=OPT.res,d=D.decks[OPT.deck],al=optAllowed(),outG={},inG={};
+  r.outs.filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name);let n=e.n;[...actLoans()].reverse().filter(l=>l.to===d.name&&norm(l.card)===norm(e.name)).forEach(l=>{if(n<=0)return;const k=Math.min(n,l.qty);n-=k;fxGrpPut(outG,'Return to deck: '+l.from,k,e.name)});
+    if(n>0){const L=c?fxCardLabel(c):{k:'Not in your collection',alt:[]};fxGrpPut(outG,L.k,n,e.name,L.alt)}});
+  r.ins.filter(e=>e.n>0).forEach(e=>{const pl=planCard(e.c,e.n,al),L=fxCardLabel(e.c);fxGrpPut(inG,L.k,e.c.type==='Basic Land'?e.n:pl.free,e.c.name,L.alt);if(e.c.type!=='Basic Land')pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,e.c.name))});
+  return {outG,inG}}
+function fxOptConfirm(m,i){const d=D.decks[i],F=dfmt(d.format),{outG,inG}=fxOptGroups(),no=sum(Object.values(outG).flat(),x=>x.q),ni=sum(Object.values(inG).flat(),x=>x.q);
+  m.innerHTML=`<button onclick="OPT.step='';render();scrollTo(0,0)">‹ Back to the suggestions</button><h2 style="margin:10px 0 4px">Confirm changes to ${esc(d.name)}</h2>
+  <p class="mut">Check every card. Nothing changes until you tap <b>Update deck</b>.</p>
+  <h3>Cards removed (${no}) — they go back to:</h3>${fxGrpHtml(outG)}
+  <h3>Cards added (${ni}) — pull them from:</h3>${fxGrpHtml(inG)}
+  <p class="mut">The deck will have <b>${OPT.res.total}${F&&F.n?'/'+F.n:''}</b> cards. Cards taken from other decks are recorded as loans (red ★ on that deck).</p>
+  <div class="row"><button onclick="OPT.step='';render();scrollTo(0,0)">‹ Back</button><button class="pri" onclick="fxOptApply()">✓ Update deck</button></div>`}
+function fxOptApply(){const i=OPT.deck,d=D.decks[i],r=OPT.res;if(!d||d.name!==OPT.dname)return toast('That deck changed — open Optimize again');
+  DRAFT=null;const dr=fxDraft(i);
+  r.outs.filter(e=>e.n>0).forEach(e=>{const x=dr.m[norm(e.name)];if(x)x.qty=Math.max(0,x.qty-e.n)});
+  r.ins.filter(e=>e.n>0).forEach(e=>{const k=norm(e.c.name),x=dr.m[k]||(dr.m[k]={name:e.c.name,base:0,qty:0});x.qty+=e.n});
+  const al=optAllowed();d.info=((d.info||'')+(d.info?' · ':'')+'Optimized '+today()).slice(-300);
+  OPT={};V.opt=null;fxDraftSave({yes:true,allowed:al});scrollTo(0,0)}
 
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
@@ -999,7 +1154,7 @@ function fxKeyForget(){if(!confirm(`Forget the API keys saved on this device (${
 function fxKeysIn(j,adopt){const k=j&&j.aiKeys;if(j)delete j.aiKeys;if(!k||!adopt||!fxKeyRem())return;const o=fxKeys0();let n=0;Object.keys(k).forEach(p=>{if(k[p]&&!o[p]){o[p]=k[p];n++}});if(n){fxKeyWrite(o);if(!AIKEY)AIKEY=fxKeyGet(G.prov);toast(`API key${n>1?'s':''} restored on this device`)}}
 
 /* ---------- models: list the ones this API key can use ---------- */
-const fxElapsed=()=>{const s=Math.round((Date.now()-(G.t0||Date.now()))/1000);return s<60?s+' s':Math.floor(s/60)+' min '+(s%60)+' s'};
+const fxElapsed=t0=>{const s=Math.round((Date.now()-(t0||G.t0||Date.now()))/1000);return s<60?s+' s':Math.floor(s/60)+' min '+(s%60)+' s'};
 const FXMODELPREF={anthropic:[/sonnet/,/haiku/,/opus/],openai:[/^gpt-[\d.]+-mini/,/^gpt-[\d.]+$/,/^gpt/,/^o\d/],gemini:[/flash(?!-lite)/,/flash-lite/,/pro/]};
 function fxModelSave(){try{const o=JSON.parse(localStorage.getItem('mtg_aimodel_v1')||'{}');o[G.prov]=G.model.trim();localStorage.setItem('mtg_aimodel_v1',JSON.stringify(o))}catch(e){}}
 function fxModelLoad(){try{const o=JSON.parse(localStorage.getItem('mtg_aimodel_v1')||'{}');if(o[G.prov])G.model=o[G.prov]}catch(e){}}
