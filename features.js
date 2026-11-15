@@ -137,7 +137,7 @@ function fxOthersView(){return `<p class="mut">Open a backup file someone shared
   <div class="f"><label>…or paste a deck link someone sent you</label><input id="oclink" placeholder="https://tinyurl.com/… or another deck link"></div><div class="row"><button onclick="fxOpenLink(document.getElementById('oclink').value)">Open deck link</button></div>
   <p class="mut" style="font-size:12px">Tap a collection to open it. Slide a row to the left to delete it.</p><div id="oclist"><p class="mut">Loading…</p></div>`}
 async function ocDraw(){await ocLoad();const el=document.getElementById('oclist');if(!el)return;
-  el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)} ${r.status==='signed'?'<span title="Signed by its owner" style="color:#2ecc71">✓</span>':'<span class="mut" style="font-weight:400;font-size:11px">unverified</span>'}<br><span>${r.partial?fxPl(r.data.decks.length,'deck')+' only':r.data.cards.length+' titles · '+fxPl(r.data.decks.length,'deck')}${r.uid&&!/^(old|link)-/.test(r.uid)?' · ID '+esc(fxCode(r.uid)):''}</span></b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
+  el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)} ${r.status==='signed'?'<span title="Signed by its owner" style="color:#2ecc71">✓</span>':'<span class="mut" style="font-weight:400;font-size:11px">unverified</span>'}<br><span>${r.partial?fxPl(r.data.decks.length,'deck')+' only':r.data.cards.length+' titles · '+fxPl(r.data.decks.length,'deck')}${r.uid&&!/^(old|link)-/.test(r.uid)?' · ID '+esc(fxCode(r.uid)):''}</span>${r.data.decks.length?`<br><span style="font-weight:400;font-size:12px">${r.data.decks.slice(0,8).map(d=>'🃏 '+esc(d.name)).join(' · ')}${r.data.decks.length>8?' …':''}</span>`:''}</b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
   el.querySelectorAll('.ocrow').forEach(row=>{const inn=row.querySelector('.ocin');let x0=null,dx=0,open=false;
     const set=o=>{open=o;inn.style.transform=o?'translateX(-92px)':''};
     inn.addEventListener('pointerdown',e=>{x0=e.clientX;dx=0;inn.style.transition='none';try{inn.setPointerCapture(e.pointerId)}catch(_){}});
@@ -150,7 +150,7 @@ async function ocDelete(id){const r=(OC||[]).find(x=>x.id===id);if(!r)return;if(
 async function roOpen(id){await ocLoad();const r=OC.find(x=>x.id===id);if(!r)return;if(!fxCanLeave())return;
   const j=JSON.parse(JSON.stringify(r.data));['acq','edits','flags','swaps','matchups','loans','sleeves','sims'].forEach(k=>{j[k]=j[k]||[]});j.kept=j.kept||{};
   j.cards.forEach(c=>{c.text=c.text||'';c.colors=c.colors||'';c.type=c.type||'';c.qty=+c.qty||0});j.decks.forEach(d=>{d.cards=d.cards||[];d.tokens=d.tokens||[]});
-  MINE={D,ART,ART2,CIMG};CIMG=j.customImgs||{};delete j.customImgs;D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,updated:r.updated,uid:r.uid,status:r.status};IDX=null;DRAFT=null;HIST.length=0;
+  MINE={D,ART,ART2,CIMG};CIMG=j.customImgs||{};delete j.customImgs;D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,given:r.given||(r.data&&r.data.owner)||'',updated:r.updated,uid:r.uid,status:r.status};IDX=null;DRAFT=null;HIST.length=0;
   V.view='collection';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();render();scrollTo(0,0);fetchArt()}
 function roExit(){if(!RO)return;D=MINE.D;ART=MINE.ART;ART2=MINE.ART2;CIMG=MINE.CIMG;RO=null;MINE=null;IDX=null;HIST.length=0;V.view='more';V.sub='others';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();persist();render();scrollTo(0,0)}
 const roBar=()=>`<div class="robar"><button onclick="roExit()">← Back to my collection</button><b title="Tap to rename" onclick="roRename()">${RO.status==='signed'?'✓ ':''}${esc(RO.name)}</b><span>Updated<br>${esc(fxDate(RO.updated))}</span></div>`;
@@ -459,7 +459,7 @@ function fxMatchups(){const ms=D.matchups.find(x=>/MASTER MATCHUP/i.test(x.title
     <div class="f" data-rw><label>Paste the AI’s answer here to keep it with this result</label><textarea rows="3" id="sn-${s.id}">${esc(s.note||'')}</textarea></div><div class="row" data-rw><button onclick="fxSimNote('${s.id}')">Save commentary</button></div></details>`).join('')}
   ${rest.length?`<details class="g"><summary>Earlier analysis from your spreadsheet</summary>${rest.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0].map(noEmoji),s.rows.slice(1).map(r=>r.map(noEmoji)))}`).join('')}</details>`:''}`}
 async function simFill(){await ocLoad();const a=document.getElementById('simA'),b=document.getElementById('simB');if(!a||!b)return;
-  const opts=[...D.decks.map((d,i)=>[`m:${i}`,d.name]),...OC.flatMap(r=>r.data.decks.map((d,i)=>[`o:${r.id}:${i}`,`${d.name} (${r.name})`]))];
+  const opts=[...D.decks.map((d,i)=>[`m:${i}`,d.name]),...OC.flatMap(r=>r.data.decks.map((d,i)=>[`o:${r.id}:${i}`,fxDeckTitle(d,r.given||r.data.owner||r.name)+(r.status==='signed'?' ✓':'')]))];
   const h=sel=>opts.map(([v,l])=>`<option value="${esc(v)}" ${sel===v?'selected':''}>${esc(l)}</option>`).join('')||'<option value="">No decks yet</option>';
   if(!V.simA||!opts.some(o=>o[0]===V.simA))V.simA=opts[0]?.[0]||'';if(!V.simB||!opts.some(o=>o[0]===V.simB))V.simB=(opts[1]||opts[0]||[''])[0];a.innerHTML=h(V.simA);b.innerHTML=h(V.simB)}
 function simPick(v){const p=String(v).split(':');if(p[0]==='m'){const d=D.decks[+p[1]];return d&&Object.assign(simDeck(d,D.cards),{owner:D.uid||'',deck:d.name})}const r=(OC||[]).find(x=>x.id===p[1]),d=r&&r.data.decks[+p[2]];return d&&Object.assign(simDeck(d,r.data.cards,`${d.name} (${r.name})`),{owner:r.uid||'',deck:d.name})}
@@ -614,13 +614,19 @@ async function fxPack(o){const b=new TextEncoder().encode(JSON.stringify(o));let
 /* Compact deck code (prefix c / C): cards with a known set + number are sent as “#set:number”, others by name; qty 1 is left out. */
 async function fxPackDeck(d){const lines=[d.name,d.format||'',d.commander||'',D.owner||'',(D.uid||'').replace(/-/g,'')].map(x=>String(x).replace(/[\n|]/g,' '));
   const L=d.cards.map(e=>{const c=findCard(e.name),id=c&&!c.custom&&c.set&&c.cn?'#'+c.set+':'+c.cn:e.name.replace(/[\n|]/g,' ');return (e.qty>1?e.qty+'*':'')+id});
-  const b=new TextEncoder().encode(lines.join('\n')+'\n'+L.join('|'));let out=b,z='C';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='c'}}catch(e){}
+  if(!D.keys)await fxKeys();let txt=lines.join('\n')+'\n'+L.join('|');
+  /* signed with this collection's key, so the receiver can check who it came from (same key as share files) */
+  if(D.keys&&D.keys.pub){txt+='\nk:'+D.keys.pub.x+'.'+D.keys.pub.y;const s=await fxSign(txt);if(s)txt+='\ns:'+s}
+  const b=new TextEncoder().encode(txt);let out=b,z='C';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='c'}}catch(e){}
   return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 async function fxUnpack(s){const z=s[0];
   if(z==='c'||z==='C'){let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='c')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
-    const t=new TextDecoder().decode(b).split('\n'),u=t[4]||'',uid=u.length===32?u.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5'):u;
-    return {n:t[0],f:t[1],c:t[2],o:t[3],u:uid,l:(t.slice(5).join('\n')).split('|').filter(Boolean).map(x=>{const m=x.match(/^(\d+)\*(.*)$/),q=m?+m[1]:1,v=m?m[2]:x;const k=v.match(/^#([^:]+):(.+)$/);return k?[q,'',k[1],k[2]]:[q,v]})}}let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
+    const all=new TextDecoder().decode(b),t=all.split('\n'),u=t[4]||'',uid=u.length===32?u.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5'):u;
+    const kl=t.find(x=>/^k:/.test(x)),sl=t.find(x=>/^s:/.test(x)),kx=kl?kl.slice(2).split('.'):null,signed=sl?all.slice(0,all.lastIndexOf('\ns:')):'';
+    return {n:t[0],f:t[1],c:t[2],o:t[3],u:uid,pub:kx&&kx.length===2?{kty:'EC',crv:'P-256',x:kx[0],y:kx[1],ext:true}:null,sig:sl?sl.slice(2):'',signed,l:(t[5]||'').split('|').filter(Boolean).map(x=>{const m=x.match(/^(\d+)\*(.*)$/),q=m?+m[1]:1,v=m?m[2]:x;const k=v.match(/^#([^:]+):(.+)$/);return k?[q,'',k[1],k[2]]:[q,v]})}}let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
 /* Deck links: a TinyURL short link (needs internet). Offline, the app offers an app-only link that carries the compact deck code itself. */
+/* “Nick's Collection - Rakdos Aggro” — a deck's name with its owner, for sharing and for other people's decks */
+const fxDeckTitle=(d,owner)=>{const o=owner!=null?owner:(RO?(RO.given||RO.name):D.owner)||'';return o?`${o} - ${d.name}`:d.name};
 const fxLinkBase=()=>!isNative()&&/^https?:/.test(location.protocol)?new URL('d/',location.origin+location.pathname).href:FX_SITE+'d/';
 async function fxShortUrl(url){const api='https://tinyurl.com/api-create.php?url='+encodeURIComponent(url),ok=s=>/^https:\/\/(tinyurl\.com|is\.gd)\/[A-Za-z0-9_\-]+$/.test(String(s||'').trim())?String(s).trim():'';
   const H=isNative()&&window.Capacitor.Plugins.CapacitorHttp;
@@ -629,9 +635,9 @@ async function fxShortUrl(url){const api='https://tinyurl.com/api-create.php?url
   /* web fallback when TinyURL doesn't allow browser requests: is.gd via JSONP */
   return await new Promise(res=>{const cb='fxIsgd'+Date.now(),s=document.createElement('script'),done=v=>{delete window[cb];s.remove();res(v)};const t=setTimeout(()=>done(''),12000);
     window[cb]=j=>{clearTimeout(t);done(ok(j&&j.shorturl))};s.onerror=()=>{clearTimeout(t);done('')};s.src='https://is.gd/create.php?format=json&callback='+cb+'&url='+encodeURIComponent(url);document.head.appendChild(s)})}
-async function fxSendLink(d,url,short){const text=`${d.name} — a MtG DeckMaster deck`;
-  try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title:d.name,text,url,dialogTitle:'Share deck link'});return}
-    if(navigator.share){await navigator.share({title:d.name,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
+async function fxSendLink(d,url,short){const title=fxDeckTitle(d),text=`${title} — a MtG DeckMaster deck`;
+  try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title,text,url,dialogTitle:'Share deck link'});return}
+    if(navigator.share){await navigator.share({title,text,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
   navigator.clipboard.writeText(url).then(()=>toast(short?'Short link copied — paste it into a message':'Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
 async function fxAppLink(i){const d=D.decks[i];fxSendLink(d,fxLinkBase()+'#d='+await fxPackDeck(d),false)}
 async function fxDeckLink(i,tries){tries=tries||0;const d=D.decks[i];if(!D.uid)fxIdentity();
@@ -657,17 +663,26 @@ function fxCardObj(c,src,n,fin){const f=c.card_faces?.[0]||c,L={W:'White',U:'Blu
   return {name:c.name,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
     text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin||'Normal',status:'Added in app'}}
 async function fxOpenLink(text){const m=String(text||'').match(/[#?&]d=([A-Za-z0-9_\-]+)/);if(!m){const sh=String(text||'').match(/https?:\/\/(?:www\.)?(?:tinyurl\.com|is\.gd)\/[A-Za-z0-9_\-]+/i);if(sh)return fxOpenShort(sh[0]);return toast('That doesn’t look like a deck link')}let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
-  const n=sum(o.l,x=>+x[0]||0);fxAsk('A deck was shared with you',`<div class="sec"><b>${esc(o.n)}</b> <span class="mut">· ${esc(o.f||'')} · ${fxPl(n,'card')}</span><br>from ${fxWho(o.o||'someone',o.u)}</div><p class="mut">Links aren’t signed, so the sender can’t be verified. The deck is view-only until you copy it to your own decks.</p>`,[{t:'👁 View the deck',cls:'pri',fn:()=>fxLinkImport(o)},{t:'Cancel'}])}
+  const n=sum(o.l,x=>+x[0]||0);fxAsk('A deck was shared with you',`<div class="sec"><b>${esc((o.o?o.o+' - ':'')+o.n)}</b> <span class="mut">· ${esc(o.f||'')} · ${fxPl(n,'card')}</span><br>from ${fxWho(o.o||'someone',o.u)}</div><p class="mut">Links aren’t signed, so the sender can’t be verified. The deck is view-only until you copy it to your own decks.</p>`,[{t:'👁 View the deck',cls:'pri',fn:()=>fxLinkImport(o)},{t:'Cancel'}])}
 async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.map(([q,nm,st,cn])=>({name:String(nm||''),qty:+q||1,set:st||'',num:cn||'',sid:''})),need=[];
   items.forEach(x=>{const c=x.name&&findCard(x.name);if(c)x.own=c;else need.push(x)});try{if(need.length)await fxResolve(need)}catch(e){return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection')}
   items.forEach(x=>{if(!x.own&&x.card){const c=findCard(x.card.name);if(c)x.own=c;else if(!x.name)x.name=x.card.name}});
   const cards=[],seen=new Set();items.forEach(x=>{const src=x.own||(x.card&&Object.assign(fxCardObj(x.card,'',x.qty),{art:sImg(x.card),set:x.card.set,setName:x.card.set_name,cn:x.card.collector_number,scryId:x.card.id,leg:legOf(x.card.legalities)}));if(!src)return;x.name=src.name;if(seen.has(norm(src.name)))return;seen.add(norm(src.name));const c=JSON.parse(JSON.stringify(src));delete c.source;c.qty=x.qty;cards.push(c)});
-  const uid=o.u||('link-'+fxUuid()),rec=await fxSaveFriend({uid,name:o.o||'Shared decks',updated:Date.now(),pub:null,scope:'deck',cards,decks:[{name:o.n,format:o.f||'Casual',commander:o.c||'',cards:items.map(x=>({name:x.name,qty:x.qty,finish:'Normal'})),tokens:[]}]},'unverified',{link:true,quiet:true,nick:(o.o||'Someone')+' — shared by link'});
+  /* Signed links are checked with the sender's key. A verified deck joins that person's entry in Other collections (grouped by sender);
+     unsigned or unverifiable links stay in a separate “shared by link” entry. A link signed with this collection's own key is one of your own decks. */
+  const ok=!!(o.pub&&o.sig&&o.u&&await fxVerify(o.signed,o.sig,o.pub)),deck={name:o.n,format:o.f||'Casual',commander:o.c||'',cards:items.map(x=>({name:x.name,qty:x.qty,finish:'Normal'})),tokens:[]};
+  if(ok&&D.uid&&o.u===D.uid&&D.keys&&D.keys.pub&&D.keys.pub.x===o.pub.x&&D.keys.pub.y===o.pub.y){const i=D.decks.findIndex(d=>d.name.toLowerCase()===o.n.toLowerCase());
+    if(i>=0){V.view='decks';V.deck=i;render();scrollTo(0,0);return toast('This is your own deck — it’s already in your decks')}
+    if(!confirm(`“${o.n}” is one of your own decks (signed with your collection’s key), but it isn’t in your decks on this device.\n\nAdd it to your decks?`))return;
+    D.decks.push({name:o.n,format:deck.format,sleeve:'',commander:deck.commander,info:'Restored from your own deck link',cards:deck.cards.filter(e=>findCard(e.name)).map(e=>({name:findCard(e.name).name,qty:e.qty,finish:'Normal'})),tokens:[]});save();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);return toast('Added to your decks')}
+  await ocLoad();const ex=ok&&OC.find(r=>r.uid===o.u&&!r.sep&&!r.link),clash=ex&&ex.pub&&(ex.pub.x!==o.pub.x||ex.pub.y!==o.pub.y);
+  if(clash&&!confirm(`This link says it’s from ${ex.name}, but it was signed with a different key than the ${ex.name} you already have.\n\nIt could be someone else using their name. OK = keep it as a separate, unverified entry\nCancel = don’t open it`))return;
+  const uid=o.u||('link-'+fxUuid()),rec=await fxSaveFriend({uid,name:o.o||'Shared decks',updated:Date.now(),pub:ok&&!clash?o.pub:null,scope:'deck',cards,decks:[deck]},ok&&!clash?'signed':'unverified',ok&&!clash?{quiet:true}:{link:true,quiet:true,separate:!!clash,nick:(o.o||'Someone')+' — shared by link'});
   if(rec){await roOpen(rec.id);const i=D.decks.findIndex(d=>d.name===o.n);if(i>=0){V.view='decks';V.deck=i;render()}}}
 function fxCheckLink(){try{if(/#d=/.test(location.hash)){const h=location.hash;history.replaceState(history.state,'',location.pathname+location.search);fxOpenLink(h)}}catch(e){}}
 addEventListener('hashchange',()=>fxCheckLink());
 const fxRoDeckBtns=i=>RO?`<div class="row"><button class="pri" onclick="fxCopyDeck(${i})">＋ Copy to my decks</button><button onclick="fxSimVs(${i})">⚔ Simulate vs my decks</button></div>`:'';
-function fxCopyDeck(i){const d=D.decks[i],from=RO.name;roExit();let nm=`${d.name} (from ${from})`,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${d.name} (from ${from}) ${k++}`;
+function fxCopyDeck(i){const d=D.decks[i],from=RO.name,base=fxDeckTitle(d);roExit();let nm=base,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${base} ${k++}`;
   const cards=d.cards.map(e=>({name:(findCard(e.name)||e).name,qty:e.qty,finish:'Normal'})),own=cards.filter(e=>{const c=findCard(e.name);return c&&(c.type==='Basic Land'||c.qty>=e.qty)}).length;
   D.decks.push({name:nm,format:d.format||'Casual',sleeve:'',commander:d.commander||'',info:'Copied from '+from,cards,tokens:[]});save();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
   fxAsk('Deck copied to your decks',`<p>You own enough copies of <b>${own} of ${cards.length}</b> card titles in this deck.</p><p class="mut">Cards you don’t own are still on the list, so you can see what you’d need to get. No cards were added to your collection.</p>`,[{t:'Done',cls:'pri'}])}
