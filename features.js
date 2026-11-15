@@ -36,7 +36,7 @@ const fxPl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 function fxMigrate(){if(!D)return;D.matchups=D.matchups||[];D.sims=D.sims||[];D.swaps=D.swaps||[];D.sleeves=D.sleeves||[];
   // Matchup log: only matchups that have actually been run are listed (drops old "Template / Pending" rows).
   D.matchups.forEach(s=>{if(/MASTER MATCHUP/i.test(s.title||'')&&s.rows)s.rows=s.rows.filter((r,i)=>i===0||!(/template|pending/i.test(String(r[r.length-1]))||String(r[5]).trim()==='-'))})}
-function fxBack(){if(CAM){CAM.close();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
+function fxBack(){if(CAM){CAM.close();return true}if(IMP.stage==='pick'&&IMP.qa&&V.view==='add'&&!$('#modal').classList.contains('open')){fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
 async function fxDownload(text,name,type){const blob=new Blob([text],{type:type||'text/plain'});
   if(isNative()){try{const r=await nativeSave(blob,name,false);return toast(r.where?'Saved to '+r.where:'File shared')}catch(e){return toast('Could not save the file: '+String(e&&e.message||e).slice(0,80))}}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();toast('Saved to Downloads')}
@@ -252,7 +252,7 @@ async function fxImpStart(items,kind){
   try{if(kind==='deck'){items.forEach(x=>{const c=findCard(x.name);if(c){x.own=c;x.name=c.name}});const need=items.filter(x=>!x.own);if(need.length)await fxResolve(need,fxImpProg);need.forEach(x=>{if(x.card)x.name=x.card.name})}
     else await fxResolve(items,fxImpProg)}
   catch(e){IMP.stage='idle';render();return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection and try again')}
-  IMP.stage='preview';render();scrollTo(0,0)}
+  IMP.stage=IMP.qa&&kind==='collection'?'pick':'preview';IMP.pi=0;render();scrollTo(0,0)}
 async function fxImpFile(f){if(!f)return;let t;try{t=await fxFileText(f)}catch(e){return toast('Couldn’t read that file'+(/\.xlsx?$/i.test(f.name)?' (Excel files need internet the first time)':''))}fxImpStart(fxParseAny(t),'collection')}
 function fxImpText(){fxImpStart(fxParseAny(IMP.text||''),'collection')}
 function fxImpDeck(){if(!(IMP.dname||'').trim())return toast('Give the deck a name first');if(D.decks.some(d=>d.name.toLowerCase()===IMP.dname.trim().toLowerCase()))return toast('You already have a deck with that name');
@@ -264,7 +264,7 @@ function fxImpCommit(){
   if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty);
     if(!confirm(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nCards you already own get their quantity increased — no duplicates are created.`))return;
     ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];fxAddCard(x.card,x.qty,fin,canonSrc(fxImpSrc(x)),x.price,x.notes)});
-    saveArt();save();IMP.stage='idle';IMP.items=null;IMP.text='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);return}
+    saveArt();save();IMP.stage='idle';IMP.items=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
   if(!cards.length)return toast('None of those cards could be matched');
@@ -301,13 +301,14 @@ function fxExportCSV(){const q=v=>/[",\n]/.test(String(v))?'"'+String(v).replace
   D.cards.forEach(c=>{const fm=finMapOf(c);Object.keys(fm).filter(k=>fm[k]>0).forEach(k=>rows.push([c.name,fm[k],c.set||'',c.cn||'',k,c.source&&c.source!=='None'?c.source:'',c.type||'']))});
   fxDownload(rows.map(r=>r.map(q).join(',')).join('\r\n')+'\r\n',`${fxPrefix()}collection_${tsName()}.csv`,'text/csv')}
 function fxImportView(){
+  if(IMP.stage==='pick')return fxQAPick();
   if(IMP.stage==='work')return `<h3>Reading your ${IMP.kind==='deck'?'deck list':'cards'}…</h3><p class="mut" id="impt">Looking cards up…</p><div class="pbar"><i id="impb" style="width:3%"></i></div>`;
   if(IMP.stage==='preview'){const it=IMP.items,deck=IMP.kind==='deck',ok=it.filter(x=>x.card||x.own),bad=it.filter(x=>!x.card&&!x.own),own=it.filter(x=>x.own);
-    return `<h3>Check before importing</h3><div class="sec"><b>${fxPl(sum(ok,x=>x.qty),'card')}</b> matched on ${fxPl(ok.length,'line')}${deck?` · ${own.length} already in your collection · ${ok.length-own.length} you don’t own`:''}${bad.length?` · <b style="color:#ff6b6b">${bad.length} not found</b>`:''}</div>
-    ${bad.length?`<div class="warn"><b>Not found (these will be skipped):</b> ${esc(bad.map(x=>x.name).slice(0,60).join(', '))}${bad.length>60?'…':''}</div>`:''}
+    return `<h3>Check before importing</h3><div class="sec"><b>${fxPl(sum(ok,x=>x.qty),'card')}</b> matched on ${fxPl(ok.length,'line')}${deck?` · ${own.length} already in your collection · ${ok.length-own.length} you don’t own`:''}${bad.filter(x=>!x.skip).length?` · <b style="color:#ff6b6b">${bad.filter(x=>!x.skip).length} not found</b>`:''}${bad.filter(x=>x.skip).length?` · ${bad.filter(x=>x.skip).length} skipped`:''}</div>
+    ${bad.filter(x=>x.skip).length?`<div class="sec"><b>Skipped by you:</b> ${esc(bad.filter(x=>x.skip).map(x=>x.name).join(', '))}</div>`:''}${bad.filter(x=>!x.skip).length?`<div class="warn"><b>Not found (these will be skipped):</b> ${esc(bad.filter(x=>!x.skip).map(x=>x.name).slice(0,60).join(', '))}${bad.length>60?'…':''}</div>`:''}
     ${tbl(deck?['Qty','Card','Status']:['Qty','Card','Printing','Finish','Source'],ok.slice(0,200).map(x=>deck?[x.qty,x.name,x.own?'✓ in your collection':'not owned'+(IMP.dadd?' — will be added':'')]:[x.qty,x.card.name,`${x.card.set_name} · ${x.card.set.toUpperCase()} #${x.card.collector_number}`,x.fin,canonSrc(fxImpSrc(x))]))}
     ${ok.length>200?`<p class="mut">Showing the first 200 of ${ok.length} lines.</p>`:''}
-    <div class="row"><button onclick="fxImpCancel()">Cancel</button><button class="pri" onclick="fxImpCommit()" ${ok.length?'':'disabled'}>${deck?'Create deck':'Add to my collection'}</button></div>`}
+    <div class="row"><button onclick="fxImpCancel()">Cancel</button>${IMP.qa&&!deck?`<button onclick="IMP.stage='pick';IMP.pi=IMP.items.length-1;render()">‹ Change printings</button>`:''}<button class="pri" onclick="fxImpCommit()" ${ok.length?'':'disabled'}>${deck?'Create deck':'Add to my collection'}</button></div>`}
   const site=(n,u,t)=>`<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
   return `<h3>Import cards into your collection</h3><p class="mut">Add many cards at once from a file or a pasted list. You see a preview first — nothing is added until you confirm.</p>
   <div class="f"><label>Where should imported cards say they came from?</label><select onchange="IMP.mode=this.value;render()"><option value="set" ${IMP.mode==='set'?'selected':''}>Each card’s own set (e.g. “Lorwyn Eclipsed”)</option><option value="one" ${IMP.mode==='one'?'selected':''}>One source for everything…</option></select>
@@ -667,10 +668,10 @@ function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.n
   save();fxOverrideAuto(i);closeM();render();toast('Deck details saved')}
 
 /* ---------- Add card tab: type several card names at once ---------- */
-const fxQuickAdd=()=>`<div class="sec" style="margin-top:22px"><h4>Add several cards at once</h4><div class="f"><textarea id="qadd" rows="3" placeholder="Sol Ring, Llanowar Elves, 4 Lightning Bolt">${esc(V.qadd||'')}</textarea></div>
+const fxQuickAdd=()=>`<div class="sec" style="margin-top:22px"><h4>Add several cards at once</h4><div class="f"><textarea id="qadd" rows="3" placeholder="Sol Ring, Llanowar Elves, 4 Lightning Bolt" oninput="V.qadd=this.value">${esc(V.qadd||'')}</textarea></div>
   <p class="mut" style="font-size:12px;margin:6px 0">Type the card names with a comma between each one. Don’t use commas inside a card’s name — they are only for separating cards. Put a number in front for more than one copy (“4 Lightning Bolt”). You’ll see a preview before anything is added.</p><div class="row"><button class="pri" onclick="fxQuickGo()">Look up these cards</button></div></div>`;
 function fxQuickGo(){const txt=(document.getElementById('qadd').value||'').trim();if(!txt)return toast('Type one or more card names first');const items=fxParseList(txt.split(/[,\n]+/).map(x=>x.trim()).filter(Boolean).join('\n'));if(!items.length)return toast('I couldn’t find any card names in that');
-  V.qadd='';IMP.qa=true;fxImpStart(items,'collection')}
+  V.qadd=txt;IMP.qa=true;fxImpStart(items,'collection')}
 
 /* ---------- new source name: suggest similar existing sources as you type ---------- */
 function fxSrcSuggest(v){const el=document.getElementById('srcsug');if(!el)return;v=String(v||'').trim();const lv=v.toLowerCase();if(lv.length<2){el.innerHTML='';return}
@@ -962,19 +963,19 @@ function fxACTouch(box){let st=null;
   box.addEventListener('pointerup',e=>{const s=st;st=null;if(!s||s.moved||s.k==null)return;const o=e.target.closest('[data-ack]');if(!o||+o.dataset.ack!==s.k)return;e.preventDefault();fxACPick(s.k)});
   box.addEventListener('click',e=>e.preventDefault())}
 function fxACX(inp){const w=inp.parentElement;if(!w||!w.classList.contains('acw'))return;w.classList.toggle('has',!!inp.value)}
-function fxACWrap(inp){if(inp.parentElement&&inp.parentElement.classList.contains('acw'))return;const w=document.createElement('span');w.className='acw';if(inp.style.flex){w.style.flex=inp.style.flex;inp.style.flex=''}
+function fxACWrap(inp){if(inp.parentElement&&inp.parentElement.classList.contains('acw'))return;const w=document.createElement('span');w.className='acw'+(inp.tagName==='TEXTAREA'?' ta':'');if(inp.style.flex){w.style.flex=inp.style.flex;inp.style.flex=''}
   inp.parentNode.insertBefore(w,inp);w.appendChild(inp);const b=document.createElement('button');b.type='button';b.className='acx';b.setAttribute('aria-label','Clear');b.textContent='✕';
   b.addEventListener('pointerdown',e=>e.preventDefault());b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();inp.value='';inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));fxACX(inp);inp.focus()});
   w.appendChild(b);fxACX(inp)}
 function fxACWire(root){(root||document).querySelectorAll('input[list]').forEach(inp=>{inp.dataset.acl=inp.getAttribute('list');inp.removeAttribute('list');inp.setAttribute('autocomplete','off');fxACWrap(inp)});
-  (root||document).querySelectorAll('#modal input[type=search],#modal #unkq,#modal #um_n').forEach(fxACWrap)}
+  (root||document).querySelectorAll('#modal input[type=search],#modal #unkq,#modal #um_n,#qadd,#qas').forEach(fxACWrap)}
 document.addEventListener('focusin',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.acl)fxACShow(t)});
 document.addEventListener('input',e=>{const t=e.target;if(!t||!t.parentElement)return;if(t.parentElement.classList.contains('acw'))fxACX(t);if(t.dataset&&t.dataset.acl)fxACShow(t)});
 document.addEventListener('focusout',e=>{if(FXAC&&e.target===FXAC.inp)setTimeout(()=>{if(FXAC&&!FXAC.inBox&&document.activeElement!==FXAC.inp)fxACClose();if(FXAC)FXAC.inBox=false},250)});
 document.addEventListener('pointerdown',e=>{if(FXAC&&!FXAC.box.contains(e.target)&&e.target!==FXAC.inp&&!e.target.closest('.acw'))fxACClose()},true);
 addEventListener('scroll',e=>{if(FXAC&&!FXAC.box.contains(e.target))fxACPlace()},true);
 addEventListener('resize',()=>fxACPlace());if(window.visualViewport)visualViewport.addEventListener('resize',()=>fxACPlace());
-new MutationObserver(()=>{if(document.querySelector('input[list],#modal input[type=search]:not(.acw input),#modal #unkq:not(.acw input),#modal #um_n:not(.acw input)'))fxACWire()}).observe(document.documentElement,{childList:true,subtree:true});
+new MutationObserver(()=>{if(document.querySelector('input[list],#modal input[type=search]:not(.acw input),#modal #unkq:not(.acw input),#modal #um_n:not(.acw input),#qadd:not(.acw textarea),#qas:not(.acw input)'))fxACWire()}).observe(document.documentElement,{childList:true,subtree:true});
 
 /* ---------- custom card artwork: take a photo or upload a picture (never a Scryfall search or a card scan) ---------- */
 function fxCustomArt(name){const c=findCard(name);if(!c)return;const q=esc(c.name).replace(/'/g,"\\'");
@@ -1026,3 +1027,37 @@ function fxCustomEditSave(name){const c=findCard(name);if(!c)return;const nm=($(
   if(!confirm(`Save these changes to ${c.name}?\n\n${[...(nm!==c.name?[`Name: ${c.name} → ${nm}`]:[]),...ch.map(k=>`${lbl[k]}: ${String(c[k]??'').slice(0,30)} → ${String(now[k]).slice(0,30)}`)].join('\n')||'Colors'}`))return;
   ch.forEach(k=>logEdit(c.name,lbl[k],c[k],now[k]));Object.assign(c,now);c.ci=ci;if(nm!==c.name){logEdit(c.name,'Name',c.name,nm);renameCard(c.name,nm)}
   IDX=null;save();render();showCard(nm);toast('Card details saved')}
+
+/* ---------- several cards at once: choose the printing of each card, in the order typed ---------- */
+function fxQAPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i],n=it.length,done=it.filter(y=>y.card&&!y.skip).length;
+  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Card ${i+1} of ${n}</b><span class="mut" style="font-size:12px">${done} ready</span></div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
+  const nav=`<div class="row" style="margin-top:12px"><button onclick="fxQAPrev()">‹ ${i?'Previous':'Back'}</button><button onclick="fxQASkip()">${x.skip?'Don’t skip':'Skip this card'}</button><button class="pri" onclick="fxQANext()" ${!x.card&&!x.skip?'disabled':''}>${i+1<n?'Next ›':'Review all ›'}</button></div>`;
+  if(x.skip)return head+`<h3>${esc(x.name)}</h3><p class="mut">Skipped — it won’t be added.</p>`+nav;
+  if(x.reading)return head+`<h3>Reading the card…</h3><p class="mut" id="qamsg">${esc(x.reading)}</p>`;
+  if(!x.card)return head+`<h3>Couldn’t find “${esc(x.name)}”</h3><p class="mut">Type the name again (suggestions come from Scryfall), or scan the card.</p>
+    <input id="qas" type="search" value="${esc(x.q!=null?x.q:x.name)}" placeholder="Start typing a card name" style="width:100%" autocomplete="off" oninput="fxQASearch(this.value)"><div class="sug" id="qasug"></div>
+    <div class="row" style="margin-top:10px"><button onclick="fxQAScan()">📷 Scan this card</button></div>`+nav;
+  const c=x.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f);if(!fins.includes(x.fin))x.fin=fins[0];if(!x.prints&&!x.loading)fxQALoad(i);
+  const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'',list=x.prints||[c];
+  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3><p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”. Tap the artwork that matches your card.</p>
+  <div class="row" style="align-items:center;margin:0 0 8px"><label style="margin:0">Copies</label><input type="number" min="1" value="${x.qty}" style="width:80px" onchange="IMP.items[${i}].qty=Math.max(1,parseInt(this.value)||1)">
+  ${fins.length>1?`<span class="chips" style="margin:0">${fins.map(f=>`<button class="${x.fin===f?'on':''}" onclick="IMP.items[${i}].fin='${f}';render()">${f}</button>`).join('')}</span>`:`<span class="mut">${esc(fins[0])}</span>`}</div>
+  <div class="grid">${list.map((p,k)=>`<div class="tile" onclick="fxQAPrint(${i},${k})" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
+  ${x.loading?'<p class="mut">Loading all printings…</p>':''}`+nav}
+async function fxQALoad(i){const x=IMP.items[i];if(!x||!x.card||x.prints||x.loading)return;x.loading=true;const all=[];let url=x.card.prints_search_uri,pages=0;
+  try{while(url&&pages<4){const p=await scry(url);if(!p||!p.data)break;all.push(...p.data);pages++;url=p.has_more?p.next_page:null}}catch(e){}
+  x.loading=false;x.prints=all.length?all:[x.card];if(!x.prints.some(p=>p.id===x.card.id))x.prints.unshift(x.card);if(IMP.stage==='pick'&&IMP.pi===i&&V.view==='add')render()}
+function fxQAPrint(i,k){const x=IMP.items[i];const p=(x.prints||[])[k];if(!p)return;x.card=p;render()}
+function fxQANext(){const x=IMP.items[IMP.pi];if(!x.card&&!x.skip)return;if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else{IMP.stage='preview';IMP.items.forEach(y=>{if(y.skip){y.card0=y.card0||y.card;y.card=null}});render();scrollTo(0,0)}}
+function fxQAPrev(){if(IMP.pi>0){IMP.pi--;render();scrollTo(0,0)}else fxImpCancel()}
+function fxQASkip(){const x=IMP.items[IMP.pi];x.skip=!x.skip;if(!x.skip&&x.card0&&!x.card)x.card=x.card0;render()}
+let QAT=null;
+function fxQASearch(v){const x=IMP.items[IMP.pi];x.q=v;clearTimeout(QAT);const q=v.trim();if(q.length<2){const s=$('#qasug');if(s)s.innerHTML='';return}
+  QAT=setTimeout(async()=>{const r=await scry('/cards/autocomplete?q='+encodeURIComponent(q));const s=$('#qasug');if(!s||($('#qas')||{}).value.trim()!==q)return;
+    s.innerHTML=(r&&r.data||[]).slice(0,12).map((n,k)=>`<div onclick="fxQAUse(${JSON.stringify(n).replace(/"/g,'&quot;')})">${esc(n)}</div>`).join('')||'<p class="mut">No cards found with that name.</p>'},250)}
+async function fxQAUse(name){const x=IMP.items[IMP.pi];const c=await scry('/cards/named?exact='+encodeURIComponent(name));if(!c||c.object!=='card')return toast('Couldn’t load that card — check your connection');
+  x.raw=x.raw||x.name;x.card=c;x.name=c.name;x.prints=null;x.q=null;render()}
+function fxQAScan(){const i=IMP.pi;fxCam(async blob=>{const x=IMP.items[i];x.raw=x.raw||x.name;x.reading='Loading the text reader…';render();
+  try{await loadTess();const r=await identify(blob,null,m=>{x.reading=m;const e=$('#qamsg');if(e)e.textContent=m});x.reading=null;
+    if(r.cards&&r.cards.length){x.card=r.cards[0].card;x.name=x.card.name;x.prints=null;toast(`Found ${x.card.name}`)}else toast('Couldn’t read that card — try again, or type the name')}
+  catch(e){x.reading=null;toast('Couldn’t read that photo')}render()})}
