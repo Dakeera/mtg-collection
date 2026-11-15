@@ -634,15 +634,21 @@ async function fxSendLink(d,url,short){const text=`${d.name} — a MtG DeckMaste
     if(navigator.share){await navigator.share({title:d.name,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
   navigator.clipboard.writeText(url).then(()=>toast(short?'Short link copied — paste it into a message':'Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
 async function fxAppLink(i){const d=D.decks[i];fxSendLink(d,fxLinkBase()+'#d='+await fxPackDeck(d),false)}
-async function fxDeckLink(i){const d=D.decks[i];if(!D.uid)fxIdentity();
+async function fxDeckLink(i,tries){tries=tries||0;const d=D.decks[i];if(!D.uid)fxIdentity();
   const offline=()=>fxAsk('You’re offline',`<p>A short link needs the internet.</p><p class="mut">You can share an <b>app-only link</b> instead: it carries the deck list itself, so it’s longer, but it works without any outside service and opens in MtG DeckMaster (app or web).</p>`,[{t:'🔗 Share app-only link',cls:'pri',fn:()=>fxAppLink(i)},{t:'Cancel'}]);
   if(!navigator.onLine)return offline();
   toast('Making a short link…');const long=fxLinkBase()+'?d='+await fxPackDeck(d),s=await fxShortUrl(long);
   if(s)return fxSendLink(d,s,true);
   if(!navigator.onLine)return offline();
-  fxAsk('Couldn’t make a short link','<p class="mut">The link service (TinyURL) didn’t answer. Try again in a moment, or send the deck as a file.</p>',[{t:'↻ Try again',cls:'pri',fn:()=>fxDeckLink(i)},{t:'📄 Send as a file',fn:()=>fxShareFile('deck',i)},{t:'Cancel'}])}
+  /* online but no short link: one retry, then the app-only link joins the choices (resets next time Share deck is opened) */
+  if(!tries)return fxAsk('Couldn’t make a short link','<p class="mut">The link service (TinyURL) didn’t answer. Try again in a moment, or send the deck as a file.</p>',[{t:'↻ Try again',cls:'pri',fn:()=>fxDeckLink(i,1)},{t:'📄 Send as a file',fn:()=>fxShareFile('deck',i)},{t:'Cancel'}]);
+  fxAsk('Still no short link','<p>The link service still isn’t answering.</p><p class="mut">You can share an <b>app-only link</b> instead: it carries the deck list itself, so it’s longer, but it works without any outside service and opens in MtG DeckMaster (app or web). Or send the deck as a file.</p>',[{t:'🔗 Share app-only link',cls:'pri',fn:()=>fxAppLink(i)},{t:'📄 Send as a file',fn:()=>fxShareFile('deck',i)},{t:'Cancel'}])}
 /* A pasted / opened short link: the Android app asks TinyURL where it leads; otherwise the link is opened and comes back through the deck-link page. */
+/* is.gd can tell us where a short link leads (JSONP works in the browser and in the Android app). */
+const fxIsgdLookup=u=>new Promise(res=>{const code=(u.match(/is\.gd\/([A-Za-z0-9_\-]+)/i)||[])[1];if(!code)return res('');const cb='fxIsgdF'+Date.now(),s=document.createElement('script'),done=v=>{delete window[cb];s.remove();res(v||'')};const t=setTimeout(()=>done(''),10000);
+  window[cb]=j=>{clearTimeout(t);done(j&&j.url)};s.onerror=()=>{clearTimeout(t);done('')};s.src='https://is.gd/forward.php?format=json&callback='+cb+'&shorturl='+code;document.head.appendChild(s)});
 async function fxOpenShort(u){const H=isNative()&&window.Capacitor.Plugins.CapacitorHttp;
+  if(/is\.gd\//i.test(u)&&navigator.onLine){const t=await fxIsgdLookup(u),m=String(t).match(/[#?&]d=[A-Za-z0-9_\-]+/);if(m)return fxOpenLink(m[0])}
   if(H){try{toast('Opening the short link…');const r=await H.get({url:u,responseType:'text'}),fin=String(r&&r.url||''),m=fin.match(/[#?&]d=[A-Za-z0-9_\-]+/)||String(r&&r.data||'').match(/[#?&]d=[A-Za-z0-9_\-]+/);if(m)return fxOpenLink(m[0])}catch(e){}}
   if(!navigator.onLine)return toast('You’re offline — short links need the internet to open');
   if(isNative())window.open(u,'_system');else location.href=u}
