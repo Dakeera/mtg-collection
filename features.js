@@ -801,8 +801,9 @@ function fxCompress(blob){return new Promise((ok,no)=>{const u=URL.createObjectU
     if(!blob.cropped){if(sw/sh>R){const w=sh*R;sx=(sw-w)/2;sw=w}else{const h=sw/R;sy=(sh-h)/2;sh=h}}
     const W=490,H=684,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');x.imageSmoothingQuality='high';x.fillStyle='#000';x.fillRect(0,0,W,H);x.drawImage(im,sx,sy,sw,sh,0,0,W,H);
     let q=0.82,url=cv.toDataURL('image/jpeg',q);while(url.length*0.75>65000&&q>0.42){q-=0.08;url=cv.toDataURL('image/jpeg',q)}ok(url)};im.src=u})}
-function fxCustomPhoto(name){closeM();fxCam(async b=>{const c=findCard(name);if(!c)return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
-  CIMG[c.name]=url;fxImgPut(c.name,url);c.imgAt=Date.now();save();render();showCard(c.name);toast(`Photo saved (${Math.round(url.length*0.75/1024)} KB)`)})}
+function fxCustomPhoto(name){closeM();fxCam(b=>fxCustomPhotoSet(name,b))}
+async function fxCustomPhotoSet(name,b){{const c=findCard(name);if(!c||!b)return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
+  CIMG[c.name]=url;fxImgPut(c.name,url);c.imgAt=Date.now();save();render();showCard(c.name);toast(`Picture saved (${Math.round(url.length*0.75/1024)} KB)`)}}
 function fxCustomPhotoDel(name){const c=findCard(name);if(!c||!confirm(`Remove the photo of ${c.name}?`))return;delete CIMG[c.name];fxImgDel(c.name);c.imgAt=Date.now();save();render();showCard(c.name)}
 
 /* ---------- rule override: two approvals, once per deck ---------- */
@@ -957,3 +958,15 @@ document.addEventListener('pointerdown',e=>{const o=e.target.closest&&e.target.c
   const inp=FXAC.inp,v=FXAC.opts[+o.dataset.ack];inp.value=v;fxACClose();inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));fxACClose()},true);
 addEventListener('scroll',()=>{if(FXAC)fxACShow(FXAC.inp)},true);
 new MutationObserver(()=>{if(document.querySelector('input[list]'))fxACWire()}).observe(document.documentElement,{childList:true,subtree:true});
+
+/* ---------- custom card artwork: take a photo or upload a picture (never a Scryfall search or a card scan) ---------- */
+function fxCustomArt(name){const c=findCard(name);if(!c)return;const q=esc(c.name).replace(/'/g,"\\'");
+  openM(`<h3>Picture for ${esc(c.name)}</h3><p class="mut">Custom cards use your own picture. Nothing is looked up online.</p>
+  ${CIMG[c.name]?`<div class="frame" style="margin:10px auto"><img src="${CIMG[c.name]}" alt=""></div>`:''}
+  <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+  <button class="pri" style="padding:13px" onclick="fxCustomPhoto('${q}')">📷 Take a photo (line it up in the green corners)</button>
+  <label class="btn" style="padding:13px;text-align:center">🖼 Upload a picture from your phone<input type="file" accept="image/*" hidden onchange="fxCustomUpload('${q}',this.files[0]);this.value=''"></label>
+  ${CIMG[c.name]?`<button onclick="fxCustomPhotoDel('${q}')">Remove picture</button>`:''}
+  <button onclick="showCard('${q}')">← Back</button></div>
+  <p class="mut" style="font-size:12px">Uploaded pictures are trimmed to card shape from the centre and compressed (about 60 KB).</p>`,()=>showCard(c.name))}
+function fxCustomUpload(name,f){if(!f)return;if(!/^image\//.test(f.type||'image/'))return toast('That isn’t a picture file');fxCustomPhotoSet(name,f)}

@@ -212,7 +212,7 @@ function go(k){if(k!==V.view&&!fxCanLeave())return;if(k!==V.view){SCR[V.view]=sc
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
   if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return fxDraftChg(V.deck,b.dataset.adc,1,true);
-  if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf,b.dataset.qs);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return vfAsk(b.dataset.vf);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-apv]'))return apView(b.dataset.apv);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
+  if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf,b.dataset.qs);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return findCard(b.dataset.vf)?.custom?fxCustomArt(b.dataset.vf):vfAsk(b.dataset.vf);if(b=t.closest('[data-cart]'))return fxCustomArt(b.dataset.cart);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-apv]'))return apView(b.dataset.apv);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(b=t.closest('[data-dcd]'))return dcDetail(+b.dataset.dcd);if(t.id==='modal')tryClose()});
 
 /* ---------- collection ---------- */
@@ -238,7 +238,7 @@ function showCard(name,keep){
   FACE=false;KEEPSCROLL=keep===true;
   const c=findCard(name)||{name,colors:'',type:'',subtype:'',text:'',qty:0,source:'',finish:''},u=usage(c.name),has=v=>v&&v!=='None';
   const acq=D.acq.filter(a=>norm(a.name)===norm(c.name)),real=isReal(c)&&findCard(c.name),kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
-  const btn=real?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
+  const btn=real&&c.custom?`<button class="artbtn" title="Add or change this card's picture" data-cart="${esc(c.name)}">🎨</button>`:real?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
   const tags=[c.custom&&{h:'<b style="color:#c39bff">★ Custom card</b>'},c.type,has(c.subtype)&&c.subtype,has(c.colors)&&{h:colHtml(c.colors)},has(c.cost)&&{h:costHtml(c.cost)},has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean);
   openM(`<div class="cp"><div class="frame${fxHasFoil(c)?' foil':''}">${imgTag(c.name,`data-zoom="${esc(c.name)}"`,true)||`<div class="ph">${esc(c.name)}</div>`}${btn}</div>
   <p class="hint mut">${artOf(c.name)?'Tap the card to view it full screen':''}</p>${backUrl(c.name)?`<button class="flipbtn" data-flip="${esc(c.name)}">↻ Show back</button>`:''}
@@ -281,7 +281,7 @@ function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.
 
 const vfAsk=n=>{if(confirm(`The artwork for ${n} is marked verified ✓.\n\nDo you want to change it?`))artPicker(n)};
 let AP={name:'',list:[],q:''};
-async function artPicker(name){
+async function artPicker(name){if(findCard(name)?.custom)return fxCustomArt(name);
   AP={name,list:[],q:''};
   openM(`<button onclick="showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}</h3><p class="mut">Pick the printing that matches your physical card. Your “pulled from” source stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><button style="margin:8px 0;display:block" onclick="fxCam(apScan)">📷 Scan the card to verify it</button><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div>`,()=>showCard(AP.name));
   const base=await scry('/cards/named?fuzzy='+encodeURIComponent(front(name)));
