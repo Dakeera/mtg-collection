@@ -234,6 +234,12 @@ async function fxResolve(items,onProg){
       if(x.card&&x.set&&x.num&&!x.sid&&norm(front(x.card.name))!==k&&byN.get(k))x.card=byN.get(k)})};
   await round(items,x=>x.sid?{id:x.sid}:x.set&&x.num?{set:x.set,collector_number:String(x.num)}:x.set?{name:front(x.name),set:x.set}:{name:front(x.name)});
   const miss=items.filter(x=>!x.card);if(miss.length)await round(miss,x=>({name:front(x.name)}));
+  const still=items.filter(x=>!x.card&&!x.own).slice(0,80);let k=0;
+  for(const x of still){onProg&&onProg(k++,still.length,'Checking spelling');const nm=front(x.name).replace(/[^\p{L}\p{N}' ,.-]/gu,' ').replace(/\s+/g,' ').trim();if(nm.length<3)continue;
+    const c=await scry('/cards/named?fuzzy='+encodeURIComponent(nm));
+    if(c&&c.object==='card'){x.typed=x.name;x.card=c;x.name=c.name;x.fuzzy=true;continue}
+    const ac=await scry('/cards/autocomplete?q='+encodeURIComponent(nm.slice(0,Math.max(3,Math.min(nm.length,6)))));
+    const sg=((ac&&ac.data)||[]).map(n=>({n,s:sim(nm,n)})).sort((a,b)=>b.s-a.s).slice(0,5).map(x=>x.n);if(sg.length)x.sugs=sg}
   onProg&&onProg(1,1)}
 function fxAddCard(c,n,fin,src,price,notes){
   const nm=c.name;let e=findCard(nm),had=false;fin=fin||'Normal';
@@ -245,7 +251,7 @@ function fxAddCard(c,n,fin,src,price,notes){
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
-const fxImpProg=(d,t)=>{const b=document.getElementById('impb'),x=document.getElementById('impt');if(b)b.style.width=Math.max(3,Math.round(d/Math.max(1,t)*100))+'%';if(x)x.textContent=`Looking cards up… ${Math.min(d,t)} of ${t}`};
+const fxImpProg=(d,t,what)=>{const b=document.getElementById('impb'),x=document.getElementById('impt');if(b)b.style.width=Math.max(3,Math.round(d/Math.max(1,t)*100))+'%';if(x)x.textContent=`${what||'Looking cards up'}… ${Math.min(d,t)} of ${t}`};
 async function fxImpStart(items,kind){
   if(!items.length)return toast('I couldn’t find any cards in that — check the format in the guide below');
   Object.assign(IMP,{stage:'work',kind,items});render();
@@ -304,9 +310,9 @@ function fxImportView(){
   if(IMP.stage==='pick')return fxQAPick();
   if(IMP.stage==='work')return `<h3>Reading your ${IMP.kind==='deck'?'deck list':'cards'}…</h3><p class="mut" id="impt">Looking cards up…</p><div class="pbar"><i id="impb" style="width:3%"></i></div>`;
   if(IMP.stage==='preview'){const it=IMP.items,deck=IMP.kind==='deck',ok=it.filter(x=>x.card||x.own),bad=it.filter(x=>!x.card&&!x.own),own=it.filter(x=>x.own);
-    return `<h3>Check before importing</h3><div class="sec"><b>${fxPl(sum(ok,x=>x.qty),'card')}</b> matched on ${fxPl(ok.length,'line')}${deck?` · ${own.length} already in your collection · ${ok.length-own.length} you don’t own`:''}${bad.filter(x=>!x.skip).length?` · <b style="color:#ff6b6b">${bad.filter(x=>!x.skip).length} not found</b>`:''}${bad.filter(x=>x.skip).length?` · ${bad.filter(x=>x.skip).length} skipped`:''}</div>
+    return `<h3>Check before importing</h3><div class="sec"><b>${fxPl(sum(ok,x=>x.qty),'card')}</b> matched on ${fxPl(ok.length,'line')}${ok.filter(x=>x.fuzzy).length?` · <b style="color:#f39c12">${ok.filter(x=>x.fuzzy).length} spelling corrected — check them below</b>`:''}${deck?` · ${own.length} already in your collection · ${ok.length-own.length} you don’t own`:''}${bad.filter(x=>!x.skip).length?` · <b style="color:#ff6b6b">${bad.filter(x=>!x.skip).length} not found</b>`:''}${bad.filter(x=>x.skip).length?` · ${bad.filter(x=>x.skip).length} skipped`:''}</div>
     ${bad.filter(x=>x.skip).length?`<div class="sec"><b>Skipped by you:</b> ${esc(bad.filter(x=>x.skip).map(x=>x.name).join(', '))}</div>`:''}${bad.filter(x=>!x.skip).length?`<div class="warn"><b>Not found (these will be skipped):</b> ${esc(bad.filter(x=>!x.skip).map(x=>x.name).slice(0,60).join(', '))}${bad.length>60?'…':''}</div>`:''}
-    ${tbl(deck?['Qty','Card','Status']:['Qty','Card','Printing','Finish','Source'],ok.slice(0,200).map(x=>deck?[x.qty,x.name,x.own?'✓ in your collection':'not owned'+(IMP.dadd?' — will be added':'')]:[x.qty,x.card.name,`${x.card.set_name} · ${x.card.set.toUpperCase()} #${x.card.collector_number}`,x.fin,canonSrc(fxImpSrc(x))]))}
+    ${tbl(deck?['Qty','Card','Status']:['Qty','Card','Printing','Finish','Source'],ok.slice(0,200).map(x=>deck?[x.qty,x.name,x.own?'✓ in your collection':'not owned'+(IMP.dadd?' — will be added':'')]:[x.qty,{h:esc(x.card.name)+(x.fuzzy?`<br><span style="color:#f39c12;font-size:12px">you typed “${esc(x.typed)}”</span>`:'')},`${x.card.set_name} · ${x.card.set.toUpperCase()} #${x.card.collector_number}`,x.fin,canonSrc(fxImpSrc(x))]))}
     ${ok.length>200?`<p class="mut">Showing the first 200 of ${ok.length} lines.</p>`:''}
     <div class="row"><button onclick="fxImpCancel()">Cancel</button>${IMP.qa&&!deck?`<button onclick="IMP.stage='pick';IMP.pi=IMP.items.length-1;render()">‹ Change printings</button>`:''}<button class="pri" onclick="fxImpCommit()" ${ok.length?'':'disabled'}>${deck?'Create deck':'Add to my collection'}</button></div>`}
   const site=(n,u,t)=>`<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
@@ -1034,12 +1040,12 @@ function fxQAPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i]
   const nav=`<div class="row" style="margin-top:12px"><button onclick="fxQAPrev()">‹ ${i?'Previous':'Back'}</button><button onclick="fxQASkip()">${x.skip?'Don’t skip':'Skip this card'}</button><button class="pri" onclick="fxQANext()" ${!x.card&&!x.skip?'disabled':''}>${i+1<n?'Next ›':'Review all ›'}</button></div>`;
   if(x.skip)return head+`<h3>${esc(x.name)}</h3><p class="mut">Skipped — it won’t be added.</p>`+nav;
   if(x.reading)return head+`<h3>Reading the card…</h3><p class="mut" id="qamsg">${esc(x.reading)}</p>`;
-  if(!x.card)return head+`<h3>Couldn’t find “${esc(x.name)}”</h3><p class="mut">Type the name again (suggestions come from Scryfall), or scan the card.</p>
+  if(!x.card)return head+`<h3>Couldn’t find “${esc(x.name)}”</h3>${x.sugs&&x.sugs.length?`<p style="margin:6px 0 4px">Did you mean one of these?</p><div class="sug">${x.sugs.map(n=>`<div onclick="fxQAUse(${JSON.stringify(n).replace(/"/g,'&quot;')})">${esc(n)}</div>`).join('')}</div><p class="mut">Or type the name again (suggestions come from Scryfall), or scan the card.</p>`:'<p class="mut">Type the name again (suggestions come from Scryfall), or scan the card.</p>'}
     <input id="qas" type="search" value="${esc(x.q!=null?x.q:x.name)}" placeholder="Start typing a card name" style="width:100%" autocomplete="off" oninput="fxQASearch(this.value)"><div class="sug" id="qasug"></div>
     <div class="row" style="margin-top:10px"><button onclick="fxQAScan()">📷 Scan this card</button></div>`+nav;
   const c=x.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f);if(!fins.includes(x.fin))x.fin=fins[0];if(!x.prints&&!x.loading)fxQALoad(i);
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'',list=x.prints||[c];
-  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3><p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”. Tap the artwork that matches your card.</p>
+  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}<p class="mut" style="margin:0 0 8px">Tap the artwork that matches your card.</p>
   <div class="row" style="align-items:center;margin:0 0 8px"><label style="margin:0">Copies</label><input type="number" min="1" value="${x.qty}" style="width:80px" onchange="IMP.items[${i}].qty=Math.max(1,parseInt(this.value)||1)">
   ${fins.length>1?`<span class="chips" style="margin:0">${fins.map(f=>`<button class="${x.fin===f?'on':''}" onclick="IMP.items[${i}].fin='${f}';render()">${f}</button>`).join('')}</span>`:`<span class="mut">${esc(fins[0])}</span>`}</div>
   <div class="grid">${list.map((p,k)=>`<div class="tile" onclick="fxQAPrint(${i},${k})" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
@@ -1056,8 +1062,9 @@ function fxQASearch(v){const x=IMP.items[IMP.pi];x.q=v;clearTimeout(QAT);const q
   QAT=setTimeout(async()=>{const r=await scry('/cards/autocomplete?q='+encodeURIComponent(q));const s=$('#qasug');if(!s||($('#qas')||{}).value.trim()!==q)return;
     s.innerHTML=(r&&r.data||[]).slice(0,12).map((n,k)=>`<div onclick="fxQAUse(${JSON.stringify(n).replace(/"/g,'&quot;')})">${esc(n)}</div>`).join('')||'<p class="mut">No cards found with that name.</p>'},250)}
 async function fxQAUse(name){const x=IMP.items[IMP.pi];const c=await scry('/cards/named?exact='+encodeURIComponent(name));if(!c||c.object!=='card')return toast('Couldn’t load that card — check your connection');
-  x.raw=x.raw||x.name;x.card=c;x.name=c.name;x.prints=null;x.q=null;render()}
+  x.raw=x.raw||x.typed||x.name;x.card=c;x.name=c.name;x.prints=null;x.q=null;x.fuzzy=false;render()}
 function fxQAScan(){const i=IMP.pi;fxCam(async blob=>{const x=IMP.items[i];x.raw=x.raw||x.name;x.reading='Loading the text reader…';render();
   try{await loadTess();const r=await identify(blob,null,m=>{x.reading=m;const e=$('#qamsg');if(e)e.textContent=m});x.reading=null;
     if(r.cards&&r.cards.length){x.card=r.cards[0].card;x.name=x.card.name;x.prints=null;toast(`Found ${x.card.name}`)}else toast('Couldn’t read that card — try again, or type the name')}
   catch(e){x.reading=null;toast('Couldn’t read that photo')}render()})}
+function fxQAWrong(){const x=IMP.items[IMP.pi];x.q=x.typed;x.sugs=null;x.card=null;x.prints=null;x.fuzzy=false;x.name=x.typed;render();setTimeout(()=>{const i=$('#qas');if(i){i.focus();fxQASearch(i.value)}},50)}
