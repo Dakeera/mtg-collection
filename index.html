@@ -163,23 +163,23 @@ async function fetchArt(){
 const FMTS=[['standard','Standard'],['pioneer','Pioneer'],['modern','Modern'],['legacy','Legacy'],['vintage','Vintage'],['commander','Commander'],['oathbreaker','Oathbreaker'],['brawl','Brawl'],['standardbrawl','Standard Brawl'],['pauper','Pauper'],['paupercommander','Pauper Commander'],['historic','Historic'],['timeless','Timeless'],['alchemy','Alchemy'],['gladiator','Gladiator'],['penny','Penny Dreadful'],['duel','Duel Commander'],['oldschool','Old School'],['premodern','Premodern'],['predh','PreDH'],['future','Future Standard']];
 const legOf=l=>{const o={};FMTS.forEach(([k])=>{const v=l&&l[k];if(v==='legal')o[k]='l';else if(v==='banned')o[k]='b';else if(v==='restricted')o[k]='r'});return o};
 let LEGBUSY=false;
-async function fetchLegal(onProg,onlyMissing){
-  if(LEGBUSY||!D)return true;const stale=c=>!c.leg||(!onlyMissing&&(!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5)),todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return true;
+async function fetchLegal(onProg,onlyMissing,list){
+  if(LEGBUSY||!D)return true;const stale=c=>onlyMissing?!c.leg&&!c.legMiss:!c.leg||!c.legAt||(Date.now()-new Date(c.legAt))>14*864e5,todo=(list||D.cards).filter(c=>isReal(c)&&stale(c));if(!todo.length)return true;
   LEGBUSY=true;const names=[...new Set(todo.map(c=>front(c.name)))];let ok=true;
   try{for(let i=0;i<names.length;i+=75){onProg&&onProg(i,names.length);
     const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:names.slice(i,i+75).map(name=>({name}))})});
     if(!r.ok)throw 0;const j=await r.json(),m=new Map((j.data||[]).map(c=>[norm(front(c.name)),legOf(c.legalities)]));
-    todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today()}});persist()}onProg&&onProg(names.length,names.length)}catch(e){ok=false}
+    const asked=new Set(names.slice(i,i+75).map(norm));todo.forEach(c=>{const l=m.get(norm(front(c.name)));if(l){c.leg=l;c.legAt=today();delete c.legMiss}else if(asked.has(norm(front(c.name))))c.legMiss=today()});persist()}onProg&&onProg(names.length,names.length)}catch(e){ok=false}
   LEGBUSY=false;return ok}
 // Before building a legality-filtered deck: load any missing legality data right now, with a progress screen, so no card is left out.
-async function ensureLegal(){
-  const miss=()=>D.cards.filter(c=>isReal(c)&&!c.leg).length;if(!miss())return true;
+async function ensureLegal(list){
+  const miss=()=>(list||D.cards).filter(c=>isReal(c)&&!c.leg&&!c.legMiss).length;if(!miss())return true;
   const ov=document.createElement('div');ov.id='legload';ov.style.cssText='position:fixed;inset:0;background:#000d;z-index:90;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML='<div class="sheet" style="margin:0;width:100%;max-width:420px"><h3 style="margin-top:0">Loading format legality…</h3><p class="mut" id="lgt">Getting ban lists for your cards so none are left out.</p><div style="height:12px;background:var(--card2);border-radius:8px;overflow:hidden"><div id="lgb" style="height:100%;width:3%;background:var(--ac);transition:width .3s"></div></div></div>';document.body.appendChild(ov);
   while(LEGBUSY)await new Promise(r=>setTimeout(r,300));
-  const ok=await fetchLegal((d,t)=>{const b=$('#lgb'),x=$('#lgt');if(b)b.style.width=Math.max(3,Math.round(d/t*100))+'%';if(x)x.textContent=`Checked ${d} of ${t} card names…`},true);
-  ov.remove();const m=miss();if(!ok){toast("Couldn't load format legality — check your internet connection and try again");return false}
-  if(m)toast(`${m} card${m>1?'s':''} couldn't be matched online and will be left out`);return true}
+  const ok=await fetchLegal((d,t)=>{const b=$('#lgb'),x=$('#lgt');if(b)b.style.width=Math.max(3,Math.round(d/t*100))+'%';if(x)x.textContent=`Checked ${d} of ${t} card names…`},true,list);
+  ov.remove();const m=(list||D.cards).filter(c=>isReal(c)&&!c.leg&&c.legMiss).length;if(!ok){toast("Couldn't load format legality — check your internet connection and try again");return false}
+  if(m&&!list)toast(`${m} card${m>1?'s':''} couldn't be matched online and will be left out`);return true}
 function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
   if(!L)return '<div class="sec"><h4>Format legality</h4><span class="mut">Loads from Scryfall when you are online — reopen this card in a moment.</span></div>';
   const g=(code,neg)=>FMTS.filter(([k])=>neg?!L[k]:L[k]===code).map(([,n])=>n),b=g('b'),r=g('r'),l=g('l'),n=g(null,true),row=(t,a,col)=>a.length?`<div class="kv"><span>${t}</span><b style="${col?'color:'+col:''}">${esc(a.join(', '))}</b></div>`:'';
@@ -362,16 +362,17 @@ function addToDeck(i,name,n){
 }
 function chg(name,dl){fxDraftChg(V.deck,name,dl)}
 function vDecks(m){
+  if(V.deck==null)V.legTry={};
   if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
   m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" data-rw onclick="newDeck()">＋ Build a new deck</button></div>`+D.decks.map((d,i)=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
-    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
+    return `<div class="deck" onclick="V.deck=${i};render();scrollTo(0,0)">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${d.legPending?`<br><span style="color:#8fb3ff;font-size:12px">⏳ Rules not checked yet (needs internet) — tap to check</span>`:''}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div>`}).join('');
 }
 function vDeck(m,i){
   const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(dl),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
   const mx=Math.max(1,...cv);
   m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${fxDeckValue(d)}${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
-  ${fxIssueBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
+  ${fxLegalBox(i)}${fxIssueBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
   <div class="row" data-rw><button class="pri" onclick="fxBuilder(true)">＋ Add cards</button><button onclick="fxDeckEdit(${i})">✎ Edit details</button><button onclick="fxShareDeck(${i})">📤 Share deck</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxRoDeckBtns(i)}${fxDraftNote(i)}

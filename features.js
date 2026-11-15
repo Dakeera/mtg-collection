@@ -632,8 +632,8 @@ function fxNativeLinks(){try{if(!isNative())return;const A=window.Capacitor.Plug
 
 /* ---------- building a deck by hand ---------- */
 let FXB=[];
-function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
-  if(first){V.bq='';V.bt='';V.bc='';V.bfree=false;const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
+async function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
+  if(first){const F=dfmt(d.format);if(F&&F.leg){const need=D.cards.filter(c=>isReal(c)&&!c.leg&&!c.legMiss);if(need.length&&!(await ensureLegal(need))){d.legPending=true;save();render();toast('Offline — rule warnings are incomplete until the cards are checked')}}V.bq='';V.bt='';V.bc='';V.bfree=false;const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
     openM(`<h3>Add cards to ${esc(d.name)}</h3><div id="bhead" class="sec" style="position:sticky;top:0;z-index:2"></div>
     <input id="bq" type="search" placeholder="Search name or rules text…" style="width:100%" oninput="V.bq=this.value;fxBuilder()">
     <div class="brow" style="margin:8px 0"><select onchange="V.bt=this.value;fxBuilder()"><option value="">All types</option>${types.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select onchange="V.bc=this.value;fxBuilder()"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>`<option>${x}</option>`).join('')}</select></div>
@@ -698,20 +698,34 @@ function fxCardIssues(c,qty,F,cmdC){if(!F||!c)return [];const out=[],st=F.leg&&c
   if(F.cmd&&cmdC&&norm(c.name)!==norm(cmdC.name)){const cc=fxIdCols(cmdC);if(!okColor(c,cc))out.push({kind:'color',title:'Outside the commander’s colors',msg:`${F.k} decks may only use cards inside the ${F.cmdLabel.toLowerCase()}’s color identity (${cc.length?cc.map(x=>CLRN[x]).join(', '):'colorless'}). ${c.name} is ${c.colors||'a different color'}.`})}
   return out}
 function deckIssues(i){const d=D.decks[i],F=d&&dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),ign=d.ok||[],out=[],cmdC=d.commander&&findCard(d.commander),
-  add=(card,x,fixes)=>{if(!ign.includes(x.kind+'|'+norm(card||'')))out.push(Object.assign({card,fixes},x))};
+  add=(card,x,fixes)=>out.push(Object.assign({card,fixes,ign:ign.includes(x.kind+'|'+norm(card||''))},x));
   if(tot>F.n)add('',{kind:'size',title:`${tot} cards — ${F.k} decks hold ${F.n}`,msg:`${F.single?F.k+' decks must have exactly '+F.n+' cards.':'This app keeps '+F.k+' decks at '+F.n+' cards.'} This deck has ${tot-F.n} too many.`},[{t:'Open the card picker',a:'pick'}]);
   if(F.cmd){if(!d.commander)add('',{kind:'nocmd',title:`No ${F.cmdLabel.toLowerCase()} chosen`,msg:`${F.k} decks are built around a ${F.cmdLabel.toLowerCase()} (${F.cmdRule}). Choose one so the color rules can be checked.`},[{t:'Choose one',a:'edit'}]);
     else if(cmdC&&!cmdOK(cmdC,F))add(d.commander,{kind:'badcmd',title:`${cmdC.name} can’t be the ${F.cmdLabel.toLowerCase()}`,msg:`In ${F.k} the ${F.cmdLabel.toLowerCase()} must be ${F.cmdRule}. ${cmdC.name} is a ${cmdC.type}.`},[{t:'Choose another',a:'edit'}])}
   L.forEach(e=>{const c=findCard(e.name);if(!c)return;fxCardIssues(c,e.qty,F,cmdC).forEach(x=>add(c.name,x,x.cap?[{t:`Reduce to ${x.cap}`,a:'cut',n:e.qty-x.cap}]:[{t:'Remove from deck',a:'cut',n:e.qty}]))});
   return out}
-function fxIssueTag(d){const i=D.decks.indexOf(d),n=deckIssues(i).length;return n?`<br><span style="color:#f39c12;font-size:12px">⚠ ${fxPl(n,'rule issue')} for ${esc(d.format)}</span>`:''}
-function fxIssueBox(i){const L=deckIssues(i);if(!L.length)return '';const d=D.decks[i];
-  return `<div class="warn" style="display:flex;gap:10px;align-items:center"><span style="flex:1">⚠ <b>${fxPl(L.length,'rule issue')}</b> for ${esc(d.format)}: ${esc(L.slice(0,3).map(x=>x.title+(x.card&&!x.title.includes(x.card)?' ('+x.card+')':'')).join('; '))}${L.length>3?'…':''}</span><button onclick="fxIssues(${i})">Inspect</button></div>`}
-function fxIssues(i){const d=D.decks[i],L=deckIssues(i);window.FXISS=L;if(!L.length){closeM();return toast('No rule issues left')}
+function fxIssueTag(d){const i=D.decks.indexOf(d),L=deckIssues(i),a=L.filter(x=>!x.ign).length,g=L.length-a;if(!L.length)return '';
+  return `<br><span style="color:${a?'#f39c12':'var(--mut)'};font-size:12px">⚠ ${a?fxPl(a,'rule issue')+' for '+esc(d.format):''}${a&&g?' · ':''}${g?g+' ignored':''}</span>`}
+function fxIssueBox(i){const all=deckIssues(i);if(!all.length)return '';const d=D.decks[i],L=all.filter(x=>!x.ign),g=all.length-L.length;
+  if(!L.length)return `<div class="sec" style="display:flex;gap:10px;align-items:center"><span class="mut" style="flex:1">⚠ ${fxPl(g,'ignored rule issue')} for ${esc(d.format)}</span><button onclick="fxIssues(${i})">Inspect</button></div>`;
+  return `<div class="warn" style="display:flex;gap:10px;align-items:center"><span style="flex:1">⚠ <b>${fxPl(L.length,'rule issue')}</b> for ${esc(d.format)}${g?` <span class="mut">(+${g} ignored)</span>`:''}: ${esc(L.slice(0,3).map(x=>x.title+(x.card&&!x.title.includes(x.card)?' ('+x.card+')':'')).join('; '))}${L.length>3?'…':''}</span><button onclick="fxIssues(${i})">Inspect</button></div>`}
+function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign);window.FXISS=L;if(!L.length){closeM();return toast('No rule issues left')}
   openM(`<h3>⚠ ${esc(d.name)} — ${esc(d.format)} rules</h3><p class="mut">The deck can still be used as it is. Removing cards here is staged like any other edit: tap <b>Save changes</b> afterwards.</p>
-  ${L.map((x,k)=>`<div class="sec"><b>${esc(x.title)}</b>${x.card&&!x.title.includes(x.card)?` — ${cl(x.card)}`:''}<p style="margin:6px 0">${esc(x.msg)}</p><div class="row" style="margin:0">${x.fixes.map((f,j)=>`<button class="pri" style="padding:7px 12px" onclick="fxFix(${i},${k},${j})">${esc(f.t)}</button>`).join('')}<button style="padding:7px 12px" onclick="fxFix(${i},${k},-1)">Ignore this</button></div></div>`).join('')}
+  ${L.map((x,k)=>`<div class="sec" style="${x.ign?'opacity:.75':''}"><b>${esc(x.title)}</b>${x.card&&!x.title.includes(x.card)?` — ${cl(x.card)}`:''}${x.ign?' <span class="mut" style="font-size:12px">· ignored</span>':''}<p style="margin:6px 0">${esc(x.msg)}</p><div class="row" style="margin:0">${x.fixes.map((f,j)=>`<button class="pri" style="padding:7px 12px" onclick="fxFix(${i},${k},${j})">${esc(f.t)}</button>`).join('')}<button style="padding:7px 12px" onclick="fxFix(${i},${k},-1)">${x.ign?'Stop ignoring':'Ignore this'}</button></div></div>`).join('')}
   <div class="row"><button onclick="fxDeckEdit(${i})">Change deck type…</button><button class="pri" onclick="closeM()">Done</button></div>`)}
 function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
-  if(j<0){d.ok=d.ok||[];d.ok.push(x.kind+'|'+norm(x.card||''));save();render();return fxIssues(i)}
+  if(j<0){const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
   const f=x.fixes[j];if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
   if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}
+
+const fxDeckNeedsLeg=i=>{const d=D.decks[i],F=d&&dfmt(d.format);if(!F||!F.leg)return [];return fxDeckCards(i).map(e=>findCard(e.name)).filter(c=>c&&isReal(c)&&!c.leg&&!c.legMiss)};
+async function fxLegalCheck(i,list,quiet){const d=D.decks[i];if(!d||RO)return true;const need=list||fxDeckNeedsLeg(i);
+  if(!need.length){if(d.legPending){d.legPending=false;save();render()}return true}
+  const ok=await ensureLegal(need);
+  if(ok){d.legPending=false;save();render();if(!quiet)toast(`${d.name}: rules checked`);return true}
+  if(!d.legPending){d.legPending=true;save()}render();return false}
+function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
+  if(need.length&&!RO&&!(V.legTry||{})[d.name]){V.legTry=V.legTry||{};V.legTry[d.name]=1;setTimeout(()=>fxLegalCheck(i,null,true),0)}
+  if(!need.length&&d.legPending){d.legPending=false;save()}
+  if(!d.legPending||!need.length)return '';
+  return `<div class="sec" style="display:flex;gap:10px;align-items:center;border:1px solid #4a6aa8"><span style="flex:1">⏳ <b>${fxPl(need.length,'card')}</b> haven’t been checked against the ${esc(d.format)} rules yet — this needs an internet connection.</span><button onclick="fxLegalCheck(${i})">Check now</button></div>`}
