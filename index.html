@@ -87,6 +87,7 @@ details.g{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px
 .foil::after{inset:0}.frame.foil::after{inset:7px}@keyframes foil{0%{background-position:100% 0}50%{background-position:0 100%}100%{background-position:100% 0}}@media (prefers-reduced-motion:reduce){.foil::after{animation:none}}
 .foiltag{position:absolute;left:6px;bottom:6px;z-index:2;background:linear-gradient(90deg,#ff7ad9,#ffe066,#5ef0d2);color:#1a1030;font-size:9px;font-weight:800;letter-spacing:.05em;padding:2px 5px;border-radius:5px}
 .fin{display:block;font-style:normal;font-size:10px;margin-top:3px;font-weight:600}.fin.f{background:linear-gradient(90deg,#ff7ad9,#ffe066,#5ef0d2);-webkit-background-clip:text;background-clip:text;color:transparent}.fin.n{color:var(--mut)}
+.acbox{position:fixed;z-index:120;background:#241d33;border:1px solid #4a4266;border-radius:10px;box-shadow:0 8px 24px #000a;max-height:260px;overflow:auto}.acbox div{padding:11px 12px;border-bottom:1px solid #2f2742;cursor:pointer;color:var(--tx)}.acbox div:last-child{border-bottom:0}.acbox div:active{background:#3a3150}
 .ovtag{margin-top:4px;padding:3px 9px;font-size:12px;border-radius:8px;background:#4a1818;border:1px solid #c0392b;color:#ff8a80}.ovtag.w{background:#4a2a10;border-color:#f39c12;color:#ffc56b}.ovtag.g{background:transparent;border-color:#555;color:var(--mut)}
 .ovbox{background:#4a1818;border:1px solid #c0392b;border-radius:10px;padding:10px;margin:8px 0}
 .cst{position:absolute;left:6px;top:6px;background:#6b3fc4;color:#fff;font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 5px;border-radius:5px}
@@ -527,13 +528,14 @@ const words=t=>[...new Set(String(t||'').toLowerCase().replace(/\{[^}]*\}/g,' ')
 const textRecall=(ocr,card)=>{const src=[card.name,card.type_line,card.oracle_text,card.text,card.type,...(card.card_faces||[]).map(f=>f.oracle_text)].filter(Boolean).join(' '),W=words(src);if(W.length<4)return 0;const O=words(ocr);
   return W.filter(w=>O.some(o=>o===w||(w.length>=6&&o.length>=5&&sim(o,w)>=0.8))).length/W.length};
 const IDX_SRC=['commander deck','accessories','blight curse commander deck','booster pack','bundle box','dance of the elements commander deck','prerelease kit'];
-const canonSrc=x=>{x=String(x||'').trim();return /^singles?\s+orders?$/i.test(x)?'Singles Orders':x};
+const canonSrc=x=>{x=String(x||'').trim();return /^singles?\s+orders?$/i.test(x)?'Singles Orders':/^custom\s+cards?$/i.test(x)?'Custom Cards':x};
+const CUSTOM_SRC='Custom Cards',isCustomSrc=x=>/^custom\s+cards?(\s+\d+)?$/i.test(String(x||'').trim());
 const srcGroup=x=>{if(x==='Singles Orders')return x;const m=x.match(/^(.*?)\s+(?:Bundle Box|Play Booster|Draft Booster|Family Booster|Set Booster|Collector Booster|Booster Pack|Prerelease|Commander Deck)\b/i);return m&&m[1].trim().length>2?m[1].trim():'Other'};
 const allSources=()=>{const a=new Set(['Singles Orders','Trade','Gift']);[...D.cards.flatMap(c=>String(c.source||'').split(', ')),...D.acq.map(x=>x.source)].forEach(x=>{x=canonSrc(x);if(x&&x!=='None')a.add(x)});return [...a]};
-const srcData=()=>{const g={};allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())).forEach(x=>{const k=srcGroup(x);(g[k]=g[k]||[]).push(x)});Object.values(g).forEach(a=>a.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})));return g};
+const srcData=()=>{const g={};allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())&&!isCustomSrc(x)).forEach(x=>{const k=srcGroup(x);(g[k]=g[k]||[]).push(x)});Object.values(g).forEach(a=>a.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})));return g};
 const NUMRE=/^(.*?)\s+(\d+)(\s*\(.*\))?$/;
 // New sources get a number ("Mystery Box" -> "Mystery Box 1") so a later pull of the same thing becomes "… 2". One-off sources (Trade, Gift, Singles Orders) are left alone.
-function autoNumber(x){x=String(x||'').trim();if(!x||NUMRE.test(x)||/^(trade|gift|singles?\s+orders?)$/i.test(x))return x;const low=x.toLowerCase();let max=0,plain=false;
+function autoNumber(x){x=String(x||'').trim();if(!x||NUMRE.test(x)||/^(trade|gift|singles?\s+orders?|custom\s+cards?)$/i.test(x))return x;const low=x.toLowerCase();let max=0,plain=false;
   allSources().forEach(y=>{const m=y.match(NUMRE);if(m&&m[1].trim().toLowerCase()===low)max=Math.max(max,+m[2]);else if(y.toLowerCase()===low)plain=true});return `${x} ${max?max+1:plain?2:1}`}
 function printBySource(prints,src){const low=String(src||'').toLowerCase();let best=null;(prints||[]).forEach(p=>{const n=String(p.set_name||'').toLowerCase();if(n.length>=5&&low.includes(n)&&(!best||n.length>best.n.length))best={n,p}});return best?best.p:null}
 function parseCollector(lines,prints){
@@ -619,7 +621,7 @@ async function dcDetail(i){const f=D.flags[i];if(!f)return;const e=findCard(f.na
 function mergeFinish(old,qty,add,n){const o={};if(/\(\d+\)/.test(old))old.split(',').forEach(p=>{const m=p.match(/(.+?)\s*\((\d+)\)/);if(m)o[m[1].trim()]=+m[2]});else if(old&&old!=='None')o[old]=qty;o[add]=(o[add]||0)+n;
   const k=Object.keys(o);return k.length===1?k[0]:k.map(x=>`${x} (${o[x]})`).join(', ')}
 function commit(){
-  const q=A.q||{},src=resolveSrc().trim(),n=A.qty;if(!src)return toast('Please say where this card came from');autoPrint(src);const c=A.card;
+  const q=A.q||{},src=resolveSrc().trim(),n=A.qty;if(!src)return toast('Please say where this card came from');if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — please pick another source');autoPrint(src);const c=A.card;
   const nm=c.name,cat=catOf(c);
   let e=findCard(nm);const existed=!!e;let had=false;
   if(e){had=cardSources(e).includes(src);e.finish=mergeFinish(e.finish,e.qty,A.finish,n);e.qty+=n;if(!e.source.split(', ').includes(src))e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src}

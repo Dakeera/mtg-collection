@@ -258,7 +258,7 @@ function fxImpText(){fxImpStart(fxParseAny(IMP.text||''),'collection')}
 function fxImpDeck(){if(!(IMP.dname||'').trim())return toast('Give the deck a name first');if(D.decks.some(d=>d.name.toLowerCase()===IMP.dname.trim().toLowerCase()))return toast('You already have a deck with that name');
   const it=fxParseAny(IMP.dtext||'').filter(x=>!/sideboard|maybeboard|considering/.test(x.section||''));fxImpStart(it,'deck')}
 function fxImpCancel(){IMP.stage='idle';IMP.items=null;IMP.qa=false;render()}
-function fxImpSrc(x){return (x.src||'').trim()||(IMP.mode==='one'?(IMP.src||'').trim()||'Bulk import':x.card.set_name)}
+function fxImpSrc(x){const s=(x.src||'').trim()||(IMP.mode==='one'?(IMP.src||'').trim()||'Bulk import':x.card.set_name);return isCustomSrc(s)?'Bulk import':s}
 function fxImpCommit(){
   const it=IMP.items||[];
   if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty);
@@ -674,7 +674,7 @@ function fxQuickGo(){const txt=(document.getElementById('qadd').value||'').trim(
 
 /* ---------- new source name: suggest similar existing sources as you type ---------- */
 function fxSrcSuggest(v){const el=document.getElementById('srcsug');if(!el)return;v=String(v||'').trim();const lv=v.toLowerCase();if(lv.length<2){el.innerHTML='';return}
-  const srcs=allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())),bases={};
+  const srcs=allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())&&!isCustomSrc(x)),bases={};
   srcs.forEach(x=>{const m=x.match(NUMRE),b=m?m[1].trim():x,k=b.toLowerCase();(bases[k]=bases[k]||{b,items:[]}).items.push(x)});
   const words=lv.split(/\s+/).filter(Boolean),score=b=>{const l=b.toLowerCase();if(l===lv)return 3;if(l.startsWith(lv))return 2.5;if(words.every(w=>l.includes(w)))return 2;const s=sim(lv,l.slice(0,Math.max(lv.length,4)));return s>=0.7?s:0};
   const hits=Object.values(bases).map(o=>({o,s:score(o.b)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s||a.o.b.localeCompare(b.o.b)).slice(0,4);
@@ -752,7 +752,7 @@ function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
   return `<div class="sec" style="display:flex;gap:10px;align-items:center;border:1px solid #4a6aa8"><span style="flex:1">⏳ <b>${fxPl(need.length,'card')}</b> haven’t been checked against the ${esc(d.format)} rules yet — this needs an internet connection.</span><button onclick="fxLegalCheck(${i})">Check now</button></div>`}
 
 /* ---------- cards Scryfall doesn't recognise: find a match, or mark as a custom card ---------- */
-function fxSetCustom(name,on){const c=findCard(name);if(!c)return;c.custom=!!on;if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
+function fxSetCustom(name,on){const c=findCard(name);if(!c)return;c.custom=!!on;{const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(on)ss.push(CUSTOM_SRC);c.source=ss.length?ss.join(', '):'None'}if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
 function fxUnknownBox(c){if(!c||RO||!findCard(c.name))return '';
   if(c.custom)return `<div class="sec"><b style="color:#c39bff">★ Custom card</b><p class="mut" style="margin:4px 0">Kept in your Custom cards group. The app doesn’t look it up on Scryfall, and it’s flagged as not legal in official formats. Add your own photo so it shows like any other card — it’s compressed (about 60 KB) and included in your backups and share files.</p><div class="row" style="margin:6px 0 0"><button class="pri" onclick="fxCustomPhoto('${esc(c.name).replace(/'/g,"\\'")}')">📷 ${CIMG[c.name]?'Retake photo':'Take a photo of this card'}</button>${CIMG[c.name]?`<button onclick="fxCustomPhotoDel('${esc(c.name).replace(/'/g,"\\'")}')">Remove photo</button>`:''}</div><button style="margin-top:8px" onclick="fxSetCustom('${esc(c.name).replace(/'/g,"\\'")}',false);showCard('${esc(c.name).replace(/'/g,"\\'")}')">It’s a real card — unmark</button></div>`;
   if(!c.legMiss||c.leg)return '';
@@ -887,12 +887,12 @@ function fxCustomNew(){const types=['Creature','Legendary Creature','Instant','S
   <div class="row" style="margin:0"><div style="flex:1"><label>Power</label><input id="cn_p" inputmode="numeric"></div><div style="flex:1"><label>Toughness</label><input id="cn_h" inputmode="numeric"></div></div>
   <label>Rules text (optional)</label><textarea id="cn_x" rows="3" placeholder="Use {T}, {G} etc. for symbols"></textarea>
   <div class="row" style="margin:0"><div style="flex:1"><label>Quantity</label><input id="cn_q" type="number" min="1" value="1"></div><div style="flex:1"><label>Finish</label><select id="cn_f"><option>Normal</option><option>Foil</option></select></div></div>
-  <label>Where did it come from?</label><input id="cn_src" list="cn_srcl" placeholder="e.g. Proxy print, Gift, Homebrew set"><datalist id="cn_srcl">${allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  <label>Source</label><div class="sec" style="margin:4px 0 0;padding:8px 12px">★ Custom Cards <span class="mut" style="font-size:12px">— every custom card is kept under this source</span></div>
   </div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxCustomSave()">Add to my collection</button></div>`);setTimeout(()=>{const i=$('#cn_n');if(i)i.focus()},50)}
 function fxCustomCost(){const v=$('#cn_c').value,p=$('#cn_cp');if(p)p.innerHTML=v?costHtml(v):''}
 function fxCustomSave(){const nm=($('#cn_n').value||'').trim();if(!nm)return toast('Give the card a name');
   const ex=findCard(nm);if(ex&&!ex.custom)return toast(`“${ex.name}” is already a real card in your collection — use another name`);
-  const q=Math.max(1,parseInt($('#cn_q').value)||1),fin=$('#cn_f').value,ty=$('#cn_t').value,cost=($('#cn_c').value||'').trim(),txt=($('#cn_x').value||'').trim(),src=canonSrc(($('#cn_src').value||'').trim()||'Custom'),
+  const q=Math.max(1,parseInt($('#cn_q').value)||1),fin=$('#cn_f').value,ty=$('#cn_t').value,cost=($('#cn_c').value||'').trim(),txt=($('#cn_x').value||'').trim(),src=CUSTOM_SRC,
     picked=[...document.querySelectorAll('[data-cn].on')].map(b=>b.dataset.cn),fromCost=fxCI({cost,text:''}),ci=CLR.filter(k=>picked.includes(k)||fromCost.includes(k)),
     mv=(cost.match(/\{[^}]+\}/g)||[]).reduce((a,m)=>{const k=m.slice(1,-1);return a+(/^\d+$/.test(k)?+k:/^[XYZ]$/.test(k)?0:1)},0);
   if(ex){if(!confirm(`You already have the custom card “${ex.name}”.\n\nAdd ${q} more ${q===1?'copy':'copies'} to it?`))return;ex.finish=mergeFinish(ex.finish||'Normal',ex.qty,fin,q);ex.qty+=q;if(!cardSources(ex).includes(src))ex.source=(cardSources(ex).length?ex.source+', ':'')+src;
@@ -935,3 +935,25 @@ async function fxLoadModels(){const key=AIKEY.trim();if(!key)return toast('Type 
   if(!ids.includes(G.model.trim())){const pick=(FXMODELPREF[G.prov]||[]).map(re=>ids.find(x=>re.test(x)&&!/preview|exp/.test(x))||ids.find(x=>re.test(x))).find(Boolean)||ids[0];
     G.mmsg=ids.length?`“${G.model||'(none)'}” isn’t available for your key, so I picked ${pick}. Tap the model box to choose another (${ids.length} available).`:'Your key has no chat models available.';if(pick){G.model=pick;fxModelSave()}}
   else G.mmsg=`✓ ${G.model} is available for your key (${ids.length} models in the list).`;render()}
+
+/* ---------- suggestion lists ----------
+   Android's built-in <datalist> popup draws with a see-through background in dark mode once you start typing,
+   so every input that has a list="…" is switched to this styled dropdown instead (applied automatically). */
+let FXAC=null;
+function fxACClose(){if(FXAC){FXAC.box.remove();FXAC=null}}
+function fxACShow(inp){const id=inp.dataset.acl,dl=id&&document.getElementById(id);if(!dl){fxACClose();return}
+  const all=[...dl.options].map(o=>o.value).filter(Boolean),q=inp.value.trim().toLowerCase(),
+    opts=(q?all.filter(v=>v.toLowerCase().includes(q)&&v.toLowerCase()!==q).sort((a,b)=>(b.toLowerCase().startsWith(q))-(a.toLowerCase().startsWith(q))):all).slice(0,8);
+  if(!opts.length){fxACClose();return}
+  if(!FXAC||FXAC.inp!==inp){fxACClose();const box=document.createElement('div');box.className='acbox';document.body.appendChild(box);FXAC={inp,box}}
+  const r=inp.getBoundingClientRect(),below=innerHeight-r.bottom>220;
+  Object.assign(FXAC.box.style,{left:r.left+'px',width:r.width+'px',top:below?(r.bottom+4)+'px':'',bottom:below?'':(innerHeight-r.top+4)+'px'});
+  FXAC.box.innerHTML=opts.map((v,k)=>`<div data-ack="${k}">${esc(v)}</div>`).join('');FXAC.opts=opts}
+function fxACWire(root){(root||document).querySelectorAll('input[list]').forEach(inp=>{inp.dataset.acl=inp.getAttribute('list');inp.removeAttribute('list');inp.setAttribute('autocomplete','off')})}
+document.addEventListener('focusin',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.acl)fxACShow(t)});
+document.addEventListener('input',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.acl)fxACShow(t)});
+document.addEventListener('focusout',e=>{if(FXAC&&e.target===FXAC.inp)setTimeout(()=>{if(FXAC&&document.activeElement!==FXAC.inp)fxACClose()},180)});
+document.addEventListener('pointerdown',e=>{const o=e.target.closest&&e.target.closest('[data-ack]');if(!o||!FXAC)return;e.preventDefault();
+  const inp=FXAC.inp,v=FXAC.opts[+o.dataset.ack];inp.value=v;fxACClose();inp.dispatchEvent(new Event('input',{bubbles:true}));inp.dispatchEvent(new Event('change',{bubbles:true}));fxACClose()},true);
+addEventListener('scroll',()=>{if(FXAC)fxACShow(FXAC.inp)},true);
+new MutationObserver(()=>{if(document.querySelector('input[list]'))fxACWire()}).observe(document.documentElement,{childList:true,subtree:true});
