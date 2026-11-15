@@ -225,9 +225,9 @@ const fxLoadXLSX=()=>window.XLSX?Promise.resolve():new Promise((ok,no)=>{const s
 async function fxFileText(f){if(/\.xlsx?$/i.test(f.name||'')){await fxLoadXLSX();const wb=XLSX.read(new Uint8Array(await f.arrayBuffer()),{type:'array'});return XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])}return await f.text()}
 // Look cards up on Scryfall in batches of 75. Tries the exact printing first, then falls back to the name alone.
 async function fxResolve(items,onProg){
-  const post=async ids=>{const r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ids})});if(!r.ok)throw new Error('lookup failed');return (await r.json()).data||[]};
+  const post=async ids=>{const r=await scryFetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ids})});if(!r||!r.ok)throw new Error('lookup failed');return (await r.json()).data||[]};
   const round=async(list,ident)=>{const uniq=new Map();list.forEach(x=>{const id=ident(x);uniq.set(JSON.stringify(id),id)});const ids=[...uniq.values()],got=[];
-    for(let i=0;i<ids.length;i+=75){onProg&&onProg(i,ids.length);got.push(...await post(ids.slice(i,i+75)));await new Promise(r=>setTimeout(r,110))}
+    for(let i=0;i<ids.length;i+=75){onProg&&onProg(i,ids.length);got.push(...await post(ids.slice(i,i+75)))}
     const byId=new Map(),bySN=new Map(),byNS=new Map(),byN=new Map();
     got.forEach(c=>{byId.set(c.id,c);bySN.set(c.set+'|'+String(c.collector_number).toLowerCase(),c);const k=norm(front(c.name));byNS.set(k+'|'+c.set,c);if(!byN.has(k))byN.set(k,c);(c.card_faces||[]).forEach(f=>{const fk=norm(f.name);if(!byN.has(fk))byN.set(fk,c)})});
     list.forEach(x=>{const k=norm(front(x.name));x.card=(x.sid&&byId.get(x.sid))||(x.set&&x.num&&bySN.get(x.set+'|'+String(x.num).toLowerCase()))||(x.set&&byNS.get(k+'|'+x.set))||byN.get(k)||byN.get(norm(x.name))||null;
@@ -512,7 +512,7 @@ const fxSetPrice=(e,c)=>{if(c&&c.prices&&(!e.price||!e.scryId||e.scryId===c.id))
 let PRBUSY=false;
 async function fetchPrices(force){if(PRBUSY||!D)return;const stale=c=>!c.custom&&(force||!c.priceAt||(Date.now()-new Date(c.priceAt))>7*864e5),todo=D.cards.filter(c=>isReal(c)&&stale(c));if(!todo.length)return;PRBUSY=true;let got=0;
   const ident=c=>c.scryId?{id:c.scryId}:c.set&&c.cn?{set:String(c.set).toLowerCase(),collector_number:String(c.cn)}:{name:front(c.name)};
-  try{for(let i=0;i<todo.length;i+=75){const ch=todo.slice(i,i+75),r=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ch.map(ident)})});if(!r.ok)throw 0;
+  try{for(let i=0;i<todo.length;i+=75){const ch=todo.slice(i,i+75),r=await scryFetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ch.map(ident)})});if(!r||!r.ok)throw 0;
     const j=await r.json(),byId=new Map(),bySN=new Map(),byN=new Map();(j.data||[]).forEach(x=>{byId.set(x.id,x);bySN.set(x.set+'|'+x.collector_number,x);if(!byN.has(norm(front(x.name))))byN.set(norm(front(x.name)),x)});
     ch.forEach(c=>{const x=(c.scryId&&byId.get(c.scryId))||(c.set&&c.cn&&bySN.get(String(c.set).toLowerCase()+'|'+c.cn))||byN.get(norm(front(c.name)));if(x&&x.prices){c.price={n:x.prices.usd||'',f:x.prices.usd_foil||'',e:x.prices.usd_etched||''};c.priceAt=today();got++}});
     persist();await new Promise(r=>setTimeout(r,110))}}catch(e){}
@@ -747,18 +747,19 @@ const svMsg=t=>{SV.msg=t;const e=document.getElementById('svmsg');if(e)e.textCon
 async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){if(!auto)toast('You’re offline — try again when connected');return}
   const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!c.verified&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
   SV={running:true,msg:'',ok:[],unsure:[]};if(!auto)render();let stopped=false;
-  for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
+  let errs=0;for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
     if(c.verified)continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
-    const r=await scry(fxPrintsUrl(c.name));if(!r){if(!navigator.onLine){stopped=true;break}SV.unsure.push([c.name,'not found on Scryfall']);continue}
+    const r=await scry(fxPrintsUrl(c.name));if(!r){if(!navigator.onLine||scry.st===0){stopped=true;break}if(scry.st===404)SV.unsure.push([c.name,'not found on Scryfall']);else errs++;continue}
     let pr=r.data||[];if(r.has_more){const r2=await scry(r.next_page);if(r2&&r2.data)pr=pr.concat(r2.data)}
     const res=srcs.map(s=>SV_SKIP.test(s)?{why:'also from “'+s+'”'}:fxSrcPrint(pr,s)),bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
     if(bad||ids.size!==1){SV.unsure.push([c.name,bad?bad.why:'its sources point to different printings']);continue}
     fxVerifyPrint(c.name,res[0].p,'from pull source',true);SV.ok.push(c.name);if(SV.ok.length%20===0){saveArt();save()}}
-  if(!stopped)D.srcv=today();saveArt();save();SV.running=false;
-  SV.msg=stopped?`Stopped (offline) — ${SV.ok.length} verified so far. It continues next time.`:`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.`;render();
+  if(!stopped&&!errs)D.srcv2=today();saveArt();save();SV.running=false;
+  SV.msg=stopped?`Stopped (offline) — ${SV.ok.length} verified so far. It continues next time.`:`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
   if(!auto||SV.ok.length)toast(SV.ok.length?`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their pull source — details in More → Data check`:'No cards could be verified from their pull source')}
-function fxSrcAuto(){setTimeout(()=>{if(!D.srcv&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
-function fxSrcView(){return `<div class="sec"><h4>Verify artwork from pull sources</h4><p class="mut" style="margin:4px 0">For cards whose “pulled from” source names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a source that isn’t a set) the card is left unverified for you.${D.srcv?` Last run: <b>${esc(D.srcv)}</b>.`:''}</p>
+const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
+function fxSrcAuto(){setTimeout(()=>{if(!D.srcv2&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
+function fxSrcView(){return `<div class="sec"><h4>Verify artwork from pull sources</h4><p class="mut" style="margin:4px 0">For cards whose “pulled from” source names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a source that isn’t a set) the card is left unverified for you.${D.srcv2?` Last run: <b>${esc(D.srcv2)}</b>.`:''}</p>
   <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from pull sources'}</button></div><p id="svmsg" class="mut">${esc(SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
