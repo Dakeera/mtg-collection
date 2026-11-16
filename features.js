@@ -783,7 +783,7 @@ function fxSrcPick(kind,x){const q=SQ();if(kind==='new'){q.newSrc=x;const i=docu
 
 
 /* ---------- Verified artwork: one helper for every way a printing gets confirmed (gold ✓) ---------- */
-function fxVerifyPrint(name,p,why,quiet){const e=findCard(name);if(!e||!p||RO)return false;const vb=!fxBasic(e);
+function fxVerifyPrint(name,p,why,quiet){const e=findCard(name);if(!e||!p||RO)return false;const vb=true;
   logEdit(e.name,'Printing',e.set?`${e.setName} #${e.cn}${e.verified?' ✓':''}`:'(not set)',`${p.set_name} #${p.collector_number} ✓${why?' ('+why+')':''}`);
   Object.assign(e,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:vb});e.price=null;e.priceAt='';fxSetPrice(e,p);
   ART[e.name]=sImg(p)||ART[e.name]||'';ART2[e.name]=sImg2(p)||'';if(!quiet){saveArt();save()}return true}
@@ -1080,14 +1080,16 @@ const fxPriceOf=p=>p&&p.prices?{n:p.prices.usd||'',f:p.prices.usd_foil||'',e:p.p
 function fxSetCopies(e,p,n){if(!e||!p||fxBasic(e))return 0;let k=0;const pr={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};
   if(n>0&&!e.verified){Object.assign(e,pr,{verified:true});ART[e.name]=pr.art||ART[e.name]||'';ART2[e.name]=pr.art2||'';e.price=null;e.priceAt='';fxSetPrice(e,p);k++}
   e.cps=e.cps||[];for(let i=0;i<e.qty-1&&k<n;i++){if(!e.cps[i]){e.cps[i]=Object.assign({},pr,fxPriceOf(p)?{price:fxPriceOf(p),priceAt:today()}:{});k++}}while(e.cps.length&&!e.cps[e.cps.length-1])e.cps.pop();if(!e.cps.length)delete e.cps;return k}
+/* gold ✓ = every copy verified, silver ✓ = some, none → 🎨. Basic lands and custom cards have no check at all. */
+const fxVerState=c=>!c||c.custom||fxBasic(c)||!isReal(c)?null:(n=>n>=c.qty?'all':n>0?'some':'none')(fxCopyList(c).filter(Boolean).length);
 const fxUnverifiedCopies=e=>e&&!fxBasic(e)?fxCopyList(e).filter(x=>!x).length:0;
 /* ---------- Several copies of a card: each copy can have its own verified artwork (copy 1 = the card's own printing, copies 2+ in c.cps). Basic lands never need verifying. ---------- */
 const fxBasic=c=>!!c&&(c.type==='Basic Land'||/^Basic\b.*Land/i.test(c.type||''));
-const fxCopiesOn=c=>!!c&&isReal(c)&&!c.custom&&!fxBasic(c)&&c.qty>1&&!!findCard(c.name);
+const fxCopiesOn=c=>!!c&&isReal(c)&&!c.custom&&c.qty>1&&!!findCard(c.name);
 const fxCopyList=c=>{const L=[c.verified&&c.set?{set:c.set,setName:c.setName,cn:c.cn,scryId:c.scryId,art:c.art||ART[c.name]}:null];for(let k=1;k<c.qty;k++)L.push((c.cps||[])[k-1]||null);return L};
 function fxCopiesRow(c){const L=fxCopyList(c),v=L.filter(Boolean);return `${v.length} of ${c.qty} copies verified${v.length?' <span style="color:var(--gold)">✓</span>':''}<br><span class="mut" style="font-weight:400;font-size:12px">${v.length?esc([...new Set(v.map(x=>`${x.setName} #${x.cn}`))].join(' · ')):'tap the card to choose each copy’s artwork'}</span>`}
 function fxCopiesOpen(name,force){const c=findCard(name);if(!c||!fxCopiesOn(c)||RO)return false;const L=fxCopyList(c);
-  openM(`<button onclick="showCard(${esc(JSON.stringify(c.name))})">← Back</button><h3>Your ${c.qty} copies of ${esc(c.name)}</h3><p class="mut">Each copy can be a different printing. Tap a copy to choose its artwork; <b>?</b> means that copy isn’t verified yet.</p>
+  openM(`<button onclick="showCard(${esc(JSON.stringify(c.name))})">← Back</button><h3>Your ${c.qty} copies of ${esc(c.name)}</h3><p class="mut">Each copy can be a different printing. Tap a copy to choose its artwork; <b>?</b> means ${fxBasic(c)?'no artwork chosen yet (basic lands don’t need it)':'that copy isn’t verified yet'}.</p>
   <div class="grid">${L.map((x,k)=>`<div class="tile" onclick="artPicker(${esc(JSON.stringify(c.name))},${k})"><div class="art">${x&&x.art?`<img src="${esc(x.art)}" alt=""><span class="vf" title="Artwork verified">✓</span>`:'<div class="qbox">?</div>'}</div><div class="nm setcap"><b>Copy ${k+1}</b><span>${x?esc(`${x.setName||''} · ${String(x.set||'').toUpperCase()} #${x.cn||''}`):'not verified yet'}</span></div></div>`).join('')}</div>
   ${artOf(c.name)?`<div class="row"><button onclick="zoom(${esc(JSON.stringify(c.name))})">⛶ View the card full screen</button></div>`:''}`,()=>showCard(c.name));return true}
 function fxCopySet(c,k,p){if(!confirm(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`))return;
@@ -1192,7 +1194,7 @@ async function fxPickMatch(k){const o=FXUNK.opts[k],e=findCard(FXUNK.name);if(!o
 function fxUseSug(name,after){const c=findCard(name);if(!c||!c.legSug)return fxMatchUnknown(name,after);window.FXUNK={name:c.name,done:after||(()=>showCard(c.legSug)),opts:[c.legSug]};fxPickMatch(0)}
 
 /* ---------- foil display ---------- */
-const fxHasFoil=c=>{try{const fm=finMapOf(c);return Object.keys(fm).some(k=>/foil/i.test(k)&&fm[k]>0)}catch(e){return false}};
+const fxHasFoil=c=>{if(fxBasic(c))return false;try{const fm=finMapOf(c);return Object.keys(fm).some(k=>/foil/i.test(k)&&fm[k]>0)}catch(e){return false}};
 function fxFinLabel(p){const f=p.finishes||[],nf=f.includes('nonfoil'),fo=f.includes('foil'),et=f.includes('etched');
   const t=[nf&&'Normal',fo&&'✦ Foil',et&&'✦ Etched'].filter(Boolean);if(!t.length)return '';const only=t.length===1;
   return `<i class="fin ${nf&&only?'n':'f'}">${only&&!nf?t[0]+' only':t.join(' + ')}</i>`}
