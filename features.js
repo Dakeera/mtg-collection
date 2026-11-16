@@ -36,7 +36,7 @@ const fxPl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 function fxMigrate(){if(!D)return;D.matchups=D.matchups||[];D.sims=D.sims||[];D.swaps=D.swaps||[];D.sleeves=D.sleeves||[];
   // Matchup log: only matchups that have actually been run are listed (drops old "Template / Pending" rows).
   D.matchups.forEach(s=>{if(/MASTER MATCHUP/i.test(s.title||'')&&s.rows)s.rows=s.rows.filter((r,i)=>i===0||!(/template|pending/i.test(String(r[r.length-1]))||String(r[5]).trim()==='-'))})}
-function fxBack(){if(CAM){CAM.close();return true}if(V.view==='decks'&&V.opt!=null&&!$('#modal').classList.contains('open')&&!$('#qafull')){if(OPT.step==='confirm'){OPT.step='';render()}else fxOptClose();return true}const qf=$('#qafull');if(qf){qf.remove();return true}if(IMP.stage==='pick'&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')&&!$('#modal').classList.contains('open')){fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
+function fxBack(){if(CAM){CAM.close();return true}if(V.view==='decks'&&V.opt!=null&&!$('#modal').classList.contains('open')&&!$('#qafull')){if(OPT.step==='confirm'){OPT.step='';render()}else fxOptClose();return true}const qf=$('#qafull');if(qf){qf.remove();return true}if(IMP.stage==='pick'&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')&&!$('#modal').classList.contains('open')){if(IMP.kind==='verify'&&IMP.pi===0){fxVerStop();return true}fxQAPrev();return true}if(IMP.stage==='preview'&&!$('#modal').classList.contains('open')&&(IMP.qa?V.view==='add':V.view==='more'&&V.sub==='import')){fxImpCancel();return true}return false}
 async function fxDownload(text,name,type){const blob=new Blob([text],{type:type||'text/plain'});
   if(isNative()){try{const r=await nativeSave(blob,name,false);return toast(r.where?'Saved to '+r.where:'File shared')}catch(e){return toast('Could not save the file: '+String(e&&e.message||e).slice(0,80))}}
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();toast('Saved to Downloads')}
@@ -803,7 +803,7 @@ function fxHistVerify(id){const h=(D.imports||[]).find(x=>x.id===id),l=fxHistLef
   Object.assign(IMP,{stage:'pick',kind:'verify',vid:id,qa:false,pi:0,vdone:0,items:l.map(it=>({name:findCard(it.name).name,qty:it.qty,sid:it.sid,stub:true,card:{name:it.name,id:it.sid,finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(it.name)}}))});
   go('more');V.sub='import';render();scrollTo(0,0)}
 function fxVerPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i],n=it.length,e=findCard(x.name);
-  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Verify artwork · ${i+1} of ${n}</b><button style="padding:6px 10px" onclick="fxVerStop()">Finish later</button></div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
+  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Verify artwork · ${i+1} of ${n}${IMP.vsrc!=null?`<br><span class="mut" style="font-weight:400;font-size:13px">Pulled from: ${esc(IMP.vsrc)}</span>`:''}</b><button style="padding:6px 10px" onclick="fxVerStop()">Finish later</button></div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
   const ready=!x.stub&&!x.err&&x.prints;
   const nav=`<div style="height:84px"></div><div class="qanav"><button onclick="fxQAPrev()">‹ ${i?'Previous':'Back'}</button><button onclick="fxQASkip()">Skip for now</button><button class="pri" onclick="fxQANext()" ${ready?'':'disabled'}>${i+1<n?'✓ Save &amp; next ›':'✓ Save &amp; finish'}</button></div>`;
   if(!x.prints&&!x.loading&&!x.err)fxQALoad(i);
@@ -819,8 +819,23 @@ function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
     else if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}
     const left=fxUnverifiedCopies(findCard(x.name));if(left>0&&!(IMP.items[IMP.pi+1]&&IMP.items[IMP.pi+1].restOf===x))IMP.items.splice(IMP.pi+1,0,Object.assign({},x,{restOf:x,done:false,vq:0,vmax:left}))}
   if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else fxVerStop()}
-function fxVerStop(){const n=IMP.vdone||0,h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
+function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
+  if(src!=null){const l=(fxMissArt()[src]||[]).length;IMP.stage='idle';IMP.items=null;IMP.kind='';IMP.vsrc=null;go('more');V.sub='check';V.maOpen=true;render();scrollTo(0,0);
+    return toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left in “${src}” for later`:` — “${src}” is done`}`:l?`${l} left in “${src}” — they wait in Data check`:'Done')}
+  const h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
+/* ---------- Data check → Resolve missing artwork: every card with an unverified copy, grouped by pull source, one source at a time ---------- */
+function fxMissArt(){const G={};D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c)||!fxUnverifiedCopies(c))return;const ss=cardSources(c).filter(s=>!isCustomSrc(s));(ss.length?ss:['No pull source']).forEach(s=>{(G[s]=G[s]||[]).push(c)})});return G}
+const fxSrcQty=(c,s)=>sum(D.acq.filter(a=>norm(a.name)===norm(c.name)&&canonSrc(a.source)===s),a=>a.qty);
+function fxMissArtView(){const G=fxMissArt(),ks=Object.keys(G).sort((a,b)=>G[b].length-G[a].length||a.localeCompare(b)),cards=new Set(Object.values(G).flat()),copies=sum([...cards],c=>fxUnverifiedCopies(c));
+  return `<div class="sec"><h4>Resolve missing artwork</h4>${cards.size?`<p class="mut" style="margin:4px 0">${fxPl(cards.size,'card')} (${copies} ${copies===1?'copy':'copies'}) still need their artwork verified. They’re listed by pull source, so you can work through one box or pack at a time. Your progress is saved card by card — tap <b>Finish later</b> any time.</p>
+  <button class="pri" onclick="V.maOpen=!V.maOpen;render()">🎨 ${V.maOpen?'Hide the list':'Resolve missing artwork'}</button>
+  ${V.maOpen?ks.map(s=>`<div class="sec" style="margin:8px 0"><div class="row" style="align-items:center"><span style="flex:1"><b>${esc(s)}</b> <span class="mut">· ${fxPl(G[s].length,'card')}</span></span><button class="pri" style="flex:0 0 auto" onclick="fxMissArtGo(${esc(JSON.stringify(s))})">Start</button></div>
+    <details><summary class="mut" style="font-size:13px">Cards from this source</summary><div style="font-size:13px;margin-top:4px">${G[s].map(c=>{const o=cardSources(c).filter(x=>x!==s);return `${cl(c.name)} <span class="mut">· ${fxUnverifiedCopies(c)} of ${c.qty} not verified${o.length?' · also from '+esc(o.join(', ')):''}</span>`}).join('<br>')}</div></details></div>`).join(''):''}`
+  :'<p class="mut" style="margin:4px 0">✓ Every card’s artwork is verified (basic lands and custom cards don’t need it).</p>'}</div>`}
+function fxMissArtGo(s){const L=(fxMissArt()[s]||[]);if(!L.length)return toast('Nothing left to verify in that source');
+  Object.assign(IMP,{stage:'pick',kind:'verify',vid:null,vsrc:s,qa:false,pi:0,vdone:0,items:L.map(c=>{const u=fxUnverifiedCopies(c),fs=fxSrcQty(c,s);return {name:c.name,qty:c.qty,sid:c.scryId||'',stub:true,vmax:u,vq:fs&&fs<u?fs:0,src:s,card:{name:c.name,id:c.scryId||'',finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(c.name)}}})});
+  go('more');V.sub='import';render();scrollTo(0,0)}
 
 /* ---------- Existing cards: verify the artwork from a “pulled from” source that names a real set ---------- */
 let SV={running:false,msg:'',ok:[],unsure:[]};
@@ -1465,7 +1480,7 @@ function fxQASplit(i){const x=IMP.items[i];if(!x||!x.card||x.skip||x.max==null)r
   if(linked){nx.qty=nx.max=rest;return}
   IMP.items.splice(i+1,0,{name:x.name,raw:x.raw,qty:rest,max:rest,fin:x.fin,card:x.card,prints:x.prints,restOf:x,typed:x.typed,fuzzy:false})}
 function fxQANext(){if(IMP.kind==='verify')return fxVerNext(true);const x=IMP.items[IMP.pi];if(!x.card&&!x.skip)return;fxQASplit(IMP.pi);if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else{IMP.stage='preview';IMP.items.forEach(y=>{if(y.skip){y.card0=y.card0||y.card;y.card=null}});render();scrollTo(0,0)}}
-function fxQAPrev(){if(IMP.pi>0){IMP.pi--;render();scrollTo(0,0)}else fxImpCancel()}
+function fxQAPrev(){if(IMP.pi>0){IMP.pi--;render();scrollTo(0,0)}else if(IMP.kind==='verify')fxVerStop();else fxImpCancel()}
 function fxQASkip(){if(IMP.kind==='verify')return fxVerNext(false);const x=IMP.items[IMP.pi];x.skip=!x.skip;if(!x.skip&&x.card0&&!x.card)x.card=x.card0;render()}
 let QAT=null;
 function fxQASearch(v){const x=IMP.items[IMP.pi];x.q=v;clearTimeout(QAT);const q=v.trim();if(q.length<2){const s=$('#qasug');if(s)s.innerHTML='';return}
