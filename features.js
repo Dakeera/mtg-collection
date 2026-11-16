@@ -250,7 +250,7 @@ function fxAddCard(c,n,fin,src,price,notes,ver){
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
-  if(ver&&!e.verified)Object.assign(e,pr,{verified:!fxBasic(e)&&!/Basic Land/.test(c.type_line||'')});else if(!e.set||!e.art)Object.assign(e,pr);
+  if(!e.set||!e.art)Object.assign(e,pr);if(ver&&!fxBasic(e)&&!/Basic Land/.test(c.type_line||''))fxSetCopies(e,c,n);
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
@@ -800,10 +800,14 @@ function fxVerPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i
   if(!ready)return head+`<h3 style="margin:8px 0 2px">${esc(x.name)}</h3>`+(x.err?`<div class="warn">Couldn’t load the printings — check your internet connection. <button style="padding:3px 9px" onclick="IMP.items[${IMP.pi}].err=false;render()">Try again</button></div>`:'<p class="mut">Loading all printings…</p>')+nav;
   const c=x.card,sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'';
   return head+`<h3 style="margin:8px 0 2px">${esc(x.name)}</h3><p class="mut" style="margin:0 0 8px">You own ${e?e.qty:x.qty}${x.done?' · <span style="color:var(--gold)">✓ saved</span>':''}. Tap the set name under an artwork to choose it, or tap the picture to see it full screen.</p>
-  <div class="qabar"><b class="qanm">${esc(x.name)}</b><span class="mut" style="font-size:13px">${esc(c.set_name||'')} · ${esc(String(c.set||'').toUpperCase())} #${esc(c.collector_number||'')}</span></div>
+  <div class="qabar"><b class="qanm">${esc(x.name)}</b>${(x.vmax=x.vmax||fxUnverifiedCopies(e)||1)>1?`<label style="margin:0">Copies with this artwork</label><input type="number" min="1" max="${x.vmax}" value="${x.vq||x.vmax}" style="width:70px" onchange="IMP.items[${i}].vq=Math.min(${x.vmax},Math.max(1,parseInt(this.value)||1))">`:''}<span class="mut" style="font-size:13px">${esc(c.set_name||'')} · ${esc(String(c.set||'').toUpperCase())} #${esc(c.collector_number||'')}</span></div>
   <div class="grid">${x.prints.map((p,k)=>`<div class="tile" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art" onclick="fxQAView(${i},${k})"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap" onclick="fxQAPrint(${i},${k})" style="cursor:pointer"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>`+nav}
 function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
-  if(saveIt){if(x.stub||x.err||!x.prints)return;if(!confirm(`Save ${x.card.set_name} #${x.card.collector_number} as the verified artwork for ${x.name}?`))return;if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}}
+  if(saveIt){if(x.stub||x.err||!x.prints)return;const e=findCard(x.name),n=Math.min(x.vq||x.vmax||1,fxUnverifiedCopies(e)||1);
+    if(!confirm(`Save ${x.card.set_name} #${x.card.collector_number} as the verified artwork for ${n>1?n+' copies of ':''}${x.name}?`))return;
+    if(e&&e.qty>1){logEdit(e.name,'Printing',`${fxUnverifiedCopies(e)} copies not verified`,`${x.card.set_name} #${x.card.collector_number} ✓ ×${n} (import history)`);if(fxSetCopies(e,x.card,n)){saveArt();save();if(!x.done)IMP.vdone++;x.done=true}}
+    else if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}
+    const left=fxUnverifiedCopies(findCard(x.name));if(left>0&&!(IMP.items[IMP.pi+1]&&IMP.items[IMP.pi+1].restOf===x))IMP.items.splice(IMP.pi+1,0,Object.assign({},x,{restOf:x,done:false,vq:0,vmax:left}))}
   if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else fxVerStop()}
 function fxVerStop(){const n=IMP.vdone||0,h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
@@ -1020,7 +1024,7 @@ async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];let q=m.qty;if(m.qt
   toast('Looking the card up…');const c=await scry('/cards/named?exact='+encodeURIComponent(front(m.name)));if(!c||c.object!=='card')return toast(navigator.onLine?'Couldn’t find that card on Scryfall — try again later':'You’re offline — try again when connected');
   const e=d.cards.find(x=>norm(x.name)===norm(m.name));if(e){['type','cmc','colors'].forEach(x=>delete e[x])}
   fxAddCard(c,q,'Normal','Singles Orders','','Ordered for '+d.name+(m.note?' — '+m.note:''));m.qty-=q;if(m.qty<=0)fxMissDone(d,k);IDX=null;saveArt();save();render();
-  if(confirm(`${q}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`))artPicker(c.name)}
+  if(confirm(`${q}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`)){if(!fxCopiesOpen(c.name))artPicker(c.name)}}
 
 
 /* ---------- Deck viewer filter / search: tap a card type or a mana-curve bar, or open 🔍 Search deck ---------- */
@@ -1045,6 +1049,12 @@ function fxDeckFind(again){const i=V.deck,d=D.decks[i];if(!d)return;const F=fxDF
   <div class="row"><button onclick="fxDFClear()">Clear all</button><button class="pri" onclick="closeM()">Show on the deck page</button></div>`);setTimeout(()=>$('#dfq')?.focus(),50)}
 
 
+
+/* Give n not-yet-verified copies of a card the printing p (copy 1 first, then copies 2+ in c.cps). Verified copies are never replaced. Returns how many were set. */
+function fxSetCopies(e,p,n){if(!e||!p||fxBasic(e))return 0;let k=0;const pr={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};
+  if(n>0&&!e.verified){Object.assign(e,pr,{verified:true});ART[e.name]=pr.art||ART[e.name]||'';ART2[e.name]=pr.art2||'';e.price=null;e.priceAt='';fxSetPrice(e,p);k++}
+  e.cps=e.cps||[];for(let i=0;i<e.qty-1&&k<n;i++){if(!e.cps[i]){e.cps[i]=Object.assign({},pr);k++}}while(e.cps.length&&!e.cps[e.cps.length-1])e.cps.pop();if(!e.cps.length)delete e.cps;return k}
+const fxUnverifiedCopies=e=>e&&!fxBasic(e)?fxCopyList(e).filter(x=>!x).length:0;
 /* ---------- Several copies of a card: each copy can have its own verified artwork (copy 1 = the card's own printing, copies 2+ in c.cps). Basic lands never need verifying. ---------- */
 const fxBasic=c=>!!c&&(c.type==='Basic Land'||/^Basic\b.*Land/i.test(c.type||''));
 const fxCopiesOn=c=>!!c&&isReal(c)&&!c.custom&&!fxBasic(c)&&c.qty>1&&!!findCard(c.name);
@@ -1411,8 +1421,8 @@ function fxQAPick(){if(IMP.kind==='verify')return fxVerPick();const it=IMP.items
     <div class="row" style="margin-top:10px"><button onclick="fxQAScan()">📷 Scan this card</button></div>`+nav;
   const c=x.card,fins=(c.finishes||['nonfoil']).map(f=>finMap[f]||f);if(!fins.includes(x.fin))x.fin=fins[0];if(!x.prints&&!x.loading)fxQALoad(i);
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'',list=x.prints||[c];
-  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}${x.mine?'<p style="margin:0 0 8px;color:var(--gold)">✓ Already in your collection with this verified artwork.</p>':''}<p class="mut" style="margin:0 0 8px">Tap the set name under an artwork to choose it, or tap the picture to see it full screen.</p>
-  <div class="qabar"><b class="qanm">${esc(c.name)}</b><label style="margin:0">Copies</label><input type="number" min="1" value="${x.qty}" style="width:80px" onchange="IMP.items[${i}].qty=Math.max(1,parseInt(this.value)||1)">
+  return head+`<h3 style="margin:8px 0 2px">${esc(c.name)}</h3>${x.fuzzy?`<div class="warn" style="margin:4px 0 8px">You typed “${esc(x.typed)}” — this looks like the closest match. <button style="padding:3px 9px" onclick="fxQAWrong()">Not right? Search again</button></div>`:`<p class="mut" style="margin:0 0 8px">Typed as “${esc(x.raw||x.name)}”.</p>`}${x.mine?'<p style="margin:0 0 8px;color:var(--gold)">✓ Already in your collection with this verified artwork.</p>':''}${x.restOf?`<p style="margin:0 0 8px;color:var(--gold)">The other ${x.qty} ${x.qty>1?'copies':'copy'} of ${esc(x.name)} — pick their artwork.</p>`:''}<p class="mut" style="margin:0 0 8px">Tap the set name under an artwork to choose it, or tap the picture to see it full screen.</p>
+  <div class="qabar"><b class="qanm">${esc(c.name)}</b><label style="margin:0">Copies</label><input type="number" min="1" value="${x.qty}" style="width:80px" onchange="fxQAQty(${i},this.value)">
   ${fins.length>1?`<span class="chips" style="margin:0">${fins.map(f=>`<button class="${x.fin===f?'on':''}" onclick="IMP.items[${i}].fin='${f}';render()">${f}</button>`).join('')}</span>`:`<span class="mut">${esc(fins[0])}</span>`}</div>
   <div class="grid">${list.map((p,k)=>`<div class="tile" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art" onclick="fxQAView(${i},${k})"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap" onclick="fxQAPrint(${i},${k})" style="cursor:pointer"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
   ${x.loading?'<p class="mut">Loading all printings…</p>':''}`+nav}
@@ -1436,7 +1446,14 @@ function fxQAView(i,k){const x=IMP.items[i],list=x.prints||[x.card];if(!list[k])
   let sx=null,sy=0;d.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
   d.addEventListener('touchend',e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3)go(dx<0?1:-1)},{passive:true});
   draw();document.body.appendChild(d)}
-function fxQANext(){if(IMP.kind==='verify')return fxVerNext(true);const x=IMP.items[IMP.pi];if(!x.card&&!x.skip)return;if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else{IMP.stage='preview';IMP.items.forEach(y=>{if(y.skip){y.card0=y.card0||y.card;y.card=null}});render();scrollTo(0,0)}}
+/* Copies box in the several-cards picker: lowering it brings the card up again for the remaining copies' artwork */
+function fxQAQty(i,v){const x=IMP.items[i];if(!x)return;if(x.max==null)x.max=x.qty;x.qty=Math.max(1,parseInt(v,10)||1);if(x.qty>x.max)x.max=x.qty;render()}
+function fxQASplit(i){const x=IMP.items[i];if(!x||!x.card||x.skip||x.max==null)return;const rest=x.max-x.qty,nx=IMP.items[i+1],linked=nx&&nx.restOf===x;
+  if(rest<=0){if(linked)IMP.items.splice(i+1,1);return}
+  if(/Basic Land/.test(x.card.type_line||''))return;
+  if(linked){nx.qty=nx.max=rest;return}
+  IMP.items.splice(i+1,0,{name:x.name,raw:x.raw,qty:rest,max:rest,fin:x.fin,card:x.card,prints:x.prints,restOf:x,typed:x.typed,fuzzy:false})}
+function fxQANext(){if(IMP.kind==='verify')return fxVerNext(true);const x=IMP.items[IMP.pi];if(!x.card&&!x.skip)return;fxQASplit(IMP.pi);if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else{IMP.stage='preview';IMP.items.forEach(y=>{if(y.skip){y.card0=y.card0||y.card;y.card=null}});render();scrollTo(0,0)}}
 function fxQAPrev(){if(IMP.pi>0){IMP.pi--;render();scrollTo(0,0)}else fxImpCancel()}
 function fxQASkip(){if(IMP.kind==='verify')return fxVerNext(false);const x=IMP.items[IMP.pi];x.skip=!x.skip;if(!x.skip&&x.card0&&!x.card)x.card=x.card0;render()}
 let QAT=null;

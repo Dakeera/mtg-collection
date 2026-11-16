@@ -457,7 +457,7 @@ function vAdd(m){
     <h3>Which printing is yours?</h3><p class="mut">${A.pstat?esc(A.pstat):A.printOK?'✓ '+esc(A.printNote||'Printing chosen.'):'Not confirmed yet — tap the artwork that matches your card (set code and number are printed at the bottom of the card).'}</p>
     <div class="strip">${pl.map(p=>`<div class="sp ${p.id===c.id?'on':''}" data-sp="${p.id}">${sm(p)?`<img loading="lazy" src="${esc(sm(p))}" alt="">`:'<div class="ph">?</div>'}<div class="spl"><b>${esc(p.set_name||'')}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>
     <div class="f"><label>Finish</label><select onchange="A.finish=this.value">${fins.map(f=>`<option ${A.finish===f?'selected':''}>${f}</option>`).join('')}</select>
-    <label>Quantity</label><input type="number" min="1" value="${A.qty}" onchange="A.qty=Math.max(1,+this.value||1)"></div>
+    <label>Quantity</label><input type="number" min="1" value="${A.qty}" onchange="A.qty=Math.max(1,+this.value||1);render()">${A.qty>1&&A.printOK&&!fxBasic({type:catOf(A.card)})?`<label style="margin:6px 0 0;font-weight:400"><input type="checkbox" ${A.same!==false?'checked':''} onchange="A.same=this.checked">All ${A.qty} copies have this artwork</label>${A.same===false?'<p class="mut" style="margin:2px 0 0;font-size:12px">After adding, you’ll pick the artwork for the other copies.</p>':''}`:''}</div>
     <div class="row"><button onclick="A.step=A.photo?'pick':'start';A.cands=A.cands||[];render()">✗ Wrong card</button><button class="pri" onclick="A.finish=A.finish||fins0();A.step='q';A.q=A.q||{};render()">✓ Correct — next</button></div>`;
     const on=m.querySelector('.sp.on');if(on)on.scrollIntoView({inline:'center',block:'nearest'});}
   else if(A.step==='q'){const q=A.q,showNew=q.sel==='__new__'||q.grp==='__newgrp__';
@@ -486,7 +486,7 @@ function newSrcIn(v){SQ().newSrc=v;fxSrcSuggest(v);const n=$('#srcnote');if(n){c
 const fins0=()=>finMap[(A.card.finishes||['nonfoil'])[0]]||'Normal';
 function setPrint(id){A.card=A.prints.find(p=>p.id===id)||A.card;A.finish=null;A.printOK=true;A.printNote='You chose this printing.';render()}
 async function pickName(n){const c=await scry('/cards/named?exact='+encodeURIComponent(n));if(!c)return toast('Lookup failed — check your connection');A.cands=[c];A.photo=null;pick(0)}
-async function pick(i){A.card=A.cands[i];A.step='verify';A.finish=fins0();A.qty=1;A.q=null;A.prints=null;A.printOK=false;A.printNote='';A.pstat='';render();
+async function pick(i){A.card=A.cands[i];A.step='verify';A.finish=fins0();A.qty=1;A.same=true;A.q=null;A.prints=null;A.printOK=false;A.printNote='';A.pstat='';render();
   const p=await scry(A.card.prints_search_uri);if(!(p&&p.data&&A.step==='verify'))return;
   A.prints=p.data;const nm=A.card.name,e=findCard(nm);
   if(e&&e.verified&&e.scryId){const m=A.prints.find(x=>x.id===e.scryId);if(m){A.card=m;A.printOK=true;A.printNote='Same printing you already verified for this card.'}}
@@ -654,12 +654,14 @@ function commit(){
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(c.type_line)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:cat,subtype:(c.type_line.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
-  if(A.printOK&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
+  const split=A.printOK&&n>1&&A.same===false&&!fxBasic(e);
+  if(A.printOK&&!fxBasic(e)){if(!e.set||!e.art)Object.assign(e,pr);fxSetCopies(e,c,split?1:n)}else if(!e.set||!e.art)Object.assign(e,pr);
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||'',shared:had});
   if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n,true);save();
   A={step:'done',msg:`${n}× ${nm} (${c.set.toUpperCase()}) added from “${src}”${q.deck?` and placed in ${D.decks[+q.deck].name}`:''}.`};render();
+  if(split){fxCopiesOpen(e.name);toast('Now pick the artwork for the other copies');return}
   if(existed)verifyEntry(e,c,closeM);
 }
 
