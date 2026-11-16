@@ -1022,6 +1022,28 @@ async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];let q=m.qty;if(m.qt
   fxAddCard(c,q,'Normal','Singles Orders','','Ordered for '+d.name+(m.note?' — '+m.note:''));m.qty-=q;if(m.qty<=0)fxMissDone(d,k);IDX=null;saveArt();save();render();
   if(confirm(`${q}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`))artPicker(c.name)}
 
+
+/* ---------- Deck viewer filter / search: tap a card type or a mana-curve bar, or open 🔍 Search deck ---------- */
+function fxDF(d){if(!V.df||V.dfd!==d.name){V.df={q:'',ty:[],mv:[],col:[]};V.dfd=d.name}return V.df}
+const fxDFOn=F=>!!(F.q||F.ty.length||F.mv.length||F.col.length);
+const fxMV=c=>Math.min(7,Math.round(parseFloat(c.cmc)||0));
+function fxDFMatch(F,c){const q=F.q.trim().toLowerCase();if(q&&!(String(c.name||'').toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q)||String(c.type||'').toLowerCase().includes(q)))return false;
+  if(F.ty.length&&!F.ty.includes(c.type||'Other'))return false;if(F.mv.length&&(/Land/.test(c.type||'')||!F.mv.includes(fxMV(c))))return false;
+  if(F.col.length){const ci=fxCI(c);if(!F.col.some(k=>k==='C'?!ci.length:ci.includes(k)))return false}return true}
+const fxDFLabel=F=>[F.q.trim()?`“${F.q.trim()}”`:'',F.ty.join(' or '),F.mv.length?'mana value '+F.mv.map(k=>k===7?'7+':k).join('/'):'',F.col.length?F.col.map(k=>k==='C'?'colorless':CLRN[k]).join(' or '):''].filter(Boolean).join(' · ');
+function fxDFTog(k,v){const d=D.decks[V.deck];if(!d)return;const F=fxDF(d);F[k]=F[k].includes(v)?F[k].filter(x=>x!==v):[...F[k],v];render();if($('#modal').classList.contains('open')&&$('#dfres'))fxDeckFind(true)}
+function fxDFClear(){if(V.df){V.df={q:'',ty:[],mv:[],col:[]}}{const qi=$('#dfq');if(qi){qi.value='';qi.dispatchEvent(new Event('input'))}}render();if($('#dfres'))fxDeckFind(true)}
+function fxDeckFind(again){const i=V.deck,d=D.decks[i];if(!d)return;const F=fxDF(d),ents=fxDeckCards(i).map(e=>({e,c:findCard(e.name)||e})),types=[...new Set(ents.map(x=>x.c.type||'Other'))].sort();
+  const hits=ents.filter(({c})=>fxDFMatch(F,c)),chip=(k,v,lab,on)=>`<button class="pipb ${on?'on':''}" style="width:auto;padding:4px 10px" onclick="fxDFTog('${k}',${esc(JSON.stringify(v))})">${lab}</button>`;
+  const body=`<div class="f" style="margin:0"><label>Card types</label><div class="chips">${types.map(t=>chip('ty',t,esc(t)+' '+sum(ents.filter(x=>(x.c.type||'Other')===t).map(x=>x.e)),F.ty.includes(t))).join('')}</div>
+    <label>Mana value <span class="mut">(non-land)</span></label><div class="chips">${[0,1,2,3,4,5,6,7].map(k=>chip('mv',k,k===7?'7+':k,F.mv.includes(k))).join('')}</div>
+    <label>Colors</label><div class="chips">${[...CLR,'C'].map(k=>`<button class="pipb ${F.col.includes(k)?'on':''}" title="${k==='C'?'Colorless':CLRN[k]}" onclick="fxDFTog('col','${k}')">${k==='C'?'◇':symImg(k)}</button>`).join('')}</div></div>
+    <p class="mut" style="margin:10px 0 4px"><b>${sum(hits.map(x=>x.e))}</b> of ${sum(ents.map(x=>x.e))} cards match${fxDFOn(F)?' · '+esc(fxDFLabel(F)):''}</p>
+    <div>${hits.slice(0,80).map(({e,c})=>`<div class="res" onclick="showCard(${esc(JSON.stringify(e.name))})"><span>${e.qty}× ${esc(e.name)} ${costHtml(c.cost||'')}<br><span class="mut" style="font-size:12px">${esc(c.type||'')}</span></span></div>`).join('')||'<p class="mut">Nothing matches.</p>'}</div>`;
+  if(again&&$('#dfres')){$('#dfres').innerHTML=body;return}
+  openM(`<h3>🔍 Search ${esc(RO?fxDeckTitle(d):d.name)}</h3><input id="dfq" type="search" placeholder="Name, type or rules text (e.g. flying, draw)…" style="width:100%" value="${esc(F.q)}" oninput="V.df.q=this.value;render();fxDeckFind(true)"><div id="dfres" style="margin-top:8px">${body}</div>
+  <div class="row"><button onclick="fxDFClear()">Clear all</button><button class="pri" onclick="closeM()">Show on the deck page</button></div>`);setTimeout(()=>$('#dfq')?.focus(),50)}
+
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
   if(!confirm('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.'))return;

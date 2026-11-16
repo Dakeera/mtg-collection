@@ -28,6 +28,7 @@ button,.btn{cursor:pointer;display:inline-block;text-align:center}.pri{backgroun
 .modal{position:fixed;inset:0;background:#000b;display:none;z-index:30;overflow:auto;overscroll-behavior:contain}html.lock,html.lock body{overflow:hidden;overscroll-behavior:none}.modal.open{display:block}
 .sheet{background:var(--bg);max-width:900px;margin:calc(20px + var(--st)) auto 20px;border-radius:14px;padding:16px;min-height:100px;position:relative}.x{position:absolute;right:10px;top:10px}
 .cd{display:grid;grid-template-columns:minmax(200px,420px) 1fr;gap:16px}.cd img,.cmp img{width:100%;border-radius:12px}@media(max-width:520px){.cd{grid-template-columns:1fr}}
+.dft span{cursor:pointer}.tags span.on{background:var(--ac);color:#fff}.cvb{cursor:pointer;border-radius:6px}.cvb.on{outline:2px solid var(--gold)}
 .tags span{display:inline-block;background:var(--card2);border-radius:20px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px}
 pre{white-space:pre-wrap;font:inherit;background:var(--card);padding:10px;border-radius:10px}
 .cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.row>*{flex:1}
@@ -396,13 +397,14 @@ function vDecks(m){
 function vDeck(m,i){
   const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(dl),cv=Array(8).fill(0),ty={};
   ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
-  const mx=Math.max(1,...cv);
+  const mx=Math.max(1,...cv),DF=fxDF(d),fl=fxDFOn(DF),shown=fl?ents.filter(({e,c})=>fxDFMatch(DF,c)):ents;
   m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(RO?fxDeckTitle(d):d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${fxDeckValue(d)}${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
   ${fxLegalBox(i)}${fxIssueBox(i)}${fxMissBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
-  <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
-  <div class="tags">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(k)} ${v}</span>`).join('')}</div>
+  <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div class="cvb${DF.mv.includes(k)?' on':''}" onclick="fxDFTog('mv',${k})" title="Show mana value ${k===7?'7+':k}"><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
+  <div class="tags dft">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="${DF.ty.includes(k)?'on':''}" onclick="fxDFTog('ty',${esc(JSON.stringify(k))})">${esc(k)} ${v}</span>`).join('')}</div>
+  <div class="row"><button onclick="fxDeckFind()">🔍 Search deck</button>${fl?'<button onclick="fxDFClear()">✕ Clear filter</button>':''}</div>${fl?`<p class="mut" style="margin:4px 0">Showing <b>${sum(shown.map(x=>x.e))}</b> of ${n} cards · ${esc(fxDFLabel(DF))}</p>`:''}
   <div class="row" data-rw><button class="pri" onclick="fxBuilder(true)">＋ Add cards</button><button class="pri" onclick="fxOptOpen(${i})">✨ Optimize Deck</button></div><div class="row" data-rw><button onclick="fxDeckEdit(${i})">✎ Edit details</button><button onclick="fxShareDeck(${i})">📤 Share deck</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxRoDeckBtns(i)}${fxDraftNote(i)}
-  <div class="grid">${ents.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:'')+(d.miss&&!RO&&fxMissQ(d,e.name)?` <i class="dl" title="missing">🛒${fxMissQ(d,e.name)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
+  <div class="grid">${(shown.length?'':'<p class="mut">No cards in this deck match the filter.</p>')+shown.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:'')+(d.miss&&!RO&&fxMissQ(d,e.name)?` <i class="dl" title="missing">🛒${fxMissQ(d,e.name)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
   ${d.tokens.length?`<h3>Deck tokens (${sum(d.tokens)})</h3>${tbl(['Token','Qty','Details'],d.tokens.map(t=>[t.name,t.qty,{h:symHtml(t.text)}]))}`:''}`;
 }
 function deckSearch(first){
