@@ -511,10 +511,13 @@ const fxUnit=c=>{const p=(c&&c.price)||{},n=+p.n||0,f=+p.f||n,e=+p.e||f;return {
 /* Per-copy value: each copy is priced by its own verified printing (copies 2+ in c.cps carry their own Scryfall price); copies without their own printing use the card's price. Finishes are handed out to the copies in order (Normal first, then Foil, …). */
 function fxCopyVals(c){if(!c)return [];const fm=finMapOf(c),fins=[];Object.keys(fm).forEach(k=>{for(let i=0;i<(fm[k]||0);i++)fins.push(k)});const out=[];
   for(let i=0;i<c.qty;i++){const own=i?(c.cps||[])[i-1]:null,src=own&&own.price?own:c,u=fxUnit(src),fin=fins[i]||'Normal';
-    out.push({k:i+1,fin,v:(u[fin]??u.Normal)||0,lab:i?(own?`${own.setName||''} · ${String(own.set||'').toUpperCase()} #${own.cn||''}`:'not verified — priced like copy 1'):(c.set&&c.verified?`${c.setName||''} · ${String(c.set||'').toUpperCase()} #${c.cn||''}`:'not verified'),own:!!(i?own:c.verified)})}
+    out.push({k:i+1,fin,v:(u[fin]??u.Normal)||0,lab:i?(own?`${own.setName||''} · ${String(own.set||'').toUpperCase()} #${own.cn||''}`:'artwork not verified'):(c.set&&c.verified?`${c.setName||''} · ${String(c.set||'').toUpperCase()} #${c.cn||''}`:'artwork not verified'),own:!!(i?own:c.verified),cnt:!!(i?own:c.verified)||fxBasic(c)})}
   return out}
 const fxHasCopyPrices=c=>!!(c&&c.qty>1&&(c.cps||[]).some(x=>x&&x.price));
-function fxVal(c){if(!c)return 0;if(fxHasCopyPrices(c))return sum(fxCopyVals(c),x=>x.v);if(!c.price)return 0;const u=fxUnit(c),fm=finMapOf(c);return sum(Object.keys(fm),k=>(fm[k]||0)*(u[k]??u.Normal))}
+/* Value counted in totals: only copies whose artwork is verified (basic lands always count). fxValAll = market value of every copy (used for sorting / per-card badges). */
+function fxValAll(c){if(!c)return 0;if(fxHasCopyPrices(c))return sum(fxCopyVals(c),x=>x.v);if(!c.price)return 0;const u=fxUnit(c),fm=finMapOf(c);return sum(Object.keys(fm),k=>(fm[k]||0)*(u[k]??u.Normal))}
+function fxVal(c){if(!c||(!c.price&&!fxHasCopyPrices(c)))return 0;return sum(fxCopyVals(c).filter(x=>x.cnt),x=>x.v)}
+const fxEachAll=c=>c&&c.qty?fxValAll(c)/c.qty:0;
 const fxEach=c=>c&&c.qty?fxVal(c)/c.qty:0;
 const fxSetPrice=(e,c)=>{if(c&&c.prices&&(!e.price||!e.scryId||e.scryId===c.id)){e.price={n:c.prices.usd||'',f:c.prices.usd_foil||'',e:c.prices.usd_etched||''};e.priceAt=today()}};
 let PRBUSY=false;
@@ -527,12 +530,14 @@ async function fetchPrices(force){if(PRBUSY||!D)return;const stale=c=>!c.custom&
     const cp=todo.flatMap(c=>(c.cps||[]).filter(x=>x&&x.scryId));for(let i=0;i<cp.length;i+=75){const ch=cp.slice(i,i+75),r=await scryFetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:[...new Set(ch.map(x=>x.scryId))].map(id=>({id}))})});if(!r||!r.ok)break;
       const j=await r.json(),byId=new Map((j.data||[]).map(x=>[x.id,x]));ch.forEach(x=>{const y=byId.get(x.scryId);if(y&&y.prices){x.price=fxPriceOf(y);x.priceAt=today();got++}});persist()}}catch(e){}
   PRBUSY=false;if(got&&V.view==='collection'&&!$('#modal').classList.contains('open')&&document.activeElement?.id!=='q'){const y=scrollY;render();scrollTo(0,y)}}
-function fxPriceRow(c){if(!c||!findCard(c.name))return '';
-  if(fxHasCopyPrices(c)){const L=fxCopyVals(c);return `<div class="kv"><span>Value per copy <span style="font-weight:400;font-size:11px">(Scryfall${c.priceAt?', '+esc(c.priceAt):''})</span></span><b></b></div>${L.map(x=>`<div class="kv" style="padding-left:10px"><span style="font-weight:400">Copy ${x.k} · ${esc(x.lab)}${x.fin!=='Normal'?' · '+esc(x.fin):''}</span><b>${x.v?fxMoney(x.v):'<span class="mut">no price</span>'}</b></div>`).join('')}<div class="kv" style="border-top:1px solid var(--card2);margin-top:4px;padding-top:6px"><span><b>Total value of all ${c.qty} copies</b></span><b style="color:var(--gold)">${fxMoney(sum(L,x=>x.v))}</b></div>`}
-  if(!c.price)return '';const u=fxUnit(c),fm=finMapOf(c),ks=Object.keys(fm).filter(k=>fm[k]>0),each=ks.map(k=>`${fxMoney(u[k]??u.Normal)}${ks.length>1?' '+esc(k):''}`).join(' · ');
-  if(!fxVal(c))return `<div class="kv"><span>Price</span><b class="mut">no price listed</b></div>`;
-  return `<div class="kv"><span>Price <span style="font-weight:400;font-size:11px">(Scryfall, ${esc(c.priceAt||'')})</span></span><b>${each} each${c.qty>1?` · ${fxMoney(fxVal(c))} total`:''}</b></div>`}
-const fxTotalTile=()=>{const v=sum(D.cards,fxVal);return v?`<div title="Estimated from Scryfall market prices for the printings you set"><b>${fxMoney(v)}</b>est. value</div>`:''};
+function fxPriceRow(c){if(!c||!findCard(c.name))return '';if(!c.price&&!fxHasCopyPrices(c))return '';
+  const L=fxCopyVals(c),cnt=L.filter(x=>x.cnt),wait=L.filter(x=>!x.cnt&&x.v),at=`<span style="font-weight:400;font-size:11px">(Scryfall${c.priceAt?', '+esc(c.priceAt):''})</span>`,
+    note=n=>`<div class="mut" style="font-size:12px;margin:4px 0 0">${n===1&&c.qty===1?'This card isn’t':`${n} ${n===1?'copy isn’t':'copies aren’t'}`} counted in your collection value until ${n===1?'its':'their'} artwork is verified (🎨).</div>`;
+  if(!sum(L,x=>x.v))return `<div class="kv"><span>Price</span><b class="mut">no price listed</b></div>`;
+  if(c.qty>1&&(fxHasCopyPrices(c)||wait.length)){return `<div class="kv"><span>Value per copy ${at}</span><b></b></div>${L.map(x=>`<div class="kv" style="padding-left:10px"><span style="font-weight:400">Copy ${x.k} · ${esc(x.lab)}${x.fin!=='Normal'?' · '+esc(x.fin):''}</span><b>${!x.v?'<span class="mut">no price</span>':x.cnt?fxMoney(x.v):`<span class="mut" title="Not counted until the artwork is verified">(${fxMoney(x.v)})</span>`}</b></div>`).join('')}<div class="kv" style="border-top:1px solid var(--card2);margin-top:4px;padding-top:6px"><span><b>${wait.length?`Counted value (${cnt.length} of ${c.qty} copies)`:`Total value of all ${c.qty} copies`}</b></span><b style="color:var(--gold)">${fxMoney(sum(cnt,x=>x.v))}</b></div>${wait.length?note(wait.length):''}`}
+  const u=fxUnit(c),fm=finMapOf(c),ks=Object.keys(fm).filter(k=>fm[k]>0),each=ks.map(k=>`${fxMoney(u[k]??u.Normal)}${ks.length>1?' '+esc(k):''}`).join(' · ');
+  return `<div class="kv"><span>Price ${at}</span><b>${each} each${c.qty>1&&!wait.length?` · ${fxMoney(fxVal(c))} total`:''}</b></div>${wait.length?note(wait.length):''}`}
+const fxTotalTile=()=>{const v=sum(D.cards,fxVal);return v?`<div title="Estimated from Scryfall market prices — only cards with verified artwork are counted"><b>${fxMoney(v)}</b>est. value</div>`:''};
 const fxDeckValue=d=>{const v=sum(d.cards,e=>e.qty*fxEach(findCard(e.name)));return v?`<span>Value ${fxMoney(v)}</span>`:''};
 const FXSORT=[['','Sort: original order'],['new','Sort: newest added first'],['az','Sort: name A → Z'],['za','Sort: name Z → A'],['qty','Sort: most copies first'],['mvlo','Sort: mana value, low → high'],['mvhi','Sort: mana value, high → low'],['prhi','Sort: price, high → low'],['prlo','Sort: price, low → high'],['total','Sort: total value, high → low'],['type','Sort: card type'],['color','Sort: color']];
 const fxSortKey=()=>{if(V.sort==null){try{V.sort=localStorage.getItem('mtg_sort_v1')||''}catch(e){V.sort=''}}return V.sort};
@@ -540,8 +545,8 @@ const fxSortSel=()=>`<select id="fs" aria-label="Sort">${FXSORT.map(([k,l])=>`<o
 function fxSetSort(v){V.sort=v;try{localStorage.setItem('mtg_sort_v1',v)}catch(e){}drawList(true)}
 function fxSort(cs){const k=fxSortKey(),mv=c=>parseFloat(c.cmc)||0,nm=(a,b)=>a.name.localeCompare(b.name);if(!k)return cs;const a=[...cs];
   return k==='new'?a.reverse():k==='az'?a.sort(nm):k==='za'?a.sort((x,y)=>nm(y,x)):k==='qty'?a.sort((x,y)=>y.qty-x.qty||nm(x,y)):k==='mvlo'?a.sort((x,y)=>mv(x)-mv(y)||nm(x,y)):k==='mvhi'?a.sort((x,y)=>mv(y)-mv(x)||nm(x,y)):
-    k==='prhi'?a.sort((x,y)=>fxEach(y)-fxEach(x)||nm(x,y)):k==='prlo'?a.sort((x,y)=>(fxEach(x)||1e9)-(fxEach(y)||1e9)||nm(x,y)):k==='total'?a.sort((x,y)=>fxVal(y)-fxVal(x)||nm(x,y)):k==='type'?a.sort((x,y)=>String(x.type).localeCompare(String(y.type))||nm(x,y)):a.sort((x,y)=>String(x.colors).localeCompare(String(y.colors))||nm(x,y))}
-const fxBadge=c=>'×'+c.qty+(/^(prhi|prlo|total)$/.test(fxSortKey())&&fxVal(c)?' · '+fxMoney(V.sort==='total'?fxVal(c):fxEach(c)):'');
+    k==='prhi'?a.sort((x,y)=>fxEachAll(y)-fxEachAll(x)||nm(x,y)):k==='prlo'?a.sort((x,y)=>(fxEachAll(x)||1e9)-(fxEachAll(y)||1e9)||nm(x,y)):k==='total'?a.sort((x,y)=>fxValAll(y)-fxValAll(x)||nm(x,y)):k==='type'?a.sort((x,y)=>String(x.type).localeCompare(String(y.type))||nm(x,y)):a.sort((x,y)=>String(x.colors).localeCompare(String(y.colors))||nm(x,y))}
+const fxBadge=c=>'×'+c.qty+(/^(prhi|prlo|total)$/.test(fxSortKey())&&fxValAll(c)?' · '+fxMoney(V.sort==='total'?fxValAll(c):fxEachAll(c)):'');
 
 /* ---------- identity: every collection has a permanent ID, a changeable name, and a signing key ----------
    No server: the ID is a random UUID made on the device and stored inside the data, so it travels with backups.
@@ -702,7 +707,7 @@ function fxSimVs(i){const id=RO.id;roExit();V.view='more';V.sub='matchups';V.sim
 function fxProfileView(){if(!D.uid)return `<p class="mut">You’re just looking around, so this app has no collection yet.</p><div class="f"><label>Name your collection</label><input id="wname" maxlength="40" placeholder="e.g. Nick’s collection"></div><div class="row"><button class="pri" onclick="fxStart()">Start my collection</button><label class="btn">⬆ Restore my backup<input type="file" hidden onchange="fxOpenFile(this.files[0],'restore');this.value=''"></label></div>`;
   const v=sum(D.cards,fxVal),kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
   return `<div class="sec"><div class="f" style="margin-bottom:10px"><label>Collection name</label><input value="${esc(D.owner||'')}" maxlength="40" placeholder="e.g. Nick’s collection" onchange="fxRename(this.value)"></div>
-  ${kv('Collection ID',`${esc(fxCode(D.uid))} <button style="padding:3px 8px;margin-left:6px" onclick="navigator.clipboard.writeText('${esc(fxCode(D.uid))}').then(()=>toast('ID copied'))">Copy</button>`)}${kv('Created',esc(D.created||'—'))}${kv('Cards',`${sum(D.cards)} <span class="mut">(${D.cards.length} titles)</span>`)}${kv('Decks',D.decks.length)}${v?kv('Estimated value',fxMoney(v)):''}${kv('Last changed',D.updated?esc(new Date(D.updated).toLocaleString()):'—')}${kv('Signature',D.keys?'✓ files you share are signed':'<span class="mut">not available on this device</span>')}</div>
+  ${kv('Collection ID',`${esc(fxCode(D.uid))} <button style="padding:3px 8px;margin-left:6px" onclick="navigator.clipboard.writeText('${esc(fxCode(D.uid))}').then(()=>toast('ID copied'))">Copy</button>`)}${kv('Created',esc(D.created||'—'))}${kv('Cards',`${sum(D.cards)} <span class="mut">(${D.cards.length} titles)</span>`)}${kv('Decks',D.decks.length)}${v?kv('Estimated value <span class="mut" style="font-weight:400;font-size:11px">(verified artwork only)</span>',fxMoney(v)):''}${kv('Last changed',D.updated?esc(new Date(D.updated).toLocaleString()):'—')}${kv('Signature',D.keys?'✓ files you share are signed':'<span class="mut">not available on this device</span>')}</div>
   <p class="mut">The name can change whenever you like. The ID never changes: it is stored inside your data, appears in your file names, and comes back when you restore a backup — even on a new phone.</p>
   <div class="row"><button class="pri" onclick="V.sub='backup';render();scrollTo(0,0)">💾 Back up</button><button onclick="fxShareFile('all')">📤 Share my collection</button></div>
   <div class="row"><button onclick="fxSendDevice()">📲 Send to my other device</button></div>
@@ -1538,3 +1543,201 @@ function fxQAScan(){const i=IMP.pi;fxCam(async blob=>{const x=IMP.items[i];x.raw
     if(r.cards&&r.cards.length){x.card=r.cards[0].card;x.name=x.card.name;x.prints=null;toast(`Found ${x.card.name}`)}else toast('Couldn’t read that card — try again, or type the name')}
   catch(e){x.reading=null;toast('Couldn’t read that photo')}render()})}
 function fxQAWrong(){const x=IMP.items[IMP.pi];x.q=x.typed;x.sugs=null;x.card=null;x.prints=null;x.fuzzy=false;x.name=x.typed;render();setTimeout(()=>{const i=$('#qas');if(i){i.focus();fxQASearch(i.value)}},50)}
+/* ---------- Keyword abilities explained (card page, under Rules). Plain-language summaries written for this app. ---------- */
+const FXKW=[
+['Deathtouch','Any amount of damage this deals to a creature is enough to destroy it.'],
+['Defender','This creature can’t attack (it can still block).'],
+['Double strike','Deals combat damage twice: once in a first-strike step and again in the normal damage step.'],
+['First strike','Deals combat damage before creatures without first strike, so it can kill a blocker or attacker before that creature strikes back.'],
+['Flash','You may cast this any time you could cast an instant — even on an opponent’s turn or during combat.'],
+['Flying','Can only be blocked by creatures with flying or reach.'],
+['Haste','Can attack and use {T} abilities the turn it comes under your control (no “summoning sickness”).'],
+['Hexproof','Can’t be the target of spells or abilities your opponents control.'],
+['Indestructible','Isn’t destroyed by “destroy” effects or lethal damage. It can still be exiled, sacrificed or shrunk to 0 toughness.'],
+['Lifelink','Damage this deals also makes you gain that much life.'],
+['Menace','Can’t be blocked except by two or more creatures.'],
+['Reach','Can block creatures with flying.'],
+['Trample','If it’s blocked, damage beyond what’s needed to destroy the blockers goes through to the player or planeswalker it attacked.'],
+['Vigilance','Attacking doesn’t cause this creature to tap, so it can still block on the next turn.'],
+['Ward','Whenever it becomes the target of a spell or ability an opponent controls, that spell or ability is countered unless they pay the ward cost.'],
+['Protection','Can’t be blocked, targeted, dealt damage or enchanted/equipped by anything with the stated quality (e.g. “protection from red”).'],
+['Shroud','Can’t be the target of any spells or abilities — not even yours.'],
+['Intimidate','Can only be blocked by artifact creatures and creatures that share a color with it.'],
+['Fear','Can only be blocked by artifact creatures and black creatures.'],
+['Shadow','Can only block or be blocked by creatures with shadow.'],
+['Horsemanship','Can only be blocked by creatures with horsemanship.'],
+['Skulk','Can’t be blocked by creatures with greater power.'],
+['Landwalk','Can’t be blocked as long as the defending player controls a land of the named type (e.g. Forestwalk, Islandwalk).'],
+['Banding','Creatures with banding can attack as a group, and their controller assigns combat damage dealt to them.'],
+['Flanking','Whenever a creature without flanking blocks this, the blocker gets -1/-1 until end of turn.'],
+['Bushido','When this blocks or becomes blocked, it gets +N/+N until end of turn.'],
+['Rampage','Whenever this becomes blocked, it gets +N/+N for each creature blocking it beyond the first.'],
+['Exalted','Whenever a creature you control attacks alone, it gets +1/+1 until end of turn for each instance of exalted you have.'],
+['Prowess','Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.'],
+['Afflict','Whenever this becomes blocked, the defending player loses N life.'],
+['Annihilator','Whenever this attacks, the defending player sacrifices N permanents.'],
+['Battle cry','Whenever this attacks, each other attacking creature gets +1/+0 until end of turn.'],
+['Myriad','Whenever this attacks, for each other opponent, create a token copy of it attacking that player; exile the tokens at end of combat.'],
+['Melee','Whenever this attacks, it gets +1/+1 until end of turn for each opponent you attacked this combat.'],
+['Mentor','Whenever this attacks, put a +1/+1 counter on target attacking creature with lesser power.'],
+['Training','Whenever this attacks with another creature with greater power, put a +1/+1 counter on it.'],
+['Toxic','Combat damage this deals to a player also gives them N poison counters (10 poison counters and they lose).'],
+['Infect','Deals damage to creatures as -1/-1 counters and to players as poison counters (10 poison and they lose).'],
+['Wither','Deals damage to creatures in the form of -1/-1 counters.'],
+['Poisonous','Whenever this deals combat damage to a player, they get N poison counters.'],
+['Undying','When it dies, if it had no +1/+1 counters, return it to the battlefield with a +1/+1 counter.'],
+['Persist','When it dies, if it had no -1/-1 counters, return it to the battlefield with a -1/-1 counter.'],
+['Evolve','Whenever a creature with greater power or toughness enters under your control, put a +1/+1 counter on this.'],
+['Modular','Enters with N +1/+1 counters; when it dies, you may move its counters onto target artifact creature.'],
+['Graft','Enters with N +1/+1 counters; whenever another creature enters, you may move one of its counters onto that creature.'],
+['Bloodthirst','If an opponent was dealt damage this turn, it enters with N +1/+1 counters.'],
+['Riot','Enters with your choice of a +1/+1 counter or haste.'],
+['Unleash','You may have it enter with a +1/+1 counter; it can’t block as long as it has one.'],
+['Fabricate','When it enters, put N +1/+1 counters on it or create N 1/1 colorless Servo artifact creature tokens.'],
+['Outlast','Pay the cost and tap it: put a +1/+1 counter on it. Only as a sorcery.'],
+['Adapt','If it has no +1/+1 counters, put N +1/+1 counters on it.'],
+['Monstrosity','If it isn’t monstrous yet, put N +1/+1 counters on it and it becomes monstrous (often triggering a bonus).'],
+['Level up','Pay the cost (sorcery speed) to put a level counter on it; it gains the abilities of the level it has reached.'],
+['Equip','Pay the cost to attach this Equipment to target creature you control. Only as a sorcery.'],
+['Reconfigure','Pay the cost to attach it to a creature (it stops being a creature) or unattach it (it becomes a creature again). Sorcery speed.'],
+['Bestow','You can cast it as an Aura that gives its stats and abilities to a creature; if that creature leaves, it becomes a creature itself.'],
+['Enchant','This Aura can only be attached to the kind of object named (e.g. “Enchant creature”).'],
+['Crew','Tap any untapped creatures you control with total power N or more: this Vehicle becomes an artifact creature until end of turn.'],
+['Saddle','Tap creatures you control with total power N or more: this Mount becomes saddled until end of turn. Sorcery speed.'],
+['Fortify','Pay the cost to attach this Fortification to target land you control. Sorcery speed.'],
+['Kicker','You may pay an extra cost as you cast it for an additional effect.'],
+['Multikicker','You may pay the kicker cost any number of times for a bigger effect.'],
+['Flashback','You may cast it from your graveyard by paying its flashback cost; then it’s exiled.'],
+['Jump-start','You may cast it from your graveyard by paying its mana cost and discarding a card; then it’s exiled.'],
+['Escape','You may cast it from your graveyard by paying its escape cost, which includes exiling other cards from your graveyard.'],
+['Disturb','You may cast it transformed (back face up) from your graveyard by paying its disturb cost.'],
+['Unearth','Pay the cost: return it from your graveyard to the battlefield with haste; exile it at the next end step or if it would leave. Sorcery speed.'],
+['Embalm','Exile it from your graveyard and pay the cost: create a token copy of it that’s a white Zombie. Sorcery speed.'],
+['Eternalize','Exile it from your graveyard and pay the cost: create a 4/4 black Zombie token copy of it. Sorcery speed.'],
+['Encore','Exile it from your graveyard and pay the cost: for each opponent, create a token copy that attacks that opponent this turn; sacrifice them at end step.'],
+['Retrace','You may cast it from your graveyard by discarding a land card in addition to paying its other costs.'],
+['Aftermath','The second half of this split card can only be cast from your graveyard.'],
+['Buyback','You may pay an extra cost as you cast it; if you do, it returns to your hand as it resolves.'],
+['Cycling','Pay the cost and discard this card: draw a card.'],
+['Landcycling','Pay the cost and discard this card: search your library for a land of the stated type, reveal it and put it in your hand.'],
+['Channel','Discard this card and pay the cost to get the stated effect.'],
+['Madness','If you discard it, you may cast it right away for its madness cost instead of putting it in your graveyard.'],
+['Morph','You may cast it face down as a 2/2 for {3}; turn it face up any time by paying its morph cost.'],
+['Megamorph','Like morph, but it gets a +1/+1 counter when turned face up.'],
+['Disguise','You may cast it face down as a 2/2 with ward {2} for {3}; turn it face up any time for its disguise cost.'],
+['Manifest','Put the top card of your library onto the battlefield face down as a 2/2; if it’s a creature card you can turn it face up for its mana cost.'],
+['Cloak','Put the card onto the battlefield face down as a 2/2 with ward {2}; if it’s a creature card you can turn it face up for its mana cost.'],
+['Suspend','Instead of casting it, exile it with N time counters by paying the suspend cost; remove a counter each upkeep and cast it free when the last is removed.'],
+['Foretell','During your turn, pay {2} to exile it face down; on a later turn you may cast it for its foretell cost.'],
+['Plot','Pay the plot cost to exile it face up; on a later turn you may cast it without paying its mana cost, as a sorcery.'],
+['Evoke','You may cast it for its evoke cost instead; if you do, it’s sacrificed when it enters (you still get its enter effects).'],
+['Dash','You may cast it for its dash cost; it gains haste and returns to your hand at the next end step.'],
+['Blitz','You may cast it for its blitz cost; it gains haste and “when this dies, draw a card,” and is sacrificed at the next end step.'],
+['Prowl','You may cast it for its prowl cost if a creature of a shared type dealt combat damage to a player this turn.'],
+['Spectacle','You may cast it for its spectacle cost if an opponent lost life this turn.'],
+['Surge','You may cast it for its surge cost if you or a teammate cast another spell this turn.'],
+['Emerge','You may cast it by sacrificing a creature and paying its emerge cost reduced by that creature’s mana value.'],
+['Convoke','Your creatures can help pay for this spell: each creature you tap pays for {1} or one mana of its color.'],
+['Delve','Each card you exile from your graveyard while casting it pays for {1}.'],
+['Improvise','Each artifact you tap while casting it pays for {1}.'],
+['Affinity','This spell costs {1} less for each of the stated thing you control (e.g. affinity for artifacts).'],
+['Undaunted','This spell costs {1} less for each opponent you have.'],
+['Offering','You may cast it any time you could cast an instant by sacrificing a creature of the stated type and paying the difference in cost.'],
+['Splice','As you cast a spell of the stated type, you may reveal this and pay its splice cost to add its effect to that spell.'],
+['Entwine','For a modal spell, you may pay the entwine cost to choose all the modes.'],
+['Escalate','For a modal spell, pay the escalate cost for each mode beyond the first you choose.'],
+['Replicate','When you cast it, copy it once for each time you paid its replicate cost.'],
+['Storm','When you cast it, copy it for each other spell cast before it this turn.'],
+['Cascade','When you cast it, exile cards from the top of your library until you hit a nonland card with lower mana value; you may cast that card free.'],
+['Discover','Exile cards from the top of your library until you hit a nonland card with mana value N or less; cast it free or put it into your hand.'],
+['Casualty','As you cast it, you may sacrifice a creature with power N or more; if you do, copy the spell.'],
+['Squad','As you cast it, you may pay the squad cost any number of times; create that many token copies when it enters.'],
+['Cipher','After it resolves, you may encode it on a creature you control; whenever that creature deals combat damage to a player, you may cast a copy.'],
+['Overload','You may cast it for its overload cost, changing every “target” in its text to “each”.'],
+['Rebound','If you cast it from your hand, exile it as it resolves; at your next upkeep you may cast it from exile for free.'],
+['Ninjutsu','Return an unblocked attacker you control to hand and pay the cost: put this onto the battlefield tapped and attacking.'],
+['Mutate','You may cast it for its mutate cost onto a non-Human creature you own; they merge into one creature with all the abilities.'],
+['Champion','When it enters, exile another creature of the stated type you control or sacrifice this; that card returns when this leaves.'],
+['Soulbond','You may pair it with another unpaired creature when either enters; both get the bonus while paired.'],
+['Partner','You can have two commanders if both have partner.'],
+['Companion','If your deck meets the stated condition, you may start the game with this outside your deck and put it into your hand once for {3}.'],
+['Devour','As it enters, you may sacrifice any number of creatures; it enters with N +1/+1 counters for each.'],
+['Exploit','When it enters, you may sacrifice a creature to get a bonus.'],
+['Extort','Whenever you cast a spell, you may pay {W/B}; if you do, each opponent loses 1 life and you gain that much.'],
+['Afterlife','When it dies, create N 1/1 white and black Spirit tokens with flying.'],
+['Decayed','Can’t block; when it attacks, sacrifice it at end of combat.'],
+['Phasing','It phases in or out each of your untap steps; while phased out it’s treated as though it doesn’t exist.'],
+['Vanishing','Enters with N time counters; remove one each upkeep and sacrifice it when the last is removed.'],
+['Fading','Enters with N fade counters; remove one each upkeep, and sacrifice it when you can’t.'],
+['Echo','At your next upkeep after it enters, pay its echo cost or sacrifice it.'],
+['Cumulative upkeep','At each of your upkeeps, add an age counter, then pay the cost for each age counter or sacrifice it.'],
+['Hideaway','When it enters, look at the top N cards, exile one face down and put the rest on the bottom; you can play the exiled card when the condition is met.'],
+['Daybound','If it’s day: when a player casts no spells on their own turn, it becomes night and this transforms to its nightbound face.'],
+['Nightbound','If it’s night: when a player casts two or more spells in a turn, it becomes day and this transforms back.'],
+['Exhaust','An activated ability you can only activate once.'],
+['Gift','You may promise an opponent a gift as you cast it; if you do, they get the gift and you get an extra effect.'],
+['Offspring','You may pay an extra cost as you cast it; when it enters, create a 1/1 token copy of it.'],
+['Impending','You may cast it for its impending cost; it enters with N time counters and isn’t a creature until the last is removed.'],
+['Living weapon','When this Equipment enters, create a 0/0 black Phyrexian Germ token and attach this to it.'],
+['For Mirrodin!','When this Equipment enters, create a 2/2 red Rebel creature token and attach this to it.'],
+['Backup','When it enters, put N +1/+1 counters on target creature; if that’s another creature, it also gains this creature’s other abilities until end of turn.'],
+['Craft','Exile this and the stated materials from your battlefield/graveyard: return it transformed. Sorcery speed.'],
+['Ravenous','Enters with X +1/+1 counters; if X is 5 or more, draw a card when it enters.'],
+['Read ahead','As this Saga enters, choose which chapter to start on; earlier chapters don’t trigger.'],
+['Visit','An ability that triggers whenever you roll to visit your Attractions and land on this one.'],
+['Hidden agenda','Start the game with this conspiracy face down, naming a card; reveal it later for a bonus involving that card.'],
+/* keyword actions */
+['Scry','Look at the top N cards of your library, then put any number on the bottom and the rest back on top in any order.'],
+['Surveil','Look at the top N cards of your library, then put any number into your graveyard and the rest back on top in any order.'],
+['Mill','Put the top N cards of your library into your graveyard.'],
+['Fight','Each of the two creatures deals damage equal to its power to the other.'],
+['Explore','Reveal the top card of your library: if it’s a land, put it in your hand; otherwise put a +1/+1 counter on this and you may put that card into your graveyard.'],
+['Investigate','Create a Clue token (an artifact with “{2}, sacrifice this: draw a card”).'],
+['Proliferate','Choose any number of permanents and/or players, then give each another counter of each kind already there.'],
+['Populate','Create a token that’s a copy of a creature token you control.'],
+['Amass','Put N +1/+1 counters on an Army you control; if you don’t have one, first create a 0/0 Army creature token.'],
+['Connive','Draw a card, then discard a card; if you discarded a nonland card, put a +1/+1 counter on this creature.'],
+['Learn','You may reveal a Lesson card you own from outside the game and put it in your hand, or discard a card to draw a card.'],
+['Venture into the dungeon','Move your marker to the next room of a dungeon (starting one if needed) and get that room’s effect.'],
+['Initiative','Take the initiative: venture into the Undercity. Whoever deals combat damage to you steals it.'],
+['Monarch','Become the monarch: draw an extra card at your end step. A player who deals combat damage to you steals it.'],
+['Goad','The goaded creature attacks each combat if able, and attacks a player other than you if able, until your next turn.'],
+['Incubate','Create an Incubator artifact token with N +1/+1 counters; pay {2} to transform it into an artifact creature.'],
+['Manifest dread','Look at the top two cards; manifest one face down as a 2/2 and put the other into your graveyard.'],
+['Collect evidence','Exile cards with total mana value N or more from your graveyard.'],
+['Suspect','A suspected creature has menace and can’t block.'],
+['Forage','Exile three cards from your graveyard or sacrifice a Food.'],
+['Time travel','For each permanent you control and suspended card you own with a time counter, you may add or remove one time counter.'],
+['Role','A Role is an Aura token that gives the enchanted creature a bonus; a creature can only have one Role from each player.'],
+['Treasure','A Treasure token: {T}, sacrifice it: add one mana of any color.'],
+['Food','A Food token: {2}, {T}, sacrifice it: gain 3 life.'],
+['Clue','A Clue token: {2}, sacrifice it: draw a card.'],
+['Blood','A Blood token: {1}, {T}, discard a card, sacrifice it: draw a card.'],
+['Transform','Turn this double-faced card over to its other face.'],
+['Regenerate','The next time it would be destroyed this turn, instead tap it, remove it from combat and remove all damage from it.'],
+['Sacrifice','Put a permanent you control into its owner’s graveyard (it isn’t “destroyed”, so indestructible doesn’t stop it).'],
+['Exile','Move it to the exile zone, outside the game; it doesn’t go to the graveyard.'],
+['Detain','Until your next turn, the permanent can’t attack or block and its activated abilities can’t be used.'],
+['Tap','Turn it sideways; tapped permanents can’t attack or use {T} abilities until they untap.'],
+['Equipped','Refers to the creature this Equipment is attached to.'],
+];
+function fxKwFind(c){if(!c)return [];const kws=String(c.keywords||'').toLowerCase(),txt=String(c.text||'').toLowerCase().replace(/\([^)]*\)/g,' ');
+  const seen=new Set(),out=[];
+  const hit=k=>{const w=k.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),re=new RegExp('(^|[^a-z])'+w+'(s|es|ed|d|ing)?([^a-z]|$)');return (kws&&re.test(kws))||re.test(txt)};
+  [...FXKW].sort((a,b)=>b[0].length-a[0].length).forEach(([k,d])=>{if(seen.has(k))return;
+    /* skip generic words that only count as keywords in a few contexts */
+    if(['Tap','Exile','Sacrifice','Transform','Equipped','Enchant','Treasure','Food','Clue','Blood','Role','Partner','Protection','Flash','Fight','Visit','Suspect','Learn','Gift'].includes(k)&&!new RegExp('(^|, )'+k.toLowerCase()+'($|,)').test(kws)){
+      if(k==='Fight'&&/\bfights?\b/.test(txt)){seen.add(k);out.push([k,d])}
+      if(k==='Treasure'||k==='Food'||k==='Clue'||k==='Blood'){if(new RegExp('\\b'+k.toLowerCase()+' tokens?\\b').test(txt)){seen.add(k);out.push([k,d])}}
+      if(k==='Protection'&&/\bprotection from\b/.test(txt)){seen.add(k);out.push([k,d])}
+      if(k==='Flash'&&/(^|\n)flash(\n|$)/.test(txt)){seen.add(k);out.push([k,d])}
+      if(k==='Transform'&&/\btransforms?\b/.test(txt)){seen.add(k);out.push([k,d])}
+      if(k==='Enchant'&&/(^|\n)enchant /.test(txt)){seen.add(k);out.push([k,d])}
+      return}
+    if(hit(k)){if(k==='First strike'&&seen.has('Double strike')&&!/first strike/.test(txt.replace(/double strike/g,'')))return;if(k==='Cycling'&&seen.has('Landcycling')&&!/(^|[^a-z])cycling/.test(txt.replace(/\w+cycling/g,'')))return;if(k==='Kicker'&&seen.has('Multikicker')&&!/(^|[^a-z])kicker/.test(txt.replace(/multikicker/g,'')))return;if(k==='Morph'&&seen.has('Megamorph'))return;if(k==='Manifest'&&seen.has('Manifest dread')&&!/manifest(?! dread)/.test(txt))return;
+      seen.add(k);out.push([k,d])}});
+  /* landwalk variants */
+  if(/\b(plains|island|swamp|mountain|forest|desert)walk\b/.test(kws+' '+txt)&&!seen.has('Landwalk'))out.push(['Landwalk',FXKW.find(x=>x[0]==='Landwalk')[1]]);
+  return out.sort((a,b)=>txt.indexOf(a[0].toLowerCase())-txt.indexOf(b[0].toLowerCase()))}
+function fxKwBox(c){const L=fxKwFind(c);if(!L.length)return '';
+  return `<div class="sec kwbox"><h4>Abilities explained</h4><ul>${L.map(([k,d])=>`<li><b>${esc(k)}</b> — ${symHtml(d)}</li>`).join('')}</ul></div>`}
