@@ -245,7 +245,7 @@ function legalBox(c){if(!isReal(c)||!findCard(c.name))return '';const L=c.leg;
   const g=(code,neg)=>FMTS.filter(([k])=>neg?!L[k]:L[k]===code).map(([,n])=>n),b=g('b'),r=g('r'),l=g('l'),n=g(null,true),row=(t,a,col)=>a.length?`<div class="kv"><span>${t}</span><b style="${col?'color:'+col:''}">${esc(a.join(', '))}</b></div>`:'';
   return `<div class="sec"><h4>Format legality</h4>${b.length||r.length?'':'<div style="margin-bottom:6px">Not banned or restricted in any format.</div>'}${row('Banned in',b,'#ff6b6b')}${row('Restricted to 1 copy in',r,'#f39c12')}${row('Legal in',l)}${n.length?`<details class="legmore"><summary class="mut" style="font-size:13px;margin-top:6px">Show all formats (${n.length} not legal)</summary>${row('Not legal in',n,'var(--mut)')}</details>`:''}<p class="mut" style="margin:8px 0 0;font-size:12px">From Scryfall, which follows Wizards’ official lists. Checked ${esc(c.legAt||'')}.</p></div>`}
 /* ---------- shell ---------- */
-const NAV=[['collection','icons/nav-collection.png','Collection'],['decks','📚','Decks'],['add','➕','Add card'],['ai','icons/nav-generate.png','Deck Generator'],['more','⚙️','More']];
+const NAV=[['collection','icons/nav-collection.png','Collection'],['decks','icons/nav-decks.svg','Decks'],['add','icons/nav-add.svg','Add card'],['ai','icons/nav-generate-orb.svg','Deck Generator'],['more','icons/nav-more.svg','More']];
 function render(){
   if(V.view==='ai'&&typeof fxGenKeep==='function')fxGenKeep();
   document.body.classList.toggle('ro',!!RO);
