@@ -29,6 +29,7 @@ button,.btn{cursor:pointer;display:inline-block;text-align:center}.pri{backgroun
 .sheet{background:var(--bg);max-width:900px;margin:calc(20px + var(--st)) auto 20px;border-radius:14px;padding:16px;min-height:100px;position:relative}.x{position:absolute;right:10px;top:10px}
 .cd{display:grid;grid-template-columns:minmax(200px,420px) 1fr;gap:16px}.cd img,.cmp img{width:100%;border-radius:12px}@media(max-width:520px){.cd{grid-template-columns:1fr}}
 .dft span{cursor:pointer}.tags span.on{background:var(--ac);color:#fff}.cvb{cursor:pointer;border-radius:6px}.cvb.on{outline:2px solid var(--gold)}
+.qbox{aspect-ratio:488/680;width:100%;border:2px dashed var(--mut);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700;color:var(--mut);background:var(--card2)}
 .tags span{display:inline-block;background:var(--card2);border-radius:20px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px}
 pre{white-space:pre-wrap;font:inherit;background:var(--card);padding:10px;border-radius:10px}
 .cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.row>*{flex:1}
@@ -226,11 +227,11 @@ function go(k){if(k!==V.view&&!fxCanLeave())return;if(k!==V.view){SCR[V.view]=sc
 document.addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
   if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return fxDraftChg(V.deck,b.dataset.adc,1,true);
-  if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf,b.dataset.qs);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return findCard(b.dataset.vf)?.custom?fxCustomArt(b.dataset.vf):vfAsk(b.dataset.vf);if(b=t.closest('[data-cart]'))return fxCustomArt(b.dataset.cart);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-apv]'))return apView(b.dataset.apv);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
+  if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf,b.dataset.qs);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return fxCopiesOpen(b.dataset.zoom)?void 0:zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return findCard(b.dataset.vf)?.custom?fxCustomArt(b.dataset.vf):vfAsk(b.dataset.vf);if(b=t.closest('[data-cart]'))return fxCustomArt(b.dataset.cart);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-apv]'))return apView(b.dataset.apv);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(b=t.closest('[data-dcd]'))return dcDetail(+b.dataset.dcd);if(t.id==='modal')tryClose()});
 
 /* ---------- collection ---------- */
-const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art${fxHasFoil(c)?' foil':''}">${fxHasFoil(c)?'<span class="foiltag">✦ FOIL</span>':''}${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${c.verified?'<span class="vf" title="Artwork verified">✓</span>':''}${c.custom?'<span class="cst">CUSTOM</span>':''}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
+const tile=(c,badge='',ctl='')=>`<div class="tile" data-card="${esc(c.name)}"><div class="art${fxHasFoil(c)?' foil':''}">${fxHasFoil(c)?'<span class="foiltag">✦ FOIL</span>':''}${imgTag(c.name)||`<div class="ph">${esc(c.name)}</div>`}${c.verified&&!fxBasic(c)?'<span class="vf" title="Artwork verified">✓</span>':''}${c.custom?'<span class="cst">CUSTOM</span>':''}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="nm">${esc(c.name)}</div>${ctl}</div>`;
 function vCollection(m){
   const types=[...new Set(D.cards.map(c=>c.type))].sort(),opt=(v,l)=>`<option ${V[v]===l?'selected':''}>${esc(l)}</option>`;
   m.innerHTML=`${D.owner&&!RO?`<h2 style="margin:0 0 8px">${esc(D.owner)}</h2>`:''}<div class="stats"><div><b>${sum(D.cards)}</b>total items</div><div><b>${D.cards.length}</b>unique titles</div><div><b>${sum(D.cards.filter(isReal))}</b>playable cards</div><div><b>${sum(D.cards.filter(c=>c.type==='Token'))}</b>tokens</div>${fxTotalTile()}</div>
@@ -252,15 +253,15 @@ function showCard(name,keep){
   FACE=false;KEEPSCROLL=keep===true;
   const c=findCard(name)||{name,colors:'',type:'',subtype:'',text:'',qty:0,source:'',finish:''},u=usage(c.name),has=v=>v&&v!=='None';
   const acq=D.acq.filter(a=>norm(a.name)===norm(c.name)),real=isReal(c)&&findCard(c.name),kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
-  const btn=real&&c.custom?`<button class="artbtn" title="Add or change this card's picture" data-cart="${esc(c.name)}">🎨</button>`:real?(c.verified?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
+  const btn=real&&c.custom?`<button class="artbtn" title="Add or change this card's picture" data-cart="${esc(c.name)}">🎨</button>`:real?(c.verified&&!fxBasic(c)?`<button class="vfbtn" title="Artwork verified — tap to change" data-vf="${esc(c.name)}">✓</button>`:`<button class="artbtn" title="Change artwork / printing" data-art="${esc(c.name)}">🎨</button>`):'';
   const tags=[c.custom&&{h:'<b style="color:#c39bff">★ Custom card</b>'},c.type,has(c.subtype)&&c.subtype,has(c.colors)&&{h:colHtml(c.colors)},has(c.cost)&&{h:costHtml(c.cost)},has(c.cmc)&&'MV '+c.cmc,has(c.power)&&`${c.power}/${c.toughness}`].filter(Boolean);
   openM(`<div class="cp"><div class="frame${fxHasFoil(c)?' foil':''}">${imgTag(c.name,`data-zoom="${esc(c.name)}"`,true)||`<div class="ph">${esc(c.name)}</div>`}${btn}</div>
-  <p class="hint mut">${artOf(c.name)?'Tap the card to view it full screen':''}</p>${backUrl(c.name)?`<button class="flipbtn" data-flip="${esc(c.name)}">↻ Show back</button>`:''}
+  <p class="hint mut">${fxCopiesOn(c)?`Tap the card to see your ${c.qty} copies and their artwork`:artOf(c.name)?'Tap the card to view it full screen':''}</p>${backUrl(c.name)?`<button class="flipbtn" data-flip="${esc(c.name)}">↻ Show back</button>`:''}
   <h2>${esc(c.name)}</h2><div class="tags">${tags.map(x=>`<span>${x.h!==undefined?x.h:esc(x)}</span>`).join('')}</div>
   ${c.leg||!has(c.legal)||/^None/.test(c.legal)?'':`<div class="warn">${esc(c.legal)}</div>`}
   ${has(c.text)||has(c.keywords)?`<div class="sec"><h4>Rules</h4>${has(c.text)?`<pre>${symHtml(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut" style="margin:8px 0 0">${esc(c.keywords)}</p>`:''}</div>`:''}
   ${fxUnknownBox(c)}${c.custom?'':legalBox(c)}
-  <div class="sec"><h4>My collection</h4>${kv('Owned',c.qty)}${has(c.finish)?kv('Finish',esc(c.finish)):''}${c.custom?'':kv('Printing',c.set&&c.verified?`${esc(c.setName||'')} · ${esc(c.set.toUpperCase())} #${esc(c.cn||'')} <span style="color:var(--gold)">✓ verified</span>`:'<span class="mut">not verified yet — tap 🎨 to choose your artwork</span>')}${fxPriceRow(c)}</div>
+  <div class="sec"><h4>My collection</h4>${kv('Owned',c.qty)}${has(c.finish)?kv('Finish',esc(c.finish)):''}${c.custom||fxBasic(c)?'':kv('Printing',fxCopiesOn(c)?fxCopiesRow(c):c.set&&c.verified?`${esc(c.setName||'')} · ${esc(c.set.toUpperCase())} #${esc(c.cn||'')} <span style="color:var(--gold)">✓ verified</span>`:'<span class="mut">not verified yet — tap 🎨 to choose your artwork</span>')}${fxPriceRow(c)}</div>
   <div class="sec"><h4>Pulled from</h4>${c.source&&c.source!=='None'?`<ul>${c.source.split(', ').map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<span class="mut">—</span>'}</div>
   <div class="sec"><h4>In decks</h4>${u.length?u.map(x=>kv(esc(x.d.name),'×'+x.q)).join(''):'<span class="mut">Not in any deck</span>'}</div>
   ${acq.length?`<div class="sec"><h4>Added in app</h4>${acq.map(a=>kv(esc(a.date),`${esc(a.source)} ×${a.qty}`)).join('')}</div>`:''}
@@ -295,9 +296,9 @@ function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.
 
 const vfAsk=n=>{if(confirm(`The artwork for ${n} is marked verified ✓.\n\nDo you want to change it?`))artPicker(n)};
 let AP={name:'',list:[],q:''};
-async function artPicker(name){if(findCard(name)?.custom)return fxCustomArt(name);
-  AP={name,list:[],q:''};
-  openM(`<button onclick="showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}</h3><p class="mut">Pick the printing that matches your physical card. Your “pulled from” source stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><button style="margin:8px 0;display:block" onclick="fxCam(apScan)">📷 Scan the card to verify it</button><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div>`,()=>showCard(AP.name));
+async function artPicker(name,copy){if(findCard(name)?.custom)return fxCustomArt(name);
+  AP={name,list:[],q:'',copy:copy||0};
+  openM(`<button onclick="AP.copy?fxCopiesOpen(AP.name,true):showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}${copy?` — copy ${copy+1}`:''}</h3><p class="mut">Pick the printing that matches your physical card. Your “pulled from” source stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><button style="margin:8px 0;display:block" onclick="fxCam(apScan)">📷 Scan the card to verify it</button><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div>`,()=>showCard(AP.name));
   const base=await scry('/cards/named?fuzzy='+encodeURIComponent(front(name)));
   if(!base||base.object!=='card'){if($('#apst'))$('#apst').textContent='No printings found for this card.';return}
   let url=base.prints_search_uri,pages=0;
@@ -307,9 +308,9 @@ async function artPicker(name){if(findCard(name)?.custom)return fxCustomArt(name
 function apDraw(more=''){
   if(!$('#apg'))return;const cur=findCard(AP.name)?.scryId,q=AP.q.toLowerCase();
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'';
-  const ls=AP.list.filter(p=>sm(p)&&(!q||`${p.set} ${p.set_name} ${p.collector_number}`.toLowerCase().includes(q)));
+  const cpx=AP.copy?((findCard(AP.name)||{}).cps||[])[AP.copy-1]:null;const ls=AP.list.filter(p=>sm(p)&&(!q||`${p.set} ${p.set_name} ${p.collector_number}`.toLowerCase().includes(q)));
   $('#apst').textContent=`${ls.length} of ${AP.list.length} printings${more}`;
-  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-apv="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${p.id===cur?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('');
+  $('#apg').innerHTML=ls.map(p=>`<div class="tile" data-apv="${p.id}"><div class="art"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${(AP.copy?cpx&&cpx.scryId===p.id:p.id===cur)?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('');
 }
 async function apScan(file){
   if(!file)return;const say=t=>{const e=$('#apst');if(e)e.textContent=t};
@@ -335,8 +336,9 @@ function apView(id){const p=AP.list.find(x=>x.id===id);if(!p)return;
   d.querySelector('.nb').onclick=()=>d.remove();d.querySelector('.yb').onclick=()=>{d.remove();useArt(id)};document.body.appendChild(d)}
 function useArt(id){
   const p=AP.list.find(x=>x.id===id),c=findCard(AP.name);if(!p||!c)return;
+  if(AP.copy)return fxCopySet(c,AP.copy,p);
   if(!confirm(`Use ${p.set_name} (${p.set.toUpperCase()}) #${p.collector_number} for ${c.name}?\n\nYour “pulled from” source stays the same.`))return;
-  fxVerifyPrint(c.name,p);render();toast('Artwork and set info updated');if(!verifyEntry(c,p,()=>showCard(c.name)))showCard(c.name);
+  fxVerifyPrint(c.name,p);render();toast('Artwork and set info updated');const back=()=>fxCopiesOn(c)?fxCopiesOpen(c.name):showCard(c.name);if(!verifyEntry(c,p,back))back();
 }
 
 /* ---------- decks ---------- */

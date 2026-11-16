@@ -250,7 +250,7 @@ function fxAddCard(c,n,fin,src,price,notes,ver){
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
-  if(ver&&!e.verified)Object.assign(e,pr,{verified:true});else if(!e.set||!e.art)Object.assign(e,pr);
+  if(ver&&!e.verified)Object.assign(e,pr,{verified:!fxBasic(e)&&!/Basic Land/.test(c.type_line||'')});else if(!e.set||!e.art)Object.assign(e,pr);
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
@@ -773,16 +773,16 @@ function fxSrcPick(kind,x){const q=SQ();if(kind==='new'){q.newSrc=x;const i=docu
 
 
 /* ---------- Verified artwork: one helper for every way a printing gets confirmed (gold ✓) ---------- */
-function fxVerifyPrint(name,p,why,quiet){const e=findCard(name);if(!e||!p||RO)return false;
+function fxVerifyPrint(name,p,why,quiet){const e=findCard(name);if(!e||!p||RO)return false;const vb=!fxBasic(e);
   logEdit(e.name,'Printing',e.set?`${e.setName} #${e.cn}${e.verified?' ✓':''}`:'(not set)',`${p.set_name} #${p.collector_number} ✓${why?' ('+why+')':''}`);
-  Object.assign(e,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:true});e.price=null;e.priceAt='';fxSetPrice(e,p);
+  Object.assign(e,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:vb});e.price=null;e.priceAt='';fxSetPrice(e,p);
   ART[e.name]=sImg(p)||ART[e.name]||'';ART2[e.name]=sImg2(p)||'';if(!quiet){saveArt();save()}return true}
 const fxPrintsUrl=n=>'https://api.scryfall.com/cards/search?order=released&unique=prints&include_extras=true&q='+encodeURIComponent('!"'+front(n)+'"');
 
 /* ---------- Import history: every bulk / several-cards import, so artwork can be verified later, a bit at a time ---------- */
 function fxHistAdd(src,ok,ver){D.imports=D.imports||[];const id=Date.now().toString(36);
   D.imports.unshift({id,at:today(),src,kind:ver?'several':'bulk',items:ok.map(x=>({name:x.card.name,qty:x.qty,fin:x.fin||'',sid:x.card.id||''}))});return id}
-const fxHistLeft=h=>{const s=new Set();return (h?h.items:[]).filter(it=>{const e=findCard(it.name),k=norm(it.name);if(!e||e.custom||e.verified||s.has(k))return false;s.add(k);return true})};
+const fxHistLeft=h=>{const s=new Set();return (h?h.items:[]).filter(it=>{const e=findCard(it.name),k=norm(it.name);if(!e||e.custom||fxBasic(e)||e.verified||s.has(k))return false;s.add(k);return true})};
 function fxHistView(){const L=D.imports||[];if(!L.length)return '';const left=sum(L,h=>fxHistLeft(h).length);
   return `<h3>Import history</h3><p class="mut">Every import is listed here. Cards whose artwork isn’t verified yet can be checked any time — stop whenever you like, the rest waits here.${left?` <b>${fxPl(left,'card')} still to verify.</b>`:''}</p>`+L.slice(0,30).map(h=>{const l=fxHistLeft(h),n=sum(h.items,x=>x.qty);
     return `<div class="sec"><b>${esc(h.at)}</b> · ${esc(h.src)} <span class="mut">· ${fxPl(n,'card')} · ${h.kind==='several'?'several cards at once':'bulk import'}</span>
@@ -818,7 +818,7 @@ function fxSrcPrint(prints,src){const low=String(src||'').toLowerCase();
   return c.length===1?{p:c[0]}:{why:`${c.length} printings in ${c[0].set_name}`}}
 const svMsg=t=>{SV.msg=t;const e=document.getElementById('svmsg');if(e)e.textContent=t};
 async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){if(!auto)toast('You’re offline — try again when connected');return}
-  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!c.verified&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
+  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&!c.verified&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
   SV={running:true,msg:'',ok:[],unsure:[],cand:[]};if(!auto)render();let stopped=false;
   let errs=0;for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
     if(c.verified)continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
@@ -1043,6 +1043,21 @@ function fxDeckFind(again){const i=V.deck,d=D.decks[i];if(!d)return;const F=fxDF
   if(again&&$('#dfres')){$('#dfres').innerHTML=body;return}
   openM(`<h3>🔍 Search ${esc(RO?fxDeckTitle(d):d.name)}</h3><input id="dfq" type="search" placeholder="Name, type or rules text (e.g. flying, draw)…" style="width:100%" value="${esc(F.q)}" oninput="V.df.q=this.value;render();fxDeckFind(true)"><div id="dfres" style="margin-top:8px">${body}</div>
   <div class="row"><button onclick="fxDFClear()">Clear all</button><button class="pri" onclick="closeM()">Show on the deck page</button></div>`);setTimeout(()=>$('#dfq')?.focus(),50)}
+
+
+/* ---------- Several copies of a card: each copy can have its own verified artwork (copy 1 = the card's own printing, copies 2+ in c.cps). Basic lands never need verifying. ---------- */
+const fxBasic=c=>!!c&&(c.type==='Basic Land'||/^Basic\b.*Land/i.test(c.type||''));
+const fxCopiesOn=c=>!!c&&isReal(c)&&!c.custom&&!fxBasic(c)&&c.qty>1&&!!findCard(c.name);
+const fxCopyList=c=>{const L=[c.verified&&c.set?{set:c.set,setName:c.setName,cn:c.cn,scryId:c.scryId,art:c.art||ART[c.name]}:null];for(let k=1;k<c.qty;k++)L.push((c.cps||[])[k-1]||null);return L};
+function fxCopiesRow(c){const L=fxCopyList(c),v=L.filter(Boolean);return `${v.length} of ${c.qty} copies verified${v.length?' <span style="color:var(--gold)">✓</span>':''}<br><span class="mut" style="font-weight:400;font-size:12px">${v.length?esc([...new Set(v.map(x=>`${x.setName} #${x.cn}`))].join(' · ')):'tap the card to choose each copy’s artwork'}</span>`}
+function fxCopiesOpen(name,force){const c=findCard(name);if(!c||!fxCopiesOn(c)||RO)return false;const L=fxCopyList(c);
+  openM(`<button onclick="showCard(${esc(JSON.stringify(c.name))})">← Back</button><h3>Your ${c.qty} copies of ${esc(c.name)}</h3><p class="mut">Each copy can be a different printing. Tap a copy to choose its artwork; <b>?</b> means that copy isn’t verified yet.</p>
+  <div class="grid">${L.map((x,k)=>`<div class="tile" onclick="artPicker(${esc(JSON.stringify(c.name))},${k})"><div class="art">${x&&x.art?`<img src="${esc(x.art)}" alt=""><span class="vf" title="Artwork verified">✓</span>`:'<div class="qbox">?</div>'}</div><div class="nm setcap"><b>Copy ${k+1}</b><span>${x?esc(`${x.setName||''} · ${String(x.set||'').toUpperCase()} #${x.cn||''}`):'not verified yet'}</span></div></div>`).join('')}</div>
+  ${artOf(c.name)?`<div class="row"><button onclick="zoom(${esc(JSON.stringify(c.name))})">⛶ View the card full screen</button></div>`:''}`,()=>showCard(c.name));return true}
+function fxCopySet(c,k,p){if(!confirm(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`))return;
+  c.cps=c.cps||[];while(c.cps.length<k)c.cps.push(null);const old=c.cps[k-1];
+  c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};
+  logEdit(c.name,`Printing (copy ${k+1})`,old?`${old.setName} #${old.cn} ✓`:'(not verified)',`${p.set_name} #${p.collector_number} ✓`);save();toast(`Copy ${k+1} verified`);fxCopiesOpen(c.name,true)}
 
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
