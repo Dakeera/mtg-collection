@@ -49,7 +49,7 @@ function fxSetLabel(src){const x=canonSrc(src);if(x==='Singles Orders')return 'S
   const m=x.match(/^(.*?)\s+(?:Bundle(?:\s+Box)?|(?:(?:Play|Draft|Set|Collector|Family|Jumpstart|Theme)\s+)?Boosters?(?:\s+(?:Pack|Box))?|Prerelease(?:\s+(?:Kit|Pack))?|Commander\s+Deck|Starter\s+(?:Kit|Deck)|Fat\s+Pack|Gift\s+(?:Box|Bundle))\b/i);
   if(m&&m[1].trim().length>2)return m[1].trim();
   return x.replace(/\s+\d+(\s*\(.*\))?$/,'').trim()||x}
-function fxCardLabel(c){const l=[...new Set(cardSources(c).map(fxSetLabel))];return l.length?{k:l[0],alt:l.slice(1)}:{k:'Unknown source',alt:[]}}
+function fxCardLabel(c){const l=[...new Set(cardSources(c).map(fxSetLabel))];return l.length?{k:l[0],alt:l.slice(1)}:{k:'Pulled from: unknown',alt:[]}}
 
 /* ---------- collection list: load more cards as you scroll ---------- */
 addEventListener('scroll',()=>{try{if(V.view!=='collection')return;const m=document.getElementById('more');
@@ -59,21 +59,21 @@ addEventListener('scroll',()=>{try{if(V.view!=='collection')return;const m=docum
 function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEach(e=>{const k=norm(e.name);m[k]=m[k]||{name:e.name,base:0,qty:0};m[k].base+=e.qty;m[k].qty+=e.qty});DRAFT={deck:i,m}}return DRAFT}
 const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base);
 function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,d:x.qty-x.base}))}
-function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
-  if(dl>0&&F&&!D.decks[i].override){const pr=fxAddProblems(i,name,dl);if(pr.length&&!fxOverrideAsk(i,name,pr))return}
+async function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
+  if(dl>0&&F&&!D.decks[i].override){const pr=fxAddProblems(i,name,dl);if(pr.length&&!(await fxOverrideAsk(i,name,pr)))return}
   const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0});
   x.qty=Math.max(0,x.qty+dl);if(!x.qty&&!x.base)delete d.m[k];render();
   if(fromSearch)fxBuilder()}
-function fxCanLeave(){if(fxDraftDirty()){if(!confirm('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing'))return false}DRAFT=null;return true}
-function fxLeaveDeck(){if(!fxCanLeave())return;V.deck=null;render();scrollTo(0,0)}
+async function fxCanLeave(){if(fxDraftDirty()){if(!(await ask('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing')))return false}DRAFT=null;return true}
+async function fxLeaveDeck(){if(!(await fxCanLeave()))return;V.deck=null;render();scrollTo(0,0)}
 const fxDraftNote=i=>RO?'':'<p class="mut" data-rw>Use + / − or “Add card” to make as many changes as you like. Nothing changes until you tap <b>Save changes</b>.</p>';
 function fxDraftBar(i){if(!DRAFT||DRAFT.deck!==i||!fxDraftDirty())return '';const ch=Object.values(DRAFT.m),a=sum(ch,x=>Math.max(0,x.qty-x.base)),r=sum(ch,x=>Math.max(0,x.base-x.qty));
   return `<div style="height:76px"></div><div id="dbar"><span><b>Not saved:</b> ${a?'+'+a:''}${a&&r?' / ':''}${r?'−'+r:''} card${a+r===1?'':'s'}</span><button onclick="fxDraftDiscard()">Discard</button><button class="pri" onclick="fxDraftSave()">Save changes</button></div>`}
-function fxDraftDiscard(){if(!confirm('Discard all the changes you made to this deck?\n\nOK = discard\nCancel = keep editing'))return;DRAFT=null;render();toast('Changes discarded')}
-function fxDraftSave(opt){opt=opt||{};
+async function fxDraftDiscard(){if(!(await ask('Discard all the changes you made to this deck?\n\nOK = discard\nCancel = keep editing')))return;DRAFT=null;render();toast('Changes discarded')}
+async function fxDraftSave(opt){opt=opt||{};
   if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],ch=Object.values(DRAFT.m).filter(x=>x.qty!==x.base),adds=ch.filter(x=>x.qty>x.base),rems=ch.filter(x=>x.qty<x.base);
   const na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty);
-  if(!opt.yes&&!confirm(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.\n\nOK = save\nCancel = keep editing`))return;
+  if(!opt.yes&&!(await ask(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.\n\nOK = save\nCancel = keep editing`)))return;
   const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=opt.allowed||D.decks.filter(x=>x!==d).map(x=>x.name);
   // 1) removals: decide where each physical copy goes, then take it off the list
   rems.forEach(x=>{const n=x.base-x.qty,c=findCard(x.name),lo=loanedOut(d.name,x.name);let perm=Math.max(0,lo-x.qty),phys=n-Math.min(n,perm);perm=Math.min(n,perm);
@@ -146,16 +146,16 @@ async function ocDraw(){await ocLoad();const el=document.getElementById('oclist'
     const end=()=>{if(x0==null)return;x0=null;inn.style.transition='';if(Math.abs(dx)<8){if(open)set(false);else roOpen(row.dataset.oc)}else set(open?dx<40:dx<-40)};
     inn.addEventListener('pointerup',end);inn.addEventListener('pointercancel',()=>{x0=null;inn.style.transition='';set(open)})})}
 async function ocImport(f){return fxOpenFile(f,'view')}
-async function ocDelete(id){const r=(OC||[]).find(x=>x.id===id);if(!r)return;if(!confirm(`Delete the saved collection “${r.name}”?\n\nThis only removes it from this list. Your own collection is not affected.`))return ocDraw();
+async function ocDelete(id){const r=(OC||[]).find(x=>x.id===id);if(!r)return;if(!(await ask(`Delete the saved collection “${r.name}”?\n\nThis only removes it from this list. Your own collection is not affected.`)))return ocDraw();
   await fxTx('readwrite',st=>st.delete(id));if(!(OC||[]).some(x=>x.id!==id&&x.uid===r.uid))fxFriendIndex(r,true);toast('Removed');ocDraw()}
-async function roOpen(id){await ocLoad();const r=OC.find(x=>x.id===id);if(!r)return;if(!fxCanLeave())return;
+async function roOpen(id){await ocLoad();const r=OC.find(x=>x.id===id);if(!r)return;if(!(await fxCanLeave()))return;
   const j=JSON.parse(JSON.stringify(r.data));['acq','edits','flags','swaps','matchups','loans','sleeves','sims'].forEach(k=>{j[k]=j[k]||[]});j.kept=j.kept||{};
   j.cards.forEach(c=>{c.text=c.text||'';c.colors=c.colors||'';c.type=c.type||'';c.qty=+c.qty||0});j.decks.forEach(d=>{d.cards=d.cards||[];d.tokens=d.tokens||[]});
   MINE={D,ART,ART2,CIMG};CIMG=j.customImgs||{};delete j.customImgs;D=j;ART=Object.assign({},ART);ART2=Object.assign({},ART2);RO={id:r.id,name:r.name,given:r.given||(r.data&&r.data.owner)||'',updated:r.updated,uid:r.uid,status:r.status};IDX=null;DRAFT=null;HIST.length=0;
   V.view='collection';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();render();scrollTo(0,0);fetchArt()}
 function roExit(){if(!RO)return;D=MINE.D;ART=MINE.ART;ART2=MINE.ART2;CIMG=MINE.CIMG;RO=null;MINE=null;IDX=null;HIST.length=0;V.view='more';V.sub='others';V.deck=null;V.q=V.type=V.color='';V.lim=0;closeM();persist();render();scrollTo(0,0)}
 const roBar=()=>`<div class="robar"><button onclick="roExit()">← Back to my collection</button><b title="Tap to rename" onclick="roRename()">${RO.status==='signed'?'✓ ':''}${esc(RO.name)}</b><span>Updated<br>${esc(fxDate(RO.updated))}</span></div>`;
-async function roRename(){const n=prompt('Name for this collection (so you know whose it is):',RO.name);if(n==null)return;const name=n.trim();if(!name)return;
+async function roRename(){const n=await askText('Name for this collection (so you know whose it is):',RO.name);if(n==null)return;const name=n.trim();if(!name)return;
   await ocLoad();const r=OC.find(x=>x.id===RO.id);if(r){r.name=name;await fxTx('readwrite',st=>st.put(r));fxFriendIndex(r)}RO.name=name;render();toast('Renamed')}
 
 /* ---------- formats guide ---------- */
@@ -269,19 +269,19 @@ function fxImpDeck(){if(!(IMP.dname||'').trim())return toast('Give the deck a na
 function fxImpCancel(){IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.qa=false;render()}
 /* Bulk imports are always one source, asked on the final check screen (IMP.sq, same picker as single add). */
 function fxImpSrc(){const r=resolveSrc();return r&&!isCustomSrc(r)?r:''}
-function fxImpCommit(){
+async function fxImpCommit(){
   const it=IMP.items||[];
   if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty),src=fxImpSrc();
-    if(!src){toast(IMP.sq&&isCustomSrc((IMP.sq.newSrc||IMP.sq.sel||'').trim())?'“Custom Cards” is only for custom cards — pick another source':'Choose where these cards came from first');document.getElementById('impsrc')?.scrollIntoView({block:'center'});return}
-    if(!confirm(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nSource: ${src}\n\nCards you already own get their quantity increased — no duplicates are created.`))return;
+    if(!src){toast(IMP.sq&&isCustomSrc((IMP.sq.newSrc||IMP.sq.sel||'').trim())?'“Custom Cards” is only for custom cards — pick another “Pulled from”':'Choose where these cards came from first');document.getElementById('impsrc')?.scrollIntoView({block:'center'});return}
+    if(!(await ask(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nPulled from: ${src}\n\nCards you already own get their quantity increased — no duplicates are created.`)))return;
     ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];x.fin=fin;fxAddCard(x.card,x.qty,fin,src,x.price,x.notes,IMP.qa)});
     const wasQa=IMP.qa,hid=fxHistAdd(src,ok,wasQa);
     saveArt();save();IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);
-    if(!wasQa&&fxHistLeft(D.imports[0]).length&&confirm(`${fxPl(n,'card')} added.\n\nDo you want to verify their artwork now? You pick the matching printing card by card and can stop at any time — whatever is left stays in More → Bulk import → Import history.\n\nOK = verify now\nCancel = later`))fxHistVerify(hid);return}
+    if(!wasQa&&fxHistLeft(D.imports[0]).length&&await ask(`${fxPl(n,'card')} added.\n\nDo you want to verify their artwork now? You pick the matching printing card by card and can stop at any time — whatever is left stays in More → Bulk import → Import history.\n\nOK = verify now\nCancel = later`))fxHistVerify(hid);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
   if(!cards.length)return toast('None of those cards could be matched');
-  if(!confirm(`Create the deck “${name}” with ${fxPl(sum(cards),'card')}?${IMP.dadd?'\n\nCards you don’t own will also be added to your collection.':''}`))return;
+  if(!(await ask(`Create the deck “${name}” with ${fxPl(sum(cards),'card')}?${IMP.dadd?'\n\nCards you don’t own will also be added to your collection.':''}`)))return;
   if(IMP.dadd){const need={};it.forEach(x=>{if(!x.own&&x.card){const k=x.card.id;need[k]=need[k]||{c:x.card,q:0};need[k].q+=x.qty}});Object.values(need).forEach(v=>{fxAddCard(v.c,v.q,'Normal','Deck import: '+name,'','Imported with the deck '+name);added+=v.q});saveArt()}
   const cm=it.find(x=>x.section==='commander'&&(x.own||x.card));
   D.decks.push({name,format:IMP.dfmt,sleeve:'',commander:isCmdFmt(IMP.dfmt)?(cm?cm.name:cards[0].name):'',info:'Imported deck list',cards,tokens:[]});
@@ -309,7 +309,7 @@ You can also paste a plain list instead of using a file, one card per line:
 Files exported from Moxfield, Archidekt, ManaBox, Deckbox and MTGGoldfish can be imported as they are.
 Cards you already own get their quantity increased. Nothing is added until you confirm the preview.
 `,'mtg-import-guide.txt','text/plain')}
-function fxExportCSV(){const q=v=>/[",\n]/.test(String(v))?'"'+String(v).replace(/"/g,'""')+'"':String(v??''),rows=[['Name','Quantity','Set code','Collector number','Finish','Source','Type']];
+function fxExportCSV(){const q=v=>/[",\n]/.test(String(v))?'"'+String(v).replace(/"/g,'""')+'"':String(v??''),rows=[['Name','Quantity','Set code','Collector number','Finish','Pulled from','Type']];
   D.cards.forEach(c=>{const fm=finMapOf(c);Object.keys(fm).filter(k=>fm[k]>0).forEach(k=>rows.push([c.name,fm[k],c.set||'',c.cn||'',k,c.source&&c.source!=='None'?c.source:'',c.type||'']))});
   fxDownload(rows.map(r=>r.map(q).join(',')).join('\r\n')+'\r\n',`${fxPrefix()}collection_${tsName()}.csv`,'text/csv')}
 function fxImportView(){
@@ -320,11 +320,11 @@ function fxImportView(){
     ${bad.filter(x=>x.skip).length?`<div class="sec"><b>Skipped by you:</b> ${esc(bad.filter(x=>x.skip).map(x=>x.name).join(', '))}</div>`:''}${bad.filter(x=>!x.skip).length?`<div class="warn"><b>Not found (these will be skipped):</b> ${esc(bad.filter(x=>!x.skip).map(x=>x.name).slice(0,60).join(', '))}${bad.length>60?'…':''}</div>`:''}
     ${tbl(deck?['Qty','Card','Status']:['Qty','Card','Printing','Finish'],ok.slice(0,200).map(x=>deck?[x.qty,x.name,x.own?'✓ in your collection':'not owned'+(IMP.dadd?' — will be added':'')]:[x.qty,{h:esc(x.card.name)+(x.fuzzy?`<br><span style="color:#f39c12;font-size:12px">you typed “${esc(x.typed)}”</span>`:'')},`${x.card.set_name} · ${x.card.set.toUpperCase()} #${x.card.collector_number}`,x.fin]))}
     ${ok.length>200?`<p class="mut">Showing the first 200 of ${ok.length} lines.</p>`:''}
-    ${deck?'':`<div class="f" id="impsrc">${srcFields(IMP.sq=IMP.sq||{},'Where did these cards come from? * (one source for all of them)')}<p class="mut" style="margin:4px 0 0;font-size:12px">The set of each card comes from the artwork you chose — this is where you got them (a box, an order, a trade…).</p></div>`}
+    ${deck?'':`<div class="f" id="impsrc">${srcFields(IMP.sq=IMP.sq||{},'Pulled from * (one for all of these cards)')}<p class="mut" style="margin:4px 0 0;font-size:12px">The set of each card comes from the artwork you chose — this is where you got them (a box, an order, a trade…).</p></div>`}
     <div class="row"><button onclick="fxImpCancel()">Cancel</button>${IMP.qa&&!deck?`<button onclick="IMP.stage='pick';IMP.pi=IMP.items.length-1;render()">‹ Change printings</button>`:''}<button class="pri" onclick="fxImpCommit()" ${ok.length?'':'disabled'}>${deck?'Create deck':'Add to my collection'}</button></div>`}
   const site=(n,u,t)=>`<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
   return `<h3>Import cards into your collection</h3><p class="mut">Add many cards at once from a file or a pasted list. You see a preview first — nothing is added until you confirm.</p>
-  ${fxHistView()}<p class="mut" style="font-size:12px">You’ll choose where the cards came from (one source for the whole import) on the last screen, before anything is added.</p>
+  ${fxHistView()}<p class="mut" style="font-size:12px">You’ll choose where the cards were pulled from (one “Pulled from” for the whole import) on the last screen, before anything is added.</p>
   <div class="row"><label class="btn pri">📄 Choose a file (CSV, text or Excel)<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls,text/*" hidden onchange="fxImpFile(this.files[0]);this.value=''"></label></div>
   <div class="f"><label>…or paste a list (one card per line)</label><textarea rows="5" placeholder="4 Lightning Bolt&#10;1 Sol Ring (C21) 263&#10;2x Llanowar Elves *F*" oninput="IMP.text=this.value">${esc(IMP.text)}</textarea></div><div class="row"><button onclick="fxImpText()">Read pasted list</button></div>
   <details class="g"><summary>📝 Template and guide for building your own file</summary><p class="mut">Download the template, fill in one card per row in Excel or Google Sheets, save it as CSV, then choose it above. Only the card name is required; set code + collector number pick the exact artwork.</p><div class="row"><button onclick="fxTemplate()">⬇ CSV template</button><button onclick="fxGuide()">⬇ Guide (text file)</button></div>
@@ -466,8 +466,8 @@ async function simFill(){await ocLoad();const a=document.getElementById('simA'),
 function simPick(v){const p=String(v).split(':');if(p[0]==='m'){const d=D.decks[+p[1]];return d&&Object.assign(simDeck(d,D.cards),{owner:D.uid||'',deck:d.name})}const r=(OC||[]).find(x=>x.id===p[1]),d=r&&r.data.decks[+p[2]];return d&&Object.assign(simDeck(d,r.data.cards,`${d.name} (${r.name})`),{owner:r.uid||'',deck:d.name})}
 const simName=(s,k)=>{const o=s[k+'o'],r=o&&o!==D.uid&&(OC||[]).find(x=>x.uid===o&&!x.sep);return r&&s[k+'d']?`${s[k+'d']} (${r.name})`:s[k]};
 async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||1000,out=document.getElementById('simout');if(!A||!B)return toast('Pick two decks first');
-  if(V.simA===V.simB&&!confirm('Both sides are the same deck (a mirror match). Run it anyway?'))return;
-  if(V.simA!==V.simB&&!confirm(`Run ${n} games of ${A.name} vs ${B.name}?\n\nThe result is added to the Simulation log.`))return;
+  if(V.simA===V.simB&&!(await ask('Both sides are the same deck (a mirror match). Run it anyway?')))return;
+  if(V.simA!==V.simB&&!(await ask(`Run ${n} games of ${A.name} vs ${B.name}?\n\nThe result is added to the Simulation log.`)))return;
   for(const d of [A,B])if(d.n<20)return toast(`${d.name} has only ${d.n} cards — add more before simulating`);
   out.innerHTML=`<p class="mut" id="simt">Playing games…</p><div class="pbar"><i id="simb" style="width:2%"></i></div>`;
   const r=await simRun(A,B,n,(d,t)=>{const b=document.getElementById('simb'),x=document.getElementById('simt');if(b)b.style.width=Math.round(d/t*100)+'%';if(x)x.textContent=`Playing games… ${d} of ${t}`});
@@ -476,7 +476,7 @@ async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||10
   ms.rows.push([id,today(),A.name,B.name,fmt,String(n),`${r.aw} (${pct(r.aw)}%)`,`${r.bw} (${pct(r.bw)}%)`,`${r.avg} Turns`,'Simulated in app']);
   D.sims.push({id,date:today(),a:A.name,b:B.name,fmt,n,aw:r.aw,bw:r.bw,dr:r.dr,avg:r.avg,ap:r.ap,ad:r.ad,unkA:A.unk,unkB:B.unk,la:A.list,lb:B.list,ca:A.commander,cb:B.commander,ao:A.owner,bo:B.owner,ad:A.deck,bd:B.deck,note:''});
   V.simOpen=id;save();render();toast(`${A.name} ${pct(r.aw)}% — ${B.name} ${pct(r.bw)}%`)}
-function fxSimDel(id){if(!confirm(`Remove ${id} from the matchup log?`))return;const ms=simMaster();ms.rows=ms.rows.filter((r,i)=>i===0||r[0]!==id);D.sims=(D.sims||[]).filter(s=>s.id!==id);save();render()}
+async function fxSimDel(id){if(!(await ask(`Remove ${id} from the matchup log?`)))return;const ms=simMaster();ms.rows=ms.rows.filter((r,i)=>i===0||r[0]!==id);D.sims=(D.sims||[]).filter(s=>s.id!==id);save();render()}
 function fxSimPrompt(s){return `You are an expert Magic: The Gathering analyst. Two decks were played against each other in a simplified simulator (it models mana, creatures, combat keywords, removal, burn, card draw and ramp, but not triggered abilities or combos).
 
 Simulator result over ${s.n} games (${s.fmt}): ${s.a} won ${s.aw}, ${s.b} won ${s.bw}, ${s.dr} drawn or stalled. Average game length ${s.avg} turns.
@@ -490,7 +490,7 @@ DECK B — ${s.b}${s.cb?' (commander: '+s.cb+')':''}:
 ${s.lb||'(list not saved)'}`}
 const simGet=id=>(D.sims||[]).find(s=>s.id===id);
 function fxSimCopy(id){const s=simGet(id);if(!s)return;navigator.clipboard.writeText(fxSimPrompt(s)).then(()=>toast('Prompt copied — paste it into your AI app, then paste its answer back here'),()=>toast('Could not copy'))}
-function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;if(!confirm('Save this note on the matchup?'))return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
+async function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;if(!(await ask('Save this note on the matchup?')))return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
 // One place that talks to the AI providers. Times out (default 3 min) and can be cancelled; gives a clear message for every failure.
 async function fxCallAI(p,o){o=o||{};const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the Deck Generator tab first (Option B).');
   const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),o.timeout||180000);if(o.signal)o.signal.addEventListener('abort',()=>ctl.abort());let r,j,txt='';
@@ -503,7 +503,7 @@ async function fxCallAI(p,o){o=o||{};const key=AIKEY.trim(),model=G.model.trim()
   clearTimeout(to);
   if(!r.ok){const m=j&&j.error&&(j.error.message||j.error.type)||('error '+r.status);throw new Error(`${FXPN[G.prov]||'The provider'} said: ${m}${r.status===404||/model/i.test(m)?' — tap “My models” to pick a model your key can use.':r.status===401||r.status===403?' — check the API key.':r.status===429?' — you’ve hit a usage or rate limit; wait a minute or check your plan.':''}`)}
   if(!txt)throw new Error('The AI sent back an empty reply'+(j.candidates?.[0]?.finishReason?` (${j.candidates[0].finishReason})`:j.stop_reason?` (${j.stop_reason})`:'')+'. Try again or pick another model.');return txt}
-async function fxSimAsk(id){const s=simGet(id);if(!s)return;if(!confirm(s.note?'Ask the AI to explain this matchup?\n\nIts answer replaces the current note.':'Ask the AI to explain this matchup?\n\nIts answer is saved as the note.'))return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
+async function fxSimAsk(id){const s=simGet(id);if(!s)return;if(!(await ask(s.note?'Ask the AI to explain this matchup?\n\nIts answer replaces the current note.':'Ask the AI to explain this matchup?\n\nIts answer is saved as the note.')))return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
 
 /* ---------- card prices (Scryfall, USD) and collection sorting ---------- */
 const fxMoney=v=>'$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -566,7 +566,7 @@ function fxWelcome(){if(D.uid||D.cards.length||D.decks.length||V.noWelcome)retur
   <p><button style="background:none;border:0;text-decoration:underline;color:var(--mut)" onclick="V.noWelcome=1;render()">Just look around</button></p>
   <p class="mut" style="font-size:12px">Your collection gets its own permanent ID. You can rename the collection any time; the ID stays the same and comes back whenever you restore a backup.</p></div>`;return true}
 function fxStart(){fxIdentity(($('#wname').value||'').trim()||'My collection');persist();render();toast('Collection created')}
-function fxRename(v){const n=String(v||'').trim();if(n===(D.owner||''))return;if(!confirm(`Rename your collection to “${n}”?\n\nYour ID stays the same.`))return render();D.owner=n;save();toast('Collection name saved — your ID stays the same')}
+async function fxRename(v){const n=String(v||'').trim();if(n===(D.owner||''))return;if(!(await ask(`Rename your collection to “${n}”?\n\nYour ID stays the same.`)))return render();D.owner=n;save();toast('Collection name saved — your ID stays the same')}
 function fxAsk(title,body,btns){window.FXASK=btns.map(b=>()=>{closeM();b.fn&&b.fn()});
   openM(`<h3>${title}</h3>${body}<div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">${btns.map((b,i)=>`<button class="${b.cls||''}" style="padding:13px" onclick="FXASK[${i}]()">${b.t}</button>`).join('')}</div>`)}
 const fxWho=(name,uid)=>`<b>${esc(name||'(no name)')}</b>${uid?` <span class="mut">· ID ${esc(fxCode(uid))}</span>`:' <span class="mut">· no ID (older file)</span>'}`;
@@ -574,9 +574,9 @@ const fxWho=(name,uid)=>`<b>${esc(name||'(no name)')}</b>${uid?` <span class="mu
 /* ---------- one way in for every file: backup, share file, or someone else's backup ---------- */
 async function fxOpenFile(f,hint){if(!f)return;let j;try{j=await fxReadBackup(f)}catch(e){return toast('That file isn’t a MtG DeckMaster backup or share file')}
   if(j.kind==='mtg-share')return fxGotShare(j);if(j.xfer)return fxGotDevice(j);return fxGotBackup(j,f,hint)}
-function fxRestoreAsk(j){let m=`Restore this backup? It replaces everything currently in the app (${D.cards.length} card titles, ${fxPl(D.decks.length,'deck')}).`;
+async function fxRestoreAsk(j){let m=`Restore this backup? It replaces everything currently in the app (${D.cards.length} card titles, ${fxPl(D.decks.length,'deck')}).`;
   if(j.updated&&D.updated&&j.updated<D.updated-60000&&D.cards.length)m+=`\n\n⚠ This backup is OLDER than what is in the app now.\nBackup last changed: ${new Date(j.updated).toLocaleString()}\nApp last changed: ${new Date(D.updated).toLocaleString()}\nAnything you changed since then will be lost.`;
-  if(confirm(m))fxRestore(j)}
+  if(await ask(m))fxRestore(j)}
 function fxRestore(j){fxKeysIn(j,(j.uid&&D&&j.uid===D.uid)||(D&&!D.cards.length&&!D.decks.length));fxImgsIn(j);D=j;D.acq=D.acq||[];D.edits=D.edits||[];D.flags=D.flags||[];D.kept=D.kept||{};D.loans=D.loans||[];normSources();fxMigrate();fxInitId();DRAFT=null;V.noWelcome=0;save();stamp();closeM();toast('Backup restored');render();fetchArt();fxSrcAuto()}
 function fxGotBackup(j,f,hint){const empty=!D.cards.length&&!D.decks.length,same=j.uid&&D.uid&&j.uid===D.uid;
   const asFriend=()=>fxSaveFriend({uid:j.uid||('old-'+fxUuid()),name:j.owner||String(f.name||'Collection').replace(/\.[^.]+$/,'').replace(/[_-]?(mtg-)?backup.*$/i,'').replace(/_[0-9A-Z]{4}-[0-9A-Z]{4}$/,'')||'Collection',updated:j.updated||f.lastModified||Date.now(),pub:j.keys?j.keys.pub:null,cards:j.cards,decks:j.decks,customImgs:j.customImgs,scope:'all'},'unverified',{});
@@ -594,7 +594,7 @@ async function fxGotShare(j){const {sig,...rest}=j;let st='unsigned';if(sig&&j.p
     [{t:`Trust it — update ${esc(who)} and remember this signature`,fn:()=>fxSaveFriend(j,good,{trust:true})},{t:'Keep both — save it separately as unverified',fn:()=>fxSaveFriend(j,'unverified',{separate:true})},{t:'Cancel',cls:'pri'}]);
   if(empty&&j.scope!=='deck')return fxAsk('A share file',info+'<p class="mut">Your app has no collection yet. What would you like to do with this one?</p>',[{t:'👁 View it (it belongs to someone else)',cls:'pri',fn:()=>fxSaveFriend(j,good,{})},{t:'It was mine — recover it (keeps the same ID)',fn:()=>fxRecover(j,'recover')},{t:'Start my collection from a copy (new ID)',fn:()=>fxRecover(j,'copy')},{t:'Cancel'}]);
   fxSaveFriend(j,good,{})}
-function fxRecover(j,mode){if(mode==='mine'&&!confirm(`Replace your current cards and decks (${D.cards.length} titles, ${fxPl(D.decks.length,'deck')}) with the ones in this share file?\n\nYour logs, sleeves and ID are kept.`))return;
+async function fxRecover(j,mode){if(mode==='mine'&&!(await ask(`Replace your current cards and decks (${D.cards.length} titles, ${fxPl(D.decks.length,'deck')}) with the ones in this share file?\n\nYour logs, sleeves and ID are kept.`)))return;
   D.cards=j.cards;D.decks=j.decks;D.loans=[];if(mode!=='mine'){D.owner=mode==='copy'?(j.name||'My')+' (copy)':j.name;D.uid=mode==='recover'?j.uid:fxUuid();D.created=today();D.keys=null;fxKeys()}
   normSources();IDX=null;DRAFT=null;V.noWelcome=0;save();render();fetchArt();toast(mode==='recover'?'Collection recovered — friends will be asked to trust your new signature':'Done')}
 function fxFriendIndex(rec,del){const F=RO?(MINE.D.friends=MINE.D.friends||[]):(D.friends=D.friends||[]),i=F.findIndex(x=>x.uid===rec.uid);if(del){if(i>=0)F.splice(i,1)}else if(!rec.sep&&!rec.link){const e={uid:rec.uid,name:rec.name,pub:rec.pub||null};i>=0?F[i]=e:F.push(e)}if(!RO)save()}
@@ -650,7 +650,7 @@ async function fxShortUrl(url){const api='https://tinyurl.com/api-create.php?url
 async function fxSendLink(d,url,short){const title=fxDeckTitle(d),text=`${title} — a MtG DeckMaster deck`;
   try{if(isNative()&&window.Capacitor.Plugins.Share){await window.Capacitor.Plugins.Share.share({title,text,url,dialogTitle:'Share deck link'});return}
     if(navigator.share){await navigator.share({title,text,url});return}}catch(e){if(e&&(e.name==='AbortError'||/cancel/i.test(String(e.message))))return}
-  navigator.clipboard.writeText(url).then(()=>toast(short?'Short link copied — paste it into a message':'Deck link copied — paste it into a message'),()=>prompt('Copy this link:',url))}
+  navigator.clipboard.writeText(url).then(()=>toast(short?'Short link copied — paste it into a message':'Deck link copied — paste it into a message'),()=>askText('Copy this link:',url))}
 async function fxAppLink(i){const d=D.decks[i];fxSendLink(d,fxLinkBase()+'#d='+await fxPackDeck(d),false)}
 async function fxDeckLink(i,tries){tries=tries||0;const d=D.decks[i];if(!D.uid)fxIdentity();
   const offline=()=>fxAsk('You’re offline',`<p>A short link needs the internet.</p><p class="mut">You can share an <b>app-only link</b> instead: it carries the deck list itself, so it’s longer, but it works without any outside service and opens in MtG DeckMaster (app or web).</p>`,[{t:'🔗 Share app-only link',cls:'pri',fn:()=>fxAppLink(i)},{t:'Cancel'}]);
@@ -685,10 +685,10 @@ async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.
   const ok=!!(o.pub&&o.sig&&o.u&&await fxVerify(o.signed,o.sig,o.pub)),deck={name:o.n,format:o.f||'Casual',commander:o.c||'',cards:items.map(x=>({name:x.name,qty:x.qty,finish:'Normal'})),tokens:[]};
   if(ok&&D.uid&&o.u===D.uid&&D.keys&&D.keys.pub&&D.keys.pub.x===o.pub.x&&D.keys.pub.y===o.pub.y){const i=D.decks.findIndex(d=>d.name.toLowerCase()===o.n.toLowerCase());
     if(i>=0){V.view='decks';V.deck=i;render();scrollTo(0,0);return toast('This is your own deck — it’s already in your decks')}
-    if(!confirm(`“${o.n}” is one of your own decks (signed with your collection’s key), but it isn’t in your decks on this device.\n\nAdd it to your decks?`))return;
+    if(!(await ask(`“${o.n}” is one of your own decks (signed with your collection’s key), but it isn’t in your decks on this device.\n\nAdd it to your decks?`)))return;
     D.decks.push({name:o.n,format:deck.format,sleeve:'',commander:deck.commander,info:'Restored from your own deck link',cards:deck.cards.filter(e=>findCard(e.name)).map(e=>({name:findCard(e.name).name,qty:e.qty,finish:'Normal'})),tokens:[]});save();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);return toast('Added to your decks')}
   await ocLoad();const ex=ok&&OC.find(r=>r.uid===o.u&&!r.sep&&!r.link),clash=ex&&ex.pub&&(ex.pub.x!==o.pub.x||ex.pub.y!==o.pub.y);
-  if(clash&&!confirm(`This link says it’s from ${ex.name}, but it was signed with a different key than the ${ex.name} you already have.\n\nIt could be someone else using their name. OK = keep it as a separate, unverified entry\nCancel = don’t open it`))return;
+  if(clash&&!(await ask(`This link says it’s from ${ex.name}, but it was signed with a different key than the ${ex.name} you already have.\n\nIt could be someone else using their name. OK = keep it as a separate, unverified entry\nCancel = don’t open it`)))return;
   const uid=o.u||('link-'+fxUuid()),rec=await fxSaveFriend({uid,name:o.o||'Shared decks',updated:Date.now(),pub:ok&&!clash?o.pub:null,scope:'deck',cards,decks:[deck]},ok&&!clash?'signed':'unverified',ok&&!clash?{quiet:true}:{link:true,quiet:true,separate:!!clash,nick:(o.o||'Someone')+' — shared by link'});
   if(rec){await roOpen(rec.id);const i=D.decks.findIndex(d=>d.name===o.n);if(i>=0){V.view='decks';V.deck=i;render()}}}
 function fxCheckLink(){try{if(/#d=/.test(location.hash)){const h=location.hash;history.replaceState(history.state,'',location.pathname+location.search);fxOpenLink(h)}}catch(e){}}
@@ -733,7 +733,7 @@ async function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
     const iss=fxCardIssues(c,have,F,cmdC);
     return `<div class="res" style="cursor:default;flex-wrap:wrap"><span style="flex:1;min-width:0">${esc(c.name)} ${costHtml(c.cost)}${iss.length?` <button class="isb" onclick="this.closest('.res').querySelector('.isd').hidden^=1">⚠ ${esc(iss[0].title)}${iss.length>1?' +'+(iss.length-1):''}</button>`:''}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
     <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span>${iss.length?`<div class="isd" hidden>${iss.map(x=>`<p><b>${esc(x.title)}.</b> ${esc(x.msg)}</p>`).join('')}<p class="mut">You can still add it — this is just so you know.</p></div>`:''}</div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||`<p class="mut">${V.bown?'No cards match.':'None of your cards match.'}</p>`}
-function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const d=D.decks[V.deck];if(dl>0&&!confirm(`Pull 1× ${n} from your collection into ${d.name}?\n\n(It’s staged — tap Save changes on the deck to apply.)`))return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
+async function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const d=D.decks[V.deck];if(dl>0&&!(await ask(`Pull 1× ${n} from your collection into ${d.name}?\n\n(It’s staged — tap Save changes on the deck to apply.)`)))return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
 /* Builder with “Only add cards that are in my collection” switched off: search Scryfall for cards you don't own and add them to the collection + this deck */
 let BSC={q:'',list:null,t:0,busy:false};
 function fxBScry(q){const el=document.getElementById('bscry');if(V.bown||!el){clearTimeout(BSC.t);if(el)el.innerHTML='';return}
@@ -746,15 +746,15 @@ function fxBScryDraw(){const el=document.getElementById('bscry');if(!el)return;c
     <span style="display:flex;align-items:center;gap:6px;flex:0 0 auto"><input id="bnq${k}" type="number" min="1" value="1" style="width:56px;padding:6px"><button class="pri" style="padding:6px 10px" onclick="fxBNew(${k})">＋ Add</button></span></div>`).join(''):'<p class="mut">No other cards match on Scryfall.</p>')}
 async function fxBNew(k){const c=(BSC.list||[])[k],d=D.decks[V.deck];if(!c||!d)return;const q=Math.max(1,parseInt(document.getElementById('bnq'+k)?.value,10)||1);
   let src=canonSrc(String(V.bsrc||'').trim());if(!src){toast('Say where the new cards come from first (the box above)');document.getElementById('bsrc')?.focus();return}
-  if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — pick another source');if(!allSources().some(s=>s.toLowerCase()===src.toLowerCase()))src=autoNumber(src);
-  if(!confirm(`Add ${q}× ${c.name} to your collection AND put it in ${d.name}?\n\nPulled from: ${src}\n(The deck change is staged — tap Save changes on the deck to apply.)`))return;
+  if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — pick another “Pulled from”');if(!allSources().some(s=>s.toLowerCase()===src.toLowerCase()))src=autoNumber(src);
+  if(!(await ask(`Add ${q}× ${c.name} to your collection AND put it in ${d.name}?\n\nPulled from: ${src}\n(The deck change is staged — tap Save changes on the deck to apply.)`)))return;
   fxAddCard(c,q,'Normal',src,'','Added while building '+d.name);V.bsrc=src;{const bi=document.getElementById('bsrc');if(bi)bi.value=src}IDX=null;saveArt();save();BSC.list=BSC.list.filter(x=>x!==c);
   const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,c.name,q,true);document.getElementById('modal').scrollTop=y;toast(`${q}× ${c.name} added to your collection`)}
 function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef">${fmtOptions(dfmt(d.format)?d.format:'Casual')}</select>
   <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
   <label>Sleeves <span id="sl" class="mut"></span></label><label style="margin:2px 0 4px;font-weight:400"><input type="checkbox" id="nsa" onchange="NSA=this.checked;sleeveOpts(window.FXCUR)">Auto-select from available sleeves</label><div class="swr" id="ns"></div></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`);
   const cur=sleeveOf(d);window.FXCUR=cur?cur.color:'';NSA=false;NSV=window.FXCUR;$('#ef').onchange=()=>sleeveOpts(window.FXCUR);sleeveOpts(window.FXCUR)}
-function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.name;if(!name)return toast('Give the deck a name');if(D.decks.some((x,k)=>k!==i&&x.name.toLowerCase()===name.toLowerCase()))return toast('Another deck already has that name');if(!confirm(`Save the changes to “${old}”?`))return;
+async function fxDeckEditSave(i){const d=D.decks[i],name=$('#en').value.trim(),old=d.name;if(!name)return toast('Give the deck a name');if(D.decks.some((x,k)=>k!==i&&x.name.toLowerCase()===name.toLowerCase()))return toast('Another deck already has that name');if(!(await ask(`Save the changes to “${old}”?`)))return;
   const s=sleeveOf(d);d.name=name;d.format=$('#ef').value;d.commander=$('#ec').value.trim();
   if(name!==old){D.loans.forEach(l=>{if(l.from===old)l.from=name;if(l.to===old)l.to=name});D.swaps.forEach(w=>{if(w.deck===old)w.deck=name;if(w.row&&w.row[1]===old)w.row[1]=name})}
   const ns=D.sleeves.find(x=>x.color===NSV);if(s&&s!==ns){s.deck='';s.inUse=0}d.sleeve=ns?ns.color:'';
@@ -798,7 +798,7 @@ function fxHistView(){const L=D.imports||[];if(!L.length)return '';const left=su
     return `<div class="sec"><b>${esc(h.at)}</b> · ${esc(h.src)} <span class="mut">· ${fxPl(n,'card')} · ${h.kind==='several'?'several cards at once':'bulk import'}</span>
     <div class="row" style="align-items:center;margin-top:6px">${l.length?`<span style="flex:1">${l.length} not verified yet</span><button class="pri" style="flex:0 0 auto" onclick="fxHistVerify('${h.id}')">✓ Verify artwork</button>`:'<span style="flex:1;color:var(--gold)">✓ All artwork verified</span>'}<button style="flex:0 0 auto;padding:8px 12px" onclick="fxHistDel('${h.id}')" title="Remove from history">✕</button></div>
     <details><summary class="mut" style="font-size:13px">Cards in this import</summary><div style="font-size:13px;margin-top:4px">${h.items.map(x=>{const e=findCard(x.name);return `${x.qty}× ${e?cl(e.name):esc(x.name)+' <span class="mut">(no longer in your collection)</span>'}${e&&e.verified?' <span style="color:var(--gold)">✓</span>':''}`}).join('<br>')}</div></details></div>`}).join('')+(L.length>30?`<p class="mut">Showing the newest 30 of ${L.length}.</p>`:'')}
-function fxHistDel(id){if(!confirm('Remove this import from the history?\n\nYour cards stay in your collection — only this history entry goes.'))return;D.imports=(D.imports||[]).filter(h=>h.id!==id);save();render()}
+async function fxHistDel(id){if(!(await ask('Remove this import from the history?\n\nYour cards stay in your collection — only this history entry goes.')))return;D.imports=(D.imports||[]).filter(h=>h.id!==id);save();render()}
 function fxHistVerify(id){const h=(D.imports||[]).find(x=>x.id===id),l=fxHistLeft(h);if(!l.length)return toast('All artwork in this import is already verified');
   Object.assign(IMP,{stage:'pick',kind:'verify',vid:id,qa:false,pi:0,vdone:0,items:l.map(it=>({name:findCard(it.name).name,qty:it.qty,sid:it.sid,stub:true,card:{name:it.name,id:it.sid,finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(it.name)}}))});
   go('more');V.sub='import';render();scrollTo(0,0)}
@@ -812,9 +812,9 @@ function fxVerPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i
   return head+`<h3 style="margin:8px 0 2px">${esc(x.name)}</h3><p class="mut" style="margin:0 0 8px">You own ${e?e.qty:x.qty}${x.done?' · <span style="color:var(--gold)">✓ saved</span>':''}. Tap the set name under an artwork to choose it, or tap the picture to see it full screen.</p>
   <div class="qabar"><b class="qanm">${esc(x.name)}</b>${(x.vmax=x.vmax||fxUnverifiedCopies(e)||1)>1?`<label style="margin:0">Copies with this artwork</label><input type="number" min="1" max="${x.vmax}" value="${x.vq||x.vmax}" style="width:70px" onchange="IMP.items[${i}].vq=Math.min(${x.vmax},Math.max(1,parseInt(this.value)||1))">`:''}<span class="mut" style="font-size:13px">${esc(c.set_name||'')} · ${esc(String(c.set||'').toUpperCase())} #${esc(c.collector_number||'')}</span></div>
   <div class="grid">${x.prints.map((p,k)=>`<div class="tile" style="${p.id===c.id?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art" onclick="fxQAView(${i},${k})"><img loading="lazy" src="${esc(sm(p))}" alt="">${p.id===c.id?'<span class="badge">✓</span>':''}</div><div class="nm setcap" onclick="fxQAPrint(${i},${k})" style="cursor:pointer"><b>${esc(p.set_name)}</b><span>${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('')}</div>`+nav}
-function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
+async function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
   if(saveIt){if(x.stub||x.err||!x.prints)return;const e=findCard(x.name),n=Math.min(x.vq||x.vmax||1,fxUnverifiedCopies(e)||1);
-    if(!confirm(`Save ${x.card.set_name} #${x.card.collector_number} as the verified artwork for ${n>1?n+' copies of ':''}${x.name}?`))return;
+    if(!(await ask(`Save ${x.card.set_name} #${x.card.collector_number} as the verified artwork for ${n>1?n+' copies of ':''}${x.name}?`)))return;
     if(e&&e.qty>1){logEdit(e.name,'Printing',`${fxUnverifiedCopies(e)} copies not verified`,`${x.card.set_name} #${x.card.collector_number} ✓ ×${n} (import history)`);if(fxSetCopies(e,x.card,n)){saveArt();save();if(!x.done)IMP.vdone++;x.done=true}}
     else if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}
     const left=fxUnverifiedCopies(findCard(x.name));if(left>0&&!(IMP.items[IMP.pi+1]&&IMP.items[IMP.pi+1].restOf===x))IMP.items.splice(IMP.pi+1,0,Object.assign({},x,{restOf:x,done:false,vq:0,vmax:left}))}
@@ -825,15 +825,15 @@ function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
   const h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
 /* ---------- Data check → Resolve missing artwork: every card with an unverified copy, grouped by pull source, one source at a time ---------- */
-function fxMissArt(){const G={};D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c)||!fxUnverifiedCopies(c))return;const ss=cardSources(c).filter(s=>!isCustomSrc(s));(ss.length?ss:['No pull source']).forEach(s=>{(G[s]=G[s]||[]).push(c)})});return G}
+function fxMissArt(){const G={};D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c)||!fxUnverifiedCopies(c))return;const ss=cardSources(c).filter(s=>!isCustomSrc(s));(ss.length?ss:['No “Pulled from”']).forEach(s=>{(G[s]=G[s]||[]).push(c)})});return G}
 const fxSrcQty=(c,s)=>sum(D.acq.filter(a=>norm(a.name)===norm(c.name)&&canonSrc(a.source)===s),a=>a.qty);
 function fxMissArtView(){const G=fxMissArt(),ks=Object.keys(G).sort((a,b)=>G[b].length-G[a].length||a.localeCompare(b)),cards=new Set(Object.values(G).flat()),copies=sum([...cards],c=>fxUnverifiedCopies(c));
-  return `<div class="sec"><h4>Resolve missing artwork</h4>${cards.size?`<p class="mut" style="margin:4px 0">${fxPl(cards.size,'card')} (${copies} ${copies===1?'copy':'copies'}) still need their artwork verified. They’re listed by pull source, so you can work through one box or pack at a time. Your progress is saved card by card — tap <b>Finish later</b> any time.</p>
+  return `<div class="sec"><h4>Resolve missing artwork</h4>${cards.size?`<p class="mut" style="margin:4px 0">${fxPl(cards.size,'card')} (${copies} ${copies===1?'copy':'copies'}) still need their artwork verified. They’re listed by where they were pulled from, so you can work through one box or pack at a time. Your progress is saved card by card — tap <b>Finish later</b> any time.</p>
   <button class="pri" onclick="V.maOpen=!V.maOpen;render()">🎨 ${V.maOpen?'Hide the list':'Resolve missing artwork'}</button>
   ${V.maOpen?ks.map(s=>`<div class="sec" style="margin:8px 0"><div class="row" style="align-items:center"><span style="flex:1"><b>${esc(s)}</b> <span class="mut">· ${fxPl(G[s].length,'card')}</span></span><button class="pri" style="flex:0 0 auto" onclick="fxMissArtGo(${esc(JSON.stringify(s))})">Start</button></div>
-    <details><summary class="mut" style="font-size:13px">Cards from this source</summary><div style="font-size:13px;margin-top:4px">${G[s].map(c=>{const o=cardSources(c).filter(x=>x!==s);return `${cl(c.name)} <span class="mut">· ${fxUnverifiedCopies(c)} of ${c.qty} not verified${o.length?' · also from '+esc(o.join(', ')):''}</span>`}).join('<br>')}</div></details></div>`).join(''):''}`
+    <details><summary class="mut" style="font-size:13px">Cards pulled from here</summary><div style="font-size:13px;margin-top:4px">${G[s].map(c=>{const o=cardSources(c).filter(x=>x!==s);return `${cl(c.name)} <span class="mut">· ${fxUnverifiedCopies(c)} of ${c.qty} not verified${o.length?' · also from '+esc(o.join(', ')):''}</span>`}).join('<br>')}</div></details></div>`).join(''):''}`
   :'<p class="mut" style="margin:4px 0">✓ Every card’s artwork is verified (basic lands and custom cards don’t need it).</p>'}</div>`}
-function fxMissArtGo(s){const L=(fxMissArt()[s]||[]);if(!L.length)return toast('Nothing left to verify in that source');
+function fxMissArtGo(s){const L=(fxMissArt()[s]||[]);if(!L.length)return toast('Nothing left to verify there');
   Object.assign(IMP,{stage:'pick',kind:'verify',vid:null,vsrc:s,qa:false,pi:0,vdone:0,items:L.map(c=>{const u=fxUnverifiedCopies(c),fs=fxSrcQty(c,s);return {name:c.name,qty:c.qty,sid:c.scryId||'',stub:true,vmax:u,vq:fs&&fs<u?fs:0,src:s,card:{name:c.name,id:c.scryId||'',finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(c.name)}}})});
   go('more');V.sub='import';render();scrollTo(0,0)}
 
@@ -854,25 +854,25 @@ async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){
     const r=await scry(fxPrintsUrl(c.name));if(!r){if(!navigator.onLine||scry.st===0){stopped=true;break}if(scry.st===404)SV.unsure.push([c.name,'not found on Scryfall']);else errs++;continue}
     let pr=r.data||[];if(r.has_more){const r2=await scry(r.next_page);if(r2&&r2.data)pr=pr.concat(r2.data)}
     const res=srcs.map(s=>SV_SKIP.test(s)?{why:'also from “'+s+'”'}:fxSrcPrint(pr,s)),bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
-    if(bad||ids.size!==1){SV.unsure.push([c.name,bad?bad.why:'its sources point to different printings']);continue}
+    if(bad||ids.size!==1){SV.unsure.push([c.name,bad?bad.why:'its “Pulled from” entries point to different printings']);continue}
     SV.cand.push({name:c.name,p:res[0].p,src:srcs.join(', ')})}
   SV.running=false;const C=SV.cand;
-  SV.msg=stopped?`Stopped (offline) — it continues next time.`:`Checked: ${fxPl(C.length,'card')} can be verified from their pull source, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
-  if(!C.length){if(!stopped&&!errs){D.srcv2=today();save()}if(!auto)toast('No cards could be verified from their pull source');return}
+  SV.msg=stopped?`Stopped (offline) — it continues next time.`:`Checked: ${fxPl(C.length,'card')} can be verified from their “Pulled from”, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
+  if(!C.length){if(!stopped&&!errs){D.srcv2=today();save()}if(!auto)toast('No cards could be verified from their “Pulled from”');return}
   /* owner's choice: a card whose pull source points to exactly ONE printing is verified automatically; anything uncertain stays for the user to verify */
-  C.forEach(x=>{if(fxVerifyPrint(x.name,x.p,'from pull source',true))SV.ok.push(x.name)});SV.cand=[];if(!stopped&&!errs)D.srcv2=today();saveArt();save();
-  SV.msg=`Done: ${fxPl(SV.ok.length,'card')} verified from their pull source, ${SV.unsure.length} left for you to check.`;render();
-  toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their pull source — details in More → Data check`)}
+  C.forEach(x=>{if(fxVerifyPrint(x.name,x.p,'from “Pulled from”',true))SV.ok.push(x.name)});SV.cand=[];if(!stopped&&!errs)D.srcv2=today();saveArt();save();
+  SV.msg=`Done: ${fxPl(SV.ok.length,'card')} verified from their “Pulled from”, ${SV.unsure.length} left for you to check.`;render();
+  toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their “Pulled from” — details in More → Data check`)}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
 function fxSrcAuto(){setTimeout(()=>{if(!D.srcv2&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
-function fxSrcView(){return `<div class="sec"><h4>Verify artwork from pull sources</h4><p class="mut" style="margin:4px 0">For cards whose “pulled from” source names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a source that isn’t a set) the card is left unverified for you.${D.srcv2?` Last run: <b>${esc(D.srcv2)}</b>.`:''}</p>
-  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from pull sources'}</button></div><p id="svmsg" class="mut">${esc(SV.msg)}</p>
+function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards whose “Pulled from” names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv2?` Last run: <b>${esc(D.srcv2)}</b>.`:''}</p>
+  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button></div><p id="svmsg" class="mut">${esc(SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
 
 
 /* ---------- pop-ups: the page behind never scrolls while one is open ---------- */
-function fxLockCheck(){const on=!!document.querySelector('.modal.open,#cam,#apfull,#qafull,#zoom,#legload');document.documentElement.classList.toggle('lock',on)}
+function fxLockCheck(){const on=!!document.querySelector('.modal.open,#cam,#apfull,#qafull,#zoom,#legload,#askov');document.documentElement.classList.toggle('lock',on)}
 (()=>{let q=0;const mo=new MutationObserver(()=>{if(q)return;q=requestAnimationFrame(()=>{q=0;fxLockCheck()})});const go=()=>mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});document.body?go():addEventListener('DOMContentLoaded',go)})();
 
 /* ---------- shared rule check + grouped “where it comes from / goes back to” lists ---------- */
@@ -905,9 +905,9 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=sum(L)
   <label>Goal</label><textarea rows="3" oninput="OPT.goal=this.value" placeholder="How do you want to optimize?">${esc(OPT.goal)}</textarea>
   <p class="mut" style="font-size:12px;margin:4px 0 0">Describe a problem (“runs out of cards”, “too slow”), or a play style or ability to balance. Leave it blank and the AI looks for a more optimal build overall.</p>
   <label><input type="checkbox" ${OPT.own?'checked':''} onchange="OPT.own=this.checked">Only use cards I own</label></div>
-  <h3>Option A — use your own AI chat (no key needed)</h3><ol class="st"><li>Set the options above.</li><li>Tap <b>Copy prompt</b>.</li><li>Paste it into a new chat in your AI app (Gemini, ChatGPT, Claude, etc.) and send.</li><li>Copy its whole answer, paste it into the <b>AI reply</b> box below and tap <b>Read reply</b>.</li></ol><button class="pri" onclick="fxOptCopy()">📋 Copy prompt</button>
-  <h3>Option B — optimize here (needs an API key)</h3><p class="mut">Uses the same provider, model and key as the Deck Generator.</p>
-  ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}
+  <details class="aopt" ${fxAiOpen('a')} ontoggle="fxAiTog('a',this.open)"><summary><h3>Option A — use your own AI chat (no key needed)</h3></summary><ol class="st"><li>Set the options above.</li><li>Tap <b>Copy prompt</b>.</li><li>Paste it into a new chat in your AI app (Gemini, ChatGPT, Claude, etc.) and send.</li><li>Copy its whole answer, paste it into the <b>AI reply</b> box below and tap <b>Read reply</b>.</li></ol><button class="pri" onclick="fxOptCopy()">📋 Copy prompt</button></details>
+  <details class="aopt" ${fxAiOpen('b')} ontoggle="fxAiTog('b',this.open)"><summary><h3>Option B — optimize here (needs an API key)</h3></summary><p class="mut">Uses the same provider, model and key as the Deck Generator.</p>
+  ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}</details>
   <h3>AI reply</h3><textarea id="oreply" rows="6" oninput="OPT.reply=this.value" placeholder="Paste the AI's answer here (Option B fills this in for you)">${esc(OPT.reply)}</textarea><br><br><button onclick="fxOptRead()">Read reply</button><div id="oprev"></div>`;
   if(OPT.res)fxOptPrev()}
 function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=sum(d.cards);
@@ -1018,8 +1018,8 @@ function fxBuildDraw(){const B=BP;if(!B)return;const tot=k=>sum(B.rows,r=>k(r)),
   <div class="tblw"><table><tr><th>Qty</th><th>Card</th><th>Where it comes from</th></tr>${B.rows.map((r,k)=>`<tr><td>${r.need}</td><td>${esc(r.name)}</td><td style="font-size:13px">${st(r)}${r.lend.length?`<br><label style="margin:4px 0 0;font-weight:400"><input type="checkbox" ${r.borrow?'checked':''} onchange="BP.rows[${k}].borrow=this.checked;fxBuildDraw()">Borrow</label>`:''}${r.buy?`<br><a href="${fxTcg(r.name)}" target="_blank" rel="noopener">Find on TCGplayer ↗</a>`:''}</td></tr>`).join('')}</table></div>
   <p class="mut">Cards you don’t have are still put on the deck list and marked missing (🛒), so you can order them and tick them off when they arrive.</p>
   <div class="row"><button onclick="BP=null;closeM()">Cancel</button><button class="pri" onclick="fxBuildMake()">Create deck</button></div>`)}
-function fxBuildMake(){const B=BP,name=(B.name||'').trim();if(!name)return toast('Give the deck a name');if(D.decks.some(x=>x.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
-  {const bor=sum(B.rows.filter(r=>r.borrow),r=>sum(r.lend,x=>x.q)),mis=sum(B.rows,r=>r.buy+(r.borrow?0:sum(r.lend,x=>x.q)));if(!confirm(`Create “${name}”?${bor?`\n\n${fxPl(bor,'card')} will be borrowed from your other decks (they get a red ★).`:''}${mis?`\n${fxPl(mis,'card')} will be listed as missing.`:''}`))return}
+async function fxBuildMake(){const B=BP,name=(B.name||'').trim();if(!name)return toast('Give the deck a name');if(D.decks.some(x=>x.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
+  {const bor=sum(B.rows.filter(r=>r.borrow),r=>sum(r.lend,x=>x.q)),mis=sum(B.rows,r=>r.buy+(r.borrow?0:sum(r.lend,x=>x.q)));if(!(await ask(`Create “${name}”?${bor?`\n\n${fxPl(bor,'card')} will be borrowed from your other decks (they get a red ★).`:''}${mis?`\n${fxPl(mis,'card')} will be listed as missing.`:''}`)))return}
   const d={name,format:B.src.format,sleeve:'',commander:B.src.commander,info:`Built from ${B.src.owner}’s “${B.src.name}”`,cards:[],tokens:[],miss:[]};D.decks.push(d);const inG={},sec='Built from a shared deck';
   B.rows.forEach(r=>{const e={name:r.name,qty:r.need,finish:'Normal'};if(!r.c){Object.assign(e,{type:r.snap.type,cmc:r.snap.cmc,colors:r.snap.colors})}d.cards.push(e);
     if(r.free&&r.c){const L=fxCardLabel(r.c);fxGrpPut(inG,L.k,r.free,r.name,L.alt)}
@@ -1038,18 +1038,18 @@ function fxMissBox(i){const d=D.decks[i];if(RO||!d||!(d.miss||[]).length)return 
   ${L.map(row).join('')}</div>`}
 const fxMissTag=d=>(d.miss||[]).length?` <span style="color:#f39c12;font-size:12px">🛒 ${sum(d.miss,m=>m.qty)} missing${d.miss.some(m=>m.st==='ordered')?' · 📦 '+sum(d.miss.filter(m=>m.st==='ordered'),m=>m.qty)+' ordered':''}</span>`:'';
 function fxMissDone(d,k){d.miss.splice(k,1);if(!d.miss.length)delete d.miss}
-function fxMissOrdered(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Mark ${m.qty}× ${m.name} as ordered?`))return;const n=prompt('Optional note — where you ordered it or an order number:','');m.st='ordered';m.od=today();if(n&&n.trim())m.note=n.trim().slice(0,120);save();render()}
-function fxMissOrderAll(i){const d=D.decks[i],L=d.miss.filter(m=>m.st==='missing'&&m.why==='buy');if(!confirm(`Mark all ${fxPl(sum(L,m=>m.qty),'card')} you don’t own as ordered?\n\n${L.map(m=>m.qty+'× '+m.name).join('\n')}`))return;const nt=(prompt('Optional note — where you ordered them or an order number:','')||'').trim().slice(0,120);L.forEach(m=>{m.st='ordered';m.od=today();if(nt)m.note=nt});save();render()}
-function fxMissCancel(i,k){const d=D.decks[i],m=d.miss[k];if(!confirm(`Order cancelled for ${m.qty}× ${m.name}?\n\nIt goes back to missing.`))return;m.st='missing';delete m.od;delete m.note;save();render()}
-function fxMissBorrow(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,takeable(c,m.deck));if(!q)return toast(`${m.deck} has no copy to lend right now`);
-  if(!confirm(`Borrow ${q}× ${c.name} from ${m.deck}?\n\n${m.deck} will show a red ★ until it’s returned.`))return;makeLoan(c.name,q,m.deck,d.name,'Built from a shared deck — borrowed from another deck');m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
-function fxMissUseFree(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,freeCopies(c));if(!confirm(`Use ${q}× ${c.name} from your collection (not in any deck)?`))return;m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
-async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];let q=m.qty;if(m.qty>1){const a=prompt(`How many of the ${m.qty}× ${m.name} arrived?`,String(m.qty));if(a==null)return;q=Math.max(0,Math.min(m.qty,parseInt(a,10)||0));if(!q)return}
-  if(!confirm(`Card received: add ${q}× ${m.name} to your collection and to ${d.name}?\n\nIt’s filed under “Singles Orders”.${q<m.qty?`\n${m.qty-q} stay on order.`:''}`))return;
+async function fxMissOrdered(i,k){const d=D.decks[i],m=d.miss[k];if(!(await ask(`Mark ${m.qty}× ${m.name} as ordered?`)))return;const n=await askText('Optional note — where you ordered it or an order number:','');m.st='ordered';m.od=today();if(n&&n.trim())m.note=n.trim().slice(0,120);save();render()}
+async function fxMissOrderAll(i){const d=D.decks[i],L=d.miss.filter(m=>m.st==='missing'&&m.why==='buy');if(!(await ask(`Mark all ${fxPl(sum(L,m=>m.qty),'card')} you don’t own as ordered?\n\n${L.map(m=>m.qty+'× '+m.name).join('\n')}`)))return;const nt=(await askText('Optional note — where you ordered them or an order number:','')||'').trim().slice(0,120);L.forEach(m=>{m.st='ordered';m.od=today();if(nt)m.note=nt});save();render()}
+async function fxMissCancel(i,k){const d=D.decks[i],m=d.miss[k];if(!(await ask(`Order cancelled for ${m.qty}× ${m.name}?\n\nIt goes back to missing.`)))return;m.st='missing';delete m.od;delete m.note;save();render()}
+async function fxMissBorrow(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,takeable(c,m.deck));if(!q)return toast(`${m.deck} has no copy to lend right now`);
+  if(!(await ask(`Borrow ${q}× ${c.name} from ${m.deck}?\n\n${m.deck} will show a red ★ until it’s returned.`)))return;makeLoan(c.name,q,m.deck,d.name,'Built from a shared deck — borrowed from another deck');m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
+async function fxMissUseFree(i,k){const d=D.decks[i],m=d.miss[k],c=findCard(m.name),q=Math.min(m.qty,freeCopies(c));if(!(await ask(`Use ${q}× ${c.name} from your collection (not in any deck)?`)))return;m.qty-=q;if(m.qty<=0)fxMissDone(d,k);save();render()}
+async function fxMissGot(i,k){const d=D.decks[i],m=d.miss[k];let q=m.qty;if(m.qty>1){const a=await askText(`How many of the ${m.qty}× ${m.name} arrived?`,String(m.qty));if(a==null)return;q=Math.max(0,Math.min(m.qty,parseInt(a,10)||0));if(!q)return}
+  if(!(await ask(`Card received: add ${q}× ${m.name} to your collection and to ${d.name}?\n\nIt’s filed under “Singles Orders”.${q<m.qty?`\n${m.qty-q} stay on order.`:''}`)))return;
   toast('Looking the card up…');const c=await scry('/cards/named?exact='+encodeURIComponent(front(m.name)));if(!c||c.object!=='card')return toast(navigator.onLine?'Couldn’t find that card on Scryfall — try again later':'You’re offline — try again when connected');
   const e=d.cards.find(x=>norm(x.name)===norm(m.name));if(e){['type','cmc','colors'].forEach(x=>delete e[x])}
   fxAddCard(c,q,'Normal','Singles Orders','','Ordered for '+d.name+(m.note?' — '+m.note:''));m.qty-=q;if(m.qty<=0)fxMissDone(d,k);IDX=null;saveArt();save();render();
-  if(confirm(`${q}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`)){if(!fxCopiesOpen(c.name))artPicker(c.name)}}
+  if(await ask(`${q}× ${c.name} added.\n\nVerify the artwork now? Pick the printing you received so it gets the gold ✓.`)){if(!fxCopiesOpen(c.name))artPicker(c.name)}}
 
 
 /* ---------- Deck viewer filter / search: tap a card type or a mana-curve bar, or open 🔍 Search deck ---------- */
@@ -1092,7 +1092,7 @@ function fxCopiesOpen(name,force){const c=findCard(name);if(!c||!fxCopiesOn(c)||
   openM(`<button onclick="showCard(${esc(JSON.stringify(c.name))})">← Back</button><h3>Your ${c.qty} copies of ${esc(c.name)}</h3><p class="mut">Each copy can be a different printing. Tap a copy to choose its artwork; <b>?</b> means ${fxBasic(c)?'no artwork chosen yet (basic lands don’t need it)':'that copy isn’t verified yet'}.</p>
   <div class="grid">${L.map((x,k)=>`<div class="tile" onclick="artPicker(${esc(JSON.stringify(c.name))},${k})"><div class="art">${x&&x.art?`<img src="${esc(x.art)}" alt=""><span class="vf" title="Artwork verified">✓</span>`:'<div class="qbox">?</div>'}</div><div class="nm setcap"><b>Copy ${k+1}</b><span>${x?esc(`${x.setName||''} · ${String(x.set||'').toUpperCase()} #${x.cn||''}`):'not verified yet'}</span></div></div>`).join('')}</div>
   ${artOf(c.name)?`<div class="row"><button onclick="zoom(${esc(JSON.stringify(c.name))})">⛶ View the card full screen</button></div>`:''}`,()=>showCard(c.name));return true}
-function fxCopySet(c,k,p){if(!confirm(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`))return;
+async function fxCopySet(c,k,p){if(!(await ask(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`)))return;
   c.cps=c.cps||[];while(c.cps.length<k)c.cps.push(null);const old=c.cps[k-1];
   c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};if(fxPriceOf(p)){c.cps[k-1].price=fxPriceOf(p);c.cps[k-1].priceAt=today()}
   logEdit(c.name,`Printing (copy ${k+1})`,old?`${old.setName} #${old.cn} ✓`:'(not verified)',`${p.set_name} #${p.collector_number} ✓`);save();toast(`Copy ${k+1} verified`);fxCopiesOpen(c.name,true)}
@@ -1104,17 +1104,44 @@ async function fxOpenBkFolder(){
     return fxAsk('Open your backups folder','<p>Your manual backups are saved in <b>Documents → MtG-DeckMaster</b> on this phone (automatic backups are in its <b>autosave</b> folder).</p><p class="mut">Open your phone’s <b>Files</b> app and go to Documents → MtG-DeckMaster.</p>',[{t:'OK',cls:'pri'}])}
   fxAsk('Where your backups are','<p>Your browser saves backup files where it saves downloads — usually the <b>Downloads</b> folder — or wherever you picked in the share sheet (e.g. Google Drive or Files).</p><p class="mut">A web page isn’t allowed to open folders on your device. Open your <b>Files</b> app (iPhone: Files → Downloads, Android: Files → Downloads) to find them. Automatic backups on the web version stay inside the browser — see Automatic backups below.</p>',[{t:'OK',cls:'pri'}])}
 
+
+/* Deck Generator / Optimize: Option A and B fold away; the one you used last stays open (per device) */
+function fxAiOpen(k){let s=null;try{s=localStorage.getItem('mtg_aiopt_v1')}catch(e){}if(!s)s=fxKeyAny()?'b':'a';return s===k?'open':''}
+function fxAiTog(k,open){if(open){try{localStorage.setItem('mtg_aiopt_v1',k)}catch(e){}}}
+/* Single add: start with the last “Pulled from” used on this device (shown in the dropdowns, easy to change) */
+function fxLastSrcQ(q){let s='';try{s=localStorage.getItem('mtg_lastsrc_v1')||''}catch(e){}if(!s||isCustomSrc(s))return q;const G=srcData(),g=srcGroup(s);
+  if(s==='Singles Orders')return Object.assign(q,{grp:'Singles Orders',sel:'Singles Orders'});if(G[g]&&G[g].includes(s))return Object.assign(q,{grp:g,sel:s});return q}
+/* Decks list: a color strip (the deck's colors — commander identity for commander decks) and a small picture of the commander / main card */
+const FXCOLHEX={W:'#f3ecc8',U:'#2f7fd0',B:'#6d5a78',R:'#d8402f',G:'#2f9a5a'};
+function fxDeckCols(d){const cm=d.commander&&findCard(d.commander);if(cm)return fxCI(cm);const s=new Set();d.cards.forEach(e=>{const c=findCard(e.name)||e;if(!fxBasic(c))fxCI(c).forEach(x=>s.add(x))});return CLR.filter(x=>s.has(x))}
+const fxDeckStrip=d=>{const c=fxDeckCols(d);return `<div class="dkstrip" title="${c.length?esc(c.map(x=>CLRN[x]).join(', ')):'Colorless'}">${(c.length?c:['C']).map(x=>`<i style="background:${FXCOLHEX[x]||'#9a9aa6'}"></i>`).join('')}</div>`};
+function fxDeckThumb(d){let n=d.commander&&artOf(d.commander)?d.commander:'';if(!n){const e=d.cards.map(e=>({e,c:findCard(e.name)})).filter(x=>x.c&&!/Land/.test(x.c.type||'')&&artOf(x.c.name)).sort((a,b)=>(parseFloat(b.c.cmc)||0)-(parseFloat(a.c.cmc)||0))[0];n=e?e.c.name:''}
+  const u=n&&artOf(n);return u?`<img class="dkthumb" loading="lazy" src="${esc(u)}" alt="">`:`<div class="dkthumb" style="display:flex;align-items:center;justify-content:center;font-size:22px">🃏</div>`}
+/* Card without a picture: a card-shaped frame tinted with its colors, showing name, mana cost and type */
+function fxPh(c){c=c||{};const ci=fxCI(c),hex=ci.map(x=>FXCOLHEX[x]),bg=hex.length>1?`linear-gradient(135deg,${hex.join(',')})`:hex[0]?`linear-gradient(160deg,${hex[0]},#1b1924)`:/Land/.test(c.type||'')?'linear-gradient(160deg,#8a7a5a,#2b261d)':'linear-gradient(160deg,#9a9aa6,#2a2a33)';
+  return `<div class="phc" style="--phbg:${bg}"><div class="pht"><span>${esc(c.name||'')}</span><span>${c.cost&&c.cost!=='None'?costHtml(c.cost):''}</span></div><div class="phc-art">${c.custom?'★':/Land/.test(c.type||'')?'⛰':'🂠'}</div><div class="phy">${esc([c.type,c.subtype&&c.subtype!=='None'?c.subtype:''].filter(Boolean).join(' — '))}</div></div>`}
+/* ---------- Collection: “⚙ Filter & sort” window (type and color chips, sort) ---------- */
+function fxFilterPop(){const L=D.cards,cnt=(k,v)=>L.filter(c=>k==='type'?c.type===v:String(c.colors).includes(v)).length,types=[...new Set(L.map(c=>c.type))].sort();
+  const chip=(k,v,lab,n)=>`<button class="fc ${V[k]===v?'on':''}" onclick="V.${k}=V.${k}===${esc(JSON.stringify(v))}?'':${esc(JSON.stringify(v))};render();fxFilterPop()">${lab}${n!=null?` <span style="opacity:.7">${n}</span>`:''}</button>`;
+  const shown=()=>{const q=(V.q||'').toLowerCase();return L.filter(c=>(!q||c.name.toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q))&&(!V.type||(V.type==='__custom'?c.custom:V.type==='__unknown'?c.legMiss&&!c.custom:c.type===V.type))&&(!V.color||String(c.colors).includes(V.color))).length};
+  const body=`<div class="fpop"><h3 style="margin:0">Filter &amp; sort</h3>
+  <h4>Card type</h4><div class="chips">${types.map(t=>chip('type',t,esc(t),cnt('type',t))).join('')}${L.some(c=>c.custom)?chip('type','__custom','★ Custom cards',L.filter(c=>c.custom).length):''}${L.some(c=>c.legMiss&&!c.custom)?chip('type','__unknown','? Not found on Scryfall',L.filter(c=>c.legMiss&&!c.custom).length):''}</div>
+  <h4>Color</h4><div class="chips">${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>chip('color',x,esc(x),cnt('color',x))).join('')}</div>
+  <h4>Sort by</h4><select style="width:100%" onchange="fxSetSort(this.value);render();fxFilterPop()">${FXSORT.map(([k,l])=>`<option value="${k}" ${fxSortKey()===k?'selected':''}>${esc(l.replace(/^Sort: /,''))}</option>`).join('')}</select>
+  <div class="row" style="margin-top:16px"><button onclick="V.type=V.color='';fxSetSort('');render();fxFilterPop()">Clear all</button><button class="pri" onclick="closeM()">Show ${shown()} card${shown()===1?'':'s'}</button></div></div>`;
+  if($('#modal').classList.contains('open')&&$('.fpop')){KEEPSCROLL=true;openM(body)}else openM(body)}
+
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
-  if(!confirm('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.'))return;
-  const keys=fxKeyAny()&&confirm(`Also send your saved API key${Object.keys(fxKeys0()).length>1?'s':''} (${fxKeyList()})?\n\nOK = yes, so you don’t have to type it on the other device\nCancel = no`);
+  if(!(await ask('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.')))return;
+  const keys=fxKeyAny()&&await ask(`Also send your saved API key${Object.keys(fxKeys0()).length>1?'s':''} (${fxKeyList()})?\n\nOK = yes, so you don’t have to type it on the other device\nCancel = no`);
   const j=Object.assign(JSON.parse(JSON.stringify(D)),{xfer:{from:isNative()?'Android app':(/iPhone|iPad/i.test(navigator.userAgent)?'iPhone / iPad':'web browser'),at:Date.now()}});
   await fxSend(fxWithImgs(j,keys),`${fxPrefix()}to-my-device_${tsName()}.json`);try{localStorage.setItem(BK,today());localStorage.removeItem(DY)}catch(e){}}
 function fxGotDevice(j){const same=D.uid&&j.uid===D.uid,empty=!D.cards.length&&!D.decks.length,newer=!D.updated||(j.updated||0)>=D.updated,when=x=>x?new Date(x).toLocaleString():'unknown';
   const body=`<div class="sec">${fxWho(j.owner,j.uid)}<br><span class="mut">Sent from your ${esc(j.xfer.from)} · ${esc(when(j.xfer.at))}</span></div>
   ${tbl(['','On this device','In the file'],[['Card titles',D.cards.length,j.cards.length],['Decks',D.decks.length,j.decks.length],['Last changed',when(D.updated),when(j.updated)]])}
   ${empty?'':same?(newer?'<p>The file is <b>newer</b> than this device. Updating replaces what is here with it.</p>':'<p style="color:#ff6b6b"><b>⚠ This device has newer changes than the file.</b> Updating would lose them. Usually you want to send from <i>this</i> device to the other one instead.</p>'):`<p style="color:#f39c12">This device has a <b>different collection</b> (${fxWho(D.owner,D.uid)}). Updating replaces it with the one in the file — back it up first if you want to keep it.</p>`}`;
-  fxAsk(empty?'Your collection from another device':'Update this device?',body,[{t:empty?'Use it on this device':'Update this device',cls:same&&!newer?'danger':'pri',fn:()=>{if(D.cards.length&&!same&&!confirm('Replace the collection on this device? It cannot be undone unless you have a backup.'))return;delete j.xfer;fxRestore(j)}},{t:'Cancel'}])}
+  fxAsk(empty?'Your collection from another device':'Update this device?',body,[{t:empty?'Use it on this device':'Update this device',cls:same&&!newer?'danger':'pri',fn:async()=>{if(D.cards.length&&!same&&!(await ask('Replace the collection on this device? It cannot be undone unless you have a backup.')))return;delete j.xfer;fxRestore(j)}},{t:'Cancel'}])}
 
 /* ---------- deck rules: legality, copy limits, commander colors, deck size ---------- */
 // Color identity (Commander rule 903.4): every colored mana symbol in the mana cost and rules text (reminder text in parentheses doesn't count).
@@ -1152,8 +1179,8 @@ function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign)
   openM(`<h3>⚠ ${esc(d.name)} — ${esc(d.format)} rules</h3>${d.override?`<div class="ovbox" style="margin-top:0">⛔ <b>Override on</b> since ${esc(d.overrideAt||'')} — rule-breaking cards can be added to this deck. <button style="padding:4px 10px;margin-left:6px" onclick="fxOverrideOff(${i},true)">Turn off</button></div>`:''}<p class="mut">The deck can still be used as it is. Removing cards here is staged like any other edit: tap <b>Save changes</b> afterwards.</p>
   ${L.map((x,k)=>`<div class="sec" style="${x.ign?'opacity:.75':''}"><b>${esc(x.title)}</b>${x.card&&!x.title.includes(x.card)?` — ${cl(x.card)}`:''}${x.ign?' <span class="mut" style="font-size:12px">· ignored</span>':''}<p style="margin:6px 0">${esc(x.msg)}</p><div class="row" style="margin:0">${x.fixes.map((f,j)=>`<button class="pri" style="padding:7px 12px" onclick="fxFix(${i},${k},${j})">${esc(f.t)}</button>`).join('')}<button style="padding:7px 12px" onclick="fxFix(${i},${k},-1)">${x.ign?'Stop ignoring':'Ignore this'}</button></div></div>`).join('')}
   <div class="row"><button onclick="fxDeckEdit(${i})">Change deck type…</button><button class="pri" onclick="closeM()">Done</button></div>`)}
-function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
-  if(j<0){if(!confirm(x.ign?`Stop ignoring “${x.title}”?`:`Ignore “${x.title}”${x.card?' for '+x.card:''}?\n\nIt stays listed (muted) and the deck stops showing ⚠ for it.`))return;const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
+async function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
+  if(j<0){if(!(await ask(x.ign?`Stop ignoring “${x.title}”?`:`Ignore “${x.title}”${x.card?' for '+x.card:''}?\n\nIt stays listed (muted) and the deck stops showing ⚠ for it.`)))return;const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
   const f=x.fixes[j];if(f.a==='match')return fxMatchUnknown(x.card,()=>{render();fxIssues(i)});if(f.a==='sug')return fxUseSug(x.card,()=>{render();fxIssues(i)});if(f.a==='custom'){fxSetCustom(x.card,true);return fxIssues(i)}if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
   if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}
 
@@ -1170,7 +1197,7 @@ function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
   return `<div class="sec" style="display:flex;gap:10px;align-items:center;border:1px solid #4a6aa8"><span style="flex:1">⏳ <b>${fxPl(need.length,'card')}</b> haven’t been checked against the ${esc(d.format)} rules yet — this needs an internet connection.</span><button onclick="fxLegalCheck(${i})">Check now</button></div>`}
 
 /* ---------- cards Scryfall doesn't recognise: find a match, or mark as a custom card ---------- */
-function fxSetCustom(name,on,ok){const c=findCard(name);if(!c)return;if(!ok&&!confirm(on?`Mark ${c.name} as a custom card?\n\nIt moves to the Custom cards group and is filed under “Custom Cards”.`:`Unmark ${c.name} as a custom card?`))return;c.custom=!!on;{const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(on)ss.push(CUSTOM_SRC);c.source=ss.length?ss.join(', '):'None'}if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
+async function fxSetCustom(name,on,ok){const c=findCard(name);if(!c)return;if(!ok&&!(await ask(on?`Mark ${c.name} as a custom card?\n\nIt moves to the Custom cards group and is filed under “Custom Cards”.`:`Unmark ${c.name} as a custom card?`)))return;c.custom=!!on;{const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(on)ss.push(CUSTOM_SRC);c.source=ss.length?ss.join(', '):'None'}if(on){delete c.legMiss;c.leg=null}else{c.legMiss=today()}logEdit(c.name,'Custom card',on?'no':'yes',on?'yes':'no');save();render();toast(on?`${c.name} is now in your Custom cards group — you can add a photo of it`:`${c.name} is no longer marked custom`)}
 function fxUnknownBox(c){if(!c||RO||!findCard(c.name))return '';
   if(c.custom)return `<div class="sec"><b style="color:#c39bff">★ Custom card</b><p class="mut" style="margin:4px 0">Kept in your Custom cards group. The app doesn’t look it up on Scryfall, and it’s flagged as not legal in official formats. Add your own photo so it shows like any other card — it’s compressed (about 60 KB) and included in your backups and share files.</p><div class="row" style="margin:6px 0 0"><button onclick="fxCustomEdit('${esc(c.name).replace(/'/g,"\\'")}')">✎ Edit card details</button></div><div class="row" style="margin:6px 0 0"><button class="pri" onclick="fxCustomPhoto('${esc(c.name).replace(/'/g,"\\'")}')">📷 ${CIMG[c.name]?'Retake photo':'Take a photo of this card'}</button>${CIMG[c.name]?`<button onclick="fxCustomPhotoDel('${esc(c.name).replace(/'/g,"\\'")}')">Remove photo</button>`:''}</div><button style="margin-top:8px" onclick="fxUnmarkCustom('${esc(c.name).replace(/'/g,"\\'")}')">It’s a real card — unmark</button></div>`;
   if(!c.legMiss||c.leg)return '';
@@ -1195,7 +1222,7 @@ async function fxSearchUnknown(){const q=($('#unkq').value||'').trim();if(!q)ret
   const box=FXUNK.opts.map((o,k)=>`<div class="res" onclick="fxPickMatch(${k})"><span>${esc(o)}</span><b>Use this</b></div>`).join('')||'<p class="mut">No cards found with that name.</p>';
   document.querySelectorAll('#mbody .res').forEach(x=>x.remove());$('#mbody .f').insertAdjacentHTML('beforebegin',box)}
 async function fxPickMatch(k){const o=FXUNK.opts[k],e=findCard(FXUNK.name);if(!o||!e)return;const c=await scry('/cards/named?exact='+encodeURIComponent(o));if(!c||c.object!=='card')return toast('Couldn’t load that card — check your connection');
-  if(!confirm(`Update your existing card “${e.name}” to “${c.name}”?\n\nQuantity, finishes, sources and decks are kept.`))return;
+  if(!(await ask(`Update your existing card “${e.name}” to “${c.name}”?\n\nQuantity, finishes, sources and decks are kept.`)))return;
   const old=e.name;renameCard(old,c.name);const n=findCard(c.name)||e;delete n.legMiss;delete n.legSug;n.leg=legOf(c.legalities);n.legAt=today();fxSetPrice(n,c);
   ART[n.name]=sImg(c)||ART[n.name]||'';saveArt();const f=fullDiff(n,c,false);if(f.length)applyDiffs(n,f);save();closeM();toast(`Updated: ${old} → ${c.name}`);(FXUNK.done===undefined?()=>showCard(n.name):()=>{try{FXUNK.done()}catch(_){showCard(n.name)}})()}
 function fxUseSug(name,after){const c=findCard(name);if(!c||!c.legSug)return fxMatchUnknown(name,after);window.FXUNK={name:c.name,done:after||(()=>showCard(c.legSug)),opts:[c.legSug]};fxPickMatch(0)}
@@ -1220,21 +1247,21 @@ function fxCompress(blob){return new Promise((ok,no)=>{const u=URL.createObjectU
     const W=490,H=684,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');x.imageSmoothingQuality='high';x.fillStyle='#000';x.fillRect(0,0,W,H);x.drawImage(im,sx,sy,sw,sh,0,0,W,H);
     let q=0.82,url=cv.toDataURL('image/jpeg',q);while(url.length*0.75>65000&&q>0.42){q-=0.08;url=cv.toDataURL('image/jpeg',q)}ok(url)};im.src=u})}
 function fxCustomPhoto(name){closeM();fxCam(b=>fxCustomPhotoSet(name,b))}
-async function fxCustomPhotoSet(name,b){{const c=findCard(name);if(!c||!b)return;if(!confirm(`Use this picture for ${c.name}?${CIMG[c.name]?'\n\nIt replaces the current picture.':''}`))return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
+async function fxCustomPhotoSet(name,b){{const c=findCard(name);if(!c||!b)return;if(!(await ask(`Use this picture for ${c.name}?${CIMG[c.name]?'\n\nIt replaces the current picture.':''}`)))return;let url;try{url=await fxCompress(b)}catch(e){return toast('Couldn’t read that photo')}
   CIMG[c.name]=url;fxImgPut(c.name,url);c.imgAt=Date.now();save();render();showCard(c.name);toast(`Picture saved (${Math.round(url.length*0.75/1024)} KB)`)}}
-function fxCustomPhotoDel(name){const c=findCard(name);if(!c||!confirm(`Remove the photo of ${c.name}?`))return;delete CIMG[c.name];fxImgDel(c.name);c.imgAt=Date.now();save();render();showCard(c.name)}
+async function fxCustomPhotoDel(name){const c=findCard(name);if(!c||!(await ask(`Remove the photo of ${c.name}?`)))return;delete CIMG[c.name];fxImgDel(c.name);c.imgAt=Date.now();save();render();showCard(c.name)}
 
 /* ---------- rule override: two approvals, once per deck ---------- */
 function fxAddProblems(i,name,dl){const d=D.decks[i],F=dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),out=[],c=findCard(name),cmdC=d.commander&&findCard(d.commander);
   if(tot+dl>F.n)out.push(`The deck would have ${tot+dl} cards — ${F.k} decks hold ${F.n}`);
   if(c){const have=sum(L.filter(e=>norm(e.name)===norm(c.name)));fxCardIssues(c,have+dl,F,cmdC).filter(x=>x.kind!=='unknown').forEach(x=>out.push(`${x.title}${x.title.includes(c.name)?'':' ('+c.name+')'}`))}
   return [...new Set(out)]}
-function fxOverrideAsk(i,name,pr){const d=D.decks[i],F=dfmt(d.format);
-  if(!confirm(`Adding ${name} breaks the ${F.k} rules:\n\n• ${pr.join('\n• ')}\n\nOverride the rules for “${d.name}”?\n\nOK = override\nCancel = don’t add it`))return false;
-  if(!confirm(`Are you really sure?\n\n“${d.name}” will be marked as NOT legal for ${F.k}. Rule-breaking cards (banned, extra copies, custom cards, too many cards…) can then be added to it.\n\nThe deck will always show an “Override on” warning, and you can tap it to see every card that breaks the rules.\n\nOK = yes, override this deck\nCancel = don’t add it`))return false;
+async function fxOverrideAsk(i,name,pr){const d=D.decks[i],F=dfmt(d.format);
+  if(!(await ask(`Adding ${name} breaks the ${F.k} rules:\n\n• ${pr.join('\n• ')}\n\nOverride the rules for “${d.name}”?\n\nOK = override\nCancel = don’t add it`)))return false;
+  if(!(await ask(`Are you really sure?\n\n“${d.name}” will be marked as NOT legal for ${F.k}. Rule-breaking cards (banned, extra copies, custom cards, too many cards…) can then be added to it.\n\nThe deck will always show an “Override on” warning, and you can tap it to see every card that breaks the rules.\n\nOK = yes, override this deck\nCancel = don’t add it`)))return false;
   d.override=true;d.overrideAt=today();save();toast(`Override on for ${d.name}`);return true}
-function fxOverrideOff(i,inModal){const d=D.decks[i],n=deckIssues(i).length;
-  if(!confirm(`Turn the rule override off for “${d.name}”?\n\n${n?`The ${fxPl(n,'card or rule issue')} already in the deck stay, and stay flagged. `:''}New rule-breaking cards will need two approvals again.`))return;
+async function fxOverrideOff(i,inModal){const d=D.decks[i],n=deckIssues(i).length;
+  if(!(await ask(`Turn the rule override off for “${d.name}”?\n\n${n?`The ${fxPl(n,'card or rule issue')} already in the deck stay, and stay flagged. `:''}New rule-breaking cards will need two approvals again.`)))return;
   d.override=false;delete d.overrideAt;save();render();if(inModal)fxIssues(i);toast('Override turned off')}
 
 /* ---------- app updates ----------
@@ -1291,7 +1318,7 @@ function fxOverrideAuto(i){const d=D.decks[i];if(!d||!d.override||deckIssues(i).
 /* ---------- Deck Generator: commander choices follow the same filters; Start over ---------- */
 function aiCmdChoices(F){const al=aiAllowed(),cols=aiColors();
   return D.cards.filter(c=>isReal(c)&&cmdOK(c,F)&&okLegal(c)&&aiAvail(c,al)>0&&(!cols.length||okColor(c,cols)))}
-function aiReset(){if(!confirm('Start over?\n\nThis clears the deck type, colors, where cards may come from, theme, commander, the AI reply and the preview.\n\nYour API key (if you typed one) is kept until you close the app.\n\nOK = clear everything\nCancel = keep it'))return;
+async function aiReset(){if(!(await ask('Start over?\n\nThis clears the deck type, colors, where cards may come from, theme, commander, the AI reply and the preview.\n\nYour saved API key and model stay as they are.\n\nOK = clear everything\nCancel = keep it')))return;
   Object.assign(G,{fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},busy:false,res:null,reply:'',err:''});render();scrollTo(0,0);toast('Deck Generator cleared')}
 
 /* ---------- Add card tab: create a custom card by hand ---------- */
@@ -1306,15 +1333,15 @@ function fxCustomNew(){const types=['Creature','Legendary Creature','Instant','S
   <div class="row" style="margin:0"><div style="flex:1"><label>Power</label><input id="cn_p" inputmode="numeric"></div><div style="flex:1"><label>Toughness</label><input id="cn_h" inputmode="numeric"></div></div>
   <label>Rules text (optional)</label><textarea id="cn_x" rows="3" placeholder="Use {T}, {G} etc. for symbols"></textarea>
   <div class="row" style="margin:0"><div style="flex:1"><label>Quantity</label><input id="cn_q" type="number" min="1" value="1"></div><div style="flex:1"><label>Finish</label><select id="cn_f"><option>Normal</option><option>Foil</option></select></div></div>
-  <label>Source</label><div class="sec" style="margin:4px 0 0;padding:8px 12px">★ Custom Cards <span class="mut" style="font-size:12px">— every custom card is kept under this source</span></div>
+  <label>Pulled from</label><div class="sec" style="margin:4px 0 0;padding:8px 12px">★ Custom Cards <span class="mut" style="font-size:12px">— every custom card is kept under this source</span></div>
   </div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxCustomSave()">Add to my collection</button></div>`);setTimeout(()=>{const i=$('#cn_n');if(i)i.focus()},50)}
 function fxCustomCost(){const v=$('#cn_c').value,p=$('#cn_cp');if(p)p.innerHTML=v?costHtml(v):''}
-function fxCustomSave(){const nm=($('#cn_n').value||'').trim();if(!nm)return toast('Give the card a name');
+async function fxCustomSave(){const nm=($('#cn_n').value||'').trim();if(!nm)return toast('Give the card a name');
   const ex=findCard(nm);if(ex&&!ex.custom)return toast(`“${ex.name}” is already a real card in your collection — use another name`);
   const q=Math.max(1,parseInt($('#cn_q').value)||1),fin=$('#cn_f').value,ty=$('#cn_t').value,cost=($('#cn_c').value||'').trim(),txt=($('#cn_x').value||'').trim(),src=CUSTOM_SRC,
     picked=[...document.querySelectorAll('[data-cn].on')].map(b=>b.dataset.cn),fromCost=fxCI({cost,text:''}),ci=CLR.filter(k=>picked.includes(k)||fromCost.includes(k)),
     mv=(cost.match(/\{[^}]+\}/g)||[]).reduce((a,m)=>{const k=m.slice(1,-1);return a+(/^\d+$/.test(k)?+k:/^[XYZ]$/.test(k)?0:1)},0);
-  if(ex){if(!confirm(`You already have the custom card “${ex.name}”.\n\nAdd ${q} more ${q===1?'copy':'copies'} to it?`))return;ex.finish=mergeFinish(ex.finish||'Normal',ex.qty,fin,q);ex.qty+=q;if(!cardSources(ex).includes(src))ex.source=(cardSources(ex).length?ex.source+', ':'')+src;
+  if(ex){if(!(await ask(`You already have the custom card “${ex.name}”.\n\nAdd ${q} more ${q===1?'copy':'copies'} to it?`)))return;ex.finish=mergeFinish(ex.finish||'Normal',ex.qty,fin,q);ex.qty+=q;if(!cardSources(ex).includes(src))ex.source=(cardSources(ex).length?ex.source+', ':'')+src;
     D.acq.push({date:today(),name:ex.name,set:'',cn:'',finish:fin,qty:q,source:src,price:'',notes:'Custom card',shared:true});save();closeM();render();showCard(ex.name);return toast('Copies added')}
   const L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'};
   D.cards.push({name:nm,source:src,colors:ci.length?ci.map(x=>L[x]).join('/'):(/Land/.test(ty)?'Land':'Colorless'),cost:cost||'None',cmc:String(mv),type:ty,subtype:($('#cn_s').value||'').trim()||'None',
@@ -1335,7 +1362,7 @@ const fxKeyGet=p=>fxKeys0()[p]||'';
 function fxKeyWrite(o){try{Object.keys(o).forEach(k=>{if(!o[k])delete o[k]});Object.keys(o).length?localStorage.setItem(FXKEY,JSON.stringify(o)):localStorage.removeItem(FXKEY)}catch(e){}}
 function fxKeySave(){if(!fxKeyRem())return;const o=fxKeys0();o[G.prov]=(AIKEY||'').trim();fxKeyWrite(o)}
 function fxKeyRemSet(on){try{localStorage.setItem(FXKEYREM,on?'1':'0')}catch(e){}if(on){fxKeySave();toast('Your API key will be remembered on this device')}else{fxKeyWrite({});toast('Saved keys removed — the key is kept only until you close the app')}render()}
-function fxKeyForget(){if(!confirm(`Forget the API keys saved on this device (${fxKeyList()})?`))return;fxKeyWrite({});AIKEY='';render();toast('Saved API keys forgotten')}
+async function fxKeyForget(){if(!(await ask(`Forget the API keys saved on this device (${fxKeyList()})?`)))return;fxKeyWrite({});AIKEY='';render();toast('Saved API keys forgotten')}
 function fxKeysIn(j,adopt){const k=j&&j.aiKeys;if(j)delete j.aiKeys;if(!k||!adopt||!fxKeyRem())return;const o=fxKeys0();let n=0;Object.keys(k).forEach(p=>{if(k[p]&&!o[p]){o[p]=k[p];n++}});if(n){fxKeyWrite(o);if(!AIKEY)AIKEY=fxKeyGet(G.prov);toast(`API key${n>1?'s':''} restored on this device`)}}
 
 /* ---------- models: list the ones this API key can use ---------- */
@@ -1407,18 +1434,18 @@ function fxCustomArt(name){const c=findCard(name);if(!c)return;const q=esc(c.nam
 function fxCustomUpload(name,f){if(!f)return;if(!/^image\//.test(f.type||'image/'))return toast('That isn’t a picture file');fxCustomPhotoSet(name,f)}
 
 /* ---------- un-marking a custom card: ask first, then ask where it came from ---------- */
-function fxUnmarkCustom(name){const c=findCard(name);if(!c)return;
-  if(!confirm(`Is “${c.name}” really a real Magic card?\n\nUnmarking it takes it out of your Custom cards group and the “Custom Cards” source. The app will then try to match it with Scryfall, and your custom picture will no longer be shown.\n\nOK = yes, it’s a real card\nCancel = keep it custom`))return;
+async function fxUnmarkCustom(name){const c=findCard(name);if(!c)return;
+  if(!(await ask(`Is “${c.name}” really a real Magic card?\n\nUnmarking it takes it out of your Custom cards group and the “Custom Cards” source. The app will then try to match it with Scryfall, and your custom picture will no longer be shown.\n\nOK = yes, it’s a real card\nCancel = keep it custom`)))return;
   const srcs=allSources().filter(x=>!IDX_SRC.includes(x.toLowerCase())&&!isCustomSrc(x)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),q=esc(c.name).replace(/'/g,"\\'");
-  openM(`<h3>Where did ${esc(c.name)} come from?</h3><p class="mut">Real cards need a source instead of “Custom Cards”.</p><div class="f">
-  <label>Source</label><select id="um_s" onchange="fxUmPick()"><option value="">Choose…</option><optgroup label="Existing sources">${srcs.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</optgroup><option value="__new">＋ A new source</option></select>
+  openM(`<h3>Where did ${esc(c.name)} come from?</h3><p class="mut">Real cards need a “Pulled from” other than “Custom Cards”.</p><div class="f">
+  <label>Pulled from</label><select id="um_s" onchange="fxUmPick()"><option value="">Choose…</option><optgroup label="Existing sources">${srcs.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</optgroup><option value="__new">＋ A new source</option></select>
   <div id="um_nw" hidden><label>New source name</label><input id="um_n" list="um_nl" placeholder="e.g. Foundations Play Booster" oninput="fxUmNote()"><datalist id="um_nl">${srcs.map(x=>`<option value="${esc(x)}">`).join('')}</datalist><p class="mut" id="um_note" style="margin:4px 0 0"></p></div></div>
   <br><div class="row"><button onclick="showCard('${q}')">Cancel</button><button class="pri" onclick="fxUmSave('${q}')">Unmark custom</button></div>`,()=>showCard(c.name))}
 function fxUmPick(){const n=$('#um_s').value==='__new';$('#um_nw').hidden=!n;if(n)setTimeout(()=>$('#um_n').focus(),30)}
 function fxUmNote(){const v=($('#um_n').value||'').trim(),r=v?autoNumber(canonSrc(v)):'';$('#um_note').textContent=isCustomSrc(v)?'“Custom Cards” is only for custom cards.':r&&r!==v?`Will be saved as: ${r}`:''}
 function fxUmSave(name){const c=findCard(name);if(!c)return;const sel=$('#um_s').value;let src=sel==='__new'?($('#um_n').value||'').trim():sel;
   if(!src)return toast('Choose where it came from');if(sel==='__new'){if(allSources().map(x=>x.toLowerCase()).includes(src.toLowerCase()))src=allSources().find(x=>x.toLowerCase()===src.toLowerCase());else src=autoNumber(canonSrc(src))}
-  if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — choose another source');
+  if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — choose another “Pulled from”');
   fxSetCustom(c.name,false,true);const ss=cardSources(c).filter(x=>!isCustomSrc(x));if(!ss.includes(src))ss.push(src);c.source=ss.join(', ');
   D.acq.forEach(a=>{if(norm(a.name)===norm(c.name)&&isCustomSrc(a.source))a.source=src});logEdit(c.name,'Pulled from','Custom Cards',src);save();render();showCard(c.name);toast(`${c.name} is now a regular card from “${src}”`)}
 
@@ -1434,14 +1461,14 @@ function fxCustomEdit(name){const c=findCard(name);if(!c||!c.custom)return;const
   <div class="row" style="margin:0"><div style="flex:1"><label>Power</label><input id="cn_p" value="${v(c.power)}"></div><div style="flex:1"><label>Toughness</label><input id="cn_h" value="${v(c.toughness)}"></div></div>
   <label>Rules text</label><textarea id="cn_x" rows="4">${esc(c.text||'')}</textarea></div>
   <br><div class="row"><button onclick="showCard('${q}')">Cancel</button><button class="pri" onclick="fxCustomEditSave('${q}')">Save changes</button></div>`,()=>showCard(c.name))}
-function fxCustomEditSave(name){const c=findCard(name);if(!c)return;const nm=($('#cn_n').value||'').trim();if(!nm)return toast('Give the card a name');
+async function fxCustomEditSave(name){const c=findCard(name);if(!c)return;const nm=($('#cn_n').value||'').trim();if(!nm)return toast('Give the card a name');
   const other=findCard(nm);if(other&&other!==c)return toast(`You already have a card called “${other.name}” — choose another name`);
   const cost=($('#cn_c').value||'').trim(),txt=($('#cn_x').value||'').trim(),ty=$('#cn_t').value,picked=[...document.querySelectorAll('[data-cn].on')].map(b=>b.dataset.cn),fromCost=fxCI({cost,text:''}),ci=CLR.filter(k=>picked.includes(k)||fromCost.includes(k)),
     mv=(cost.match(/\{[^}]+\}/g)||[]).reduce((a,m)=>{const k=m.slice(1,-1);return a+(/^\d+$/.test(k)?+k:/^[XYZ]$/.test(k)?0:1)},0),L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},
     now={type:ty,subtype:($('#cn_s').value||'').trim()||'None',cost:cost||'None',cmc:String(mv),colors:ci.length?ci.map(x=>L[x]).join('/'):(/Land/.test(ty)?'Land':'Colorless'),power:($('#cn_p').value||'').trim()||'None',toughness:($('#cn_h').value||'').trim()||'None',text:txt};
   const lbl={type:'Type',subtype:'Subtype',cost:'Mana cost',cmc:'Mana value',colors:'Colors',power:'Power',toughness:'Toughness',text:'Rules text'},ch=Object.keys(now).filter(k=>String(c[k]??'')!==String(now[k]));
   if(nm===c.name&&!ch.length&&String(c.ci||'')===String(ci))return showCard(c.name);
-  if(!confirm(`Save these changes to ${c.name}?\n\n${[...(nm!==c.name?[`Name: ${c.name} → ${nm}`]:[]),...ch.map(k=>`${lbl[k]}: ${String(c[k]??'').slice(0,30)} → ${String(now[k]).slice(0,30)}`)].join('\n')||'Colors'}`))return;
+  if(!(await ask(`Save these changes to ${c.name}?\n\n${[...(nm!==c.name?[`Name: ${c.name} → ${nm}`]:[]),...ch.map(k=>`${lbl[k]}: ${String(c[k]??'').slice(0,30)} → ${String(now[k]).slice(0,30)}`)].join('\n')||'Colors'}`)))return;
   ch.forEach(k=>logEdit(c.name,lbl[k],c[k],now[k]));Object.assign(c,now);c.ci=ci;if(nm!==c.name){logEdit(c.name,'Name',c.name,nm);renameCard(c.name,nm)}
   IDX=null;save();render();showCard(nm);toast('Card details saved')}
 
