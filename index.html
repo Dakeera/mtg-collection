@@ -185,13 +185,19 @@ const SLV={pink:'#ff5fa2','light pink':'#ffc2dd',purple:'#8e44ad',red:'#e53935',
 const title=s=>s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
 const sleeveBg=s=>s.img?`url(${s.img}) center/cover`:(s.hex||SLV[noEmoji(s.color).toLowerCase()]||'#888');
 const sl=n=>{const c=noEmoji(n);if(!c||c==='—')return '—';const s=D.sleeves.find(x=>noEmoji(x.color).toLowerCase()===c.toLowerCase());return `<span class="dot" style="background:${s?sleeveBg(s):SLV[c.toLowerCase()]||'#888'}"></span>${esc(title(c))}`};
-/* Scryfall helper. Search-type endpoints (search, named, collection) are limited to ~2 per second by Scryfall, everything else ~10;
-   a 429 “too many requests” waits and retries instead of failing. scry.st = last HTTP status (0 = no connection). */
-let last=0,lastH=0;const scryHeavy=p=>/\/cards\/(search|named|collection)/.test(p);
-async function scryGap(p){for(;;){const h=scryHeavy(p),w=Math.max(110-(Date.now()-last),h?520-(Date.now()-lastH):0);if(w<=0)break;await new Promise(r=>setTimeout(r,w))}last=Date.now();if(scryHeavy(p))lastH=last}
-async function scryFetch(p,opt){for(let t=0;;t++){await scryGap(p);let r;try{r=await fetch(p.startsWith('http')?p:'https://api.scryfall.com'+p,opt||{headers:{Accept:'application/json'}})}catch(e){scry.st=0;return null}
-  scry.st=r.status;if(r.status===429&&t<4){const ra=parseFloat(r.headers.get('Retry-After'))||0;await new Promise(z=>setTimeout(z,Math.max(ra*1000,1000*2**t)));continue}return r}}
-async function scry(p){const r=await scryFetch(p);if(!r||!r.ok)return null;try{return await r.json()}catch(e){return null}}
+/* Scryfall helper — follows https://scryfall.com/docs/api/rate-limits:
+   search / named / random / collection: max 2 per second (we space them 550 ms apart), everything else max 10 per second (110 ms).
+   A 429 “too many requests” locks the app out for 30 seconds, so on a 429 ALL Scryfall calls pause for 31 s before retrying (never hammering during the lock-out).
+   A 429 often arrives without CORS headers, which the browser/WebView reports as a network error — so a network error while the phone says it is online is treated the same way.
+   Search results are cached in memory for 24 h (Scryfall asks apps to cache), so re-running a check doesn’t ask for the same thing twice.
+   scry.st = last HTTP status (0 = no connection). */
+let scryQ=Promise.resolve(),last=0,lastH=0,scryPauseTo=0;const scryHeavy=p=>/\/cards\/(search|named|random|collection)/.test(p),SCRYC=new Map();
+function scryGap(p){const run=scryQ.then(async()=>{for(;;){const h=scryHeavy(p),w=Math.max(scryPauseTo-Date.now(),110-(Date.now()-last),h?550-(Date.now()-lastH):0);if(w<=0)break;await new Promise(r=>setTimeout(r,w))}last=Date.now();if(scryHeavy(p))lastH=last});scryQ=run.catch(()=>{});return run}
+function scryPause(){const was=scryPauseTo>Date.now();scryPauseTo=Date.now()+31000;if(!was&&typeof toast==='function')toast('Scryfall asked the app to slow down — waiting 30 seconds, then carrying on…')}
+async function scryFetch(p,opt){const url=p.startsWith('http')?p:'https://api.scryfall.com'+p;for(let t=0;;t++){await scryGap(p);let r;try{r=await fetch(url,opt||{headers:{Accept:'application/json'}})}catch(e){scry.st=0;if(navigator.onLine&&t<2){scryPause();continue}return null}
+  scry.st=r.status;if(r.status===429&&t<3){scryPause();continue}return r}}
+async function scry(p){const k=!/\/cards\/(collection|autocomplete)/.test(p)&&/\/cards\/search/.test(p)?p:'',hit=k&&SCRYC.get(k);if(hit&&Date.now()-hit.t<864e5){scry.st=200;return JSON.parse(hit.j)}
+  const r=await scryFetch(p);if(!r||!r.ok)return null;try{const j=await r.json();if(k){SCRYC.set(k,{t:Date.now(),j:JSON.stringify(j)});if(SCRYC.size>400)SCRYC.delete(SCRYC.keys().next().value)}return j}catch(e){return null}}
 const sImg=c=>c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
 const sImg2=c=>(c.card_faces&&c.card_faces[0]&&c.card_faces[0].image_uris&&c.card_faces[1]&&c.card_faces[1].image_uris&&c.card_faces[1].image_uris.normal)||'';
 const backUrl=n=>{const c=findCard(n);return (c&&c.art2)||ART2[n]||''};

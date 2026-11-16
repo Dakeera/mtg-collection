@@ -845,35 +845,97 @@ function fxMissArtGo(s){const L=(fxMissArt()[s]||[]);if(!L.length)return toast('
 /* ---------- Existing cards: verify the artwork from a “pulled from” source that names a real set ---------- */
 let SV={running:false,msg:'',ok:[],unsure:[]};
 const SV_SKIP=/^(singles?\s+orders?|trade|gift|none|bulk import|deck import:.*)$/i;
-function fxSrcPrint(prints,src){const low=String(src||'').toLowerCase();
-  let c=prints.filter(p=>{const n=String(p.set_name||'').toLowerCase();return n.length>=4&&low.includes(n)});if(!c.length)return {why:'no set in “'+src+'”'};
-  const L=Math.max(...c.map(p=>p.set_name.length));c=c.filter(p=>p.set_name.length===L);
+/* WotC sets from Scryfall /sets — cached 7 days on this device (mtg_sets_v1; not collection data, never in backups) */
+let FXSETS=null;const FXSET_NO=['token','memorabilia','promo','alchemy','minigame','treasure_chest','vanguard'];
+const snorm=x=>(' '+String(x||'').toLowerCase().replace(/[’'`]/g,'').replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').trim()+' ').replace(/^ the /,' ');
+function fxSetIdx(s){const al=new Map(),add=(k,x)=>{k=snorm(k);if(k.trim().length<4)return;if(!al.has(k))al.set(k,[]);if(!al.get(k).includes(x))al.get(k).push(x)};
+  s.forEach(x=>{add(x.n,x);const m=x.n.match(/^(.+?):\s*(.+)$/),cmd=/\sCommander$/.test(x.n);if(m){add(m[1]+(cmd?' Commander':''),x);if(cmd)add(m[2],x)}});return {s,al}}
+async function fxSets(){if(FXSETS)return FXSETS;try{const c=JSON.parse(localStorage.getItem('mtg_sets_v1')||'null');if(c&&Date.now()-c.t<7*864e5&&c.s&&c.s.length)return FXSETS=fxSetIdx(c.s)}catch(e){}
+  const r=await scry('/sets');if(!r||!r.data)return null;const s=r.data.filter(x=>!x.digital&&!FXSET_NO.includes(x.set_type)&&x.name&&x.name.length>=4).map(x=>({c:x.code,n:x.name,t:x.set_type,p:x.parent_set_code||''}));
+  try{localStorage.setItem('mtg_sets_v1',JSON.stringify({t:Date.now(),s}))}catch(e){}return FXSETS=fxSetIdx(s)}
+const fxIsCmdSrc=s=>/commander|precon|\bdeck\b/i.test(s)&&!/booster|bundle|prerelease/i.test(s);
+/* the set named in a “Pulled from” text: longest set name (or short form like “Duskmourn Commander”) found as whole words; a commander-deck source moves to that set’s Commander set */
+function fxSetIn(src,S){const t=snorm(src);let best=null,bl=0;for(const [k,L] of S.al){if(k.length<=bl||!t.includes(k))continue;const ex=L.filter(x=>snorm(x.n)===k),one=ex.length===1?ex[0]:L.length===1?L[0]:null;if(one){best=one;bl=k.length}}
+  if(best&&best.t!=='commander'&&fxIsCmdSrc(src)){const cs=S.s.filter(x=>x.t==='commander'&&x.p===best.c);if(cs.length===1)best=cs[0]}return best}
+/* every printing of a card (cached) — [] when Scryfall doesn't know it, null when Scryfall couldn't be reached */
+async function fxPrintsAll(n){const r=await scry(fxPrintsUrl(n));if(!r)return scry.st===404?[]:null;let pr=r.data||[],nx=r.has_more&&r.next_page;while(nx){const r2=await scry(nx);if(!r2||!r2.data)break;pr=pr.concat(r2.data);nx=r2.has_more&&r2.next_page}return pr}
+/* a source with no set in its name (e.g. a precon called just “Blight Curse Commander Deck 1”): the one set that contains ALL its cards */
+async function fxSrcInfer(src,S){const cards=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&cardSources(c).includes(src)).slice(0,12);if(cards.length<3)return null;
+  let inter=null;for(const c of cards){const pr=await fxPrintsAll(c.name);if(pr===null)return undefined;if(!pr.length)continue;const cs=new Set(pr.map(p=>p.set));inter=inter?new Set([...inter].filter(x=>cs.has(x))):cs;if(!inter.size)return null}
+  if(!inter)return null;let L=S.s.filter(x=>inter.has(x.c));if(L.length>1){const cm=L.filter(x=>x.t==='commander');if(cm.length&&fxIsCmdSrc(src))L=cm}return L.length===1?L[0]:null}
+async function fxSetFor(src,S,memo){if(memo.has(src))return memo.get(src);let x=fxSetIn(src,S);if(!x){x=await fxSrcInfer(src,S);if(x===undefined)return undefined}memo.set(src,x||null);return x||null}
+/* what comes in a sealed precon: the regular card, not the display/thick commander or collector-booster variants */
+const fxPreconPrint=p=>!p.promo&&!(p.promo_types||[]).some(t=>/thick|serialized|surgefoil|galaxyfoil|textured|halofoil|confettifoil|raisedfoil/.test(t))&&!(p.frame_effects||[]).some(f=>/extendedart|showcase|inverted|etched/.test(f))&&p.border_color!=='borderless'&&!p.full_art;
+function fxSrcPrint(prints,src,set){if(!set)return {why:'no WotC set found for “'+src+'”'};let c=prints.filter(p=>p.set===set.c);if(!c.length)return {why:`no printing in ${set.n} (“${src}”)`};
   if(c.length>1&&/booster|bundle|prerelease|pack/i.test(src)){const b=c.filter(p=>p.booster);if(b.length)c=b}
-  return c.length===1?{p:c[0]}:{why:`${c.length} printings in ${c[0].set_name}`}}
+  if(c.length>1&&(set.t==='commander'||fxIsCmdSrc(src))){const b=c.filter(fxPreconPrint);if(b.length)c=b}
+  return c.length===1?{p:c[0]}:{why:`${c.length} printings in ${set.n}`}}
 const svMsg=t=>{SV.msg=t;const e=document.getElementById('svmsg');if(e)e.textContent=t};
 async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){if(!auto)toast('You’re offline — try again when connected');return}
-  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&!c.verified&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
-  SV={running:true,msg:'',ok:[],unsure:[],cand:[]};if(!auto)render();let stopped=false;
-  let errs=0;for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
-    if(c.verified)continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
-    const r=await scry(fxPrintsUrl(c.name));if(!r){if(!navigator.onLine||scry.st===0){stopped=true;break}if(scry.st===404)SV.unsure.push([c.name,'not found on Scryfall']);else errs++;continue}
-    let pr=r.data||[];if(r.has_more){const r2=await scry(r.next_page);if(r2&&r2.data)pr=pr.concat(r2.data)}
-    const res=srcs.map(s=>SV_SKIP.test(s)?{why:'also from “'+s+'”'}:fxSrcPrint(pr,s)),bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
+  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&fxUnverifiedCopies(c)>0&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
+  SV={running:true,msg:'',ok:[],unsure:[],cand:[]};if(!auto)render();let stopped=false;svMsg('Loading the list of WotC sets…');
+  const S=await fxSets();if(!S){SV.running=false;SV.msg='Couldn’t load the list of sets from Scryfall — it tries again next time.';render();return}
+  const memo=new Map();
+  for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
+    if(!fxUnverifiedCopies(c))continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
+    const pr=await fxPrintsAll(c.name);if(pr===null){stopped=true;break}if(!pr.length){SV.unsure.push([c.name,'not found on Scryfall']);continue}
+    const res=[];for(const s of srcs){if(SV_SKIP.test(s)){res.push({why:'also from “'+s+'”'});continue}const set=await fxSetFor(s,S,memo);if(set===undefined){stopped=true;break}res.push(fxSrcPrint(pr,s,set))}if(stopped)break;
+    const bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
     if(bad||ids.size!==1){SV.unsure.push([c.name,bad?bad.why:'its “Pulled from” entries point to different printings']);continue}
     SV.cand.push({name:c.name,p:res[0].p,src:srcs.join(', ')})}
   SV.running=false;const C=SV.cand;
-  SV.msg=stopped?`Stopped (offline) — it continues next time.`:`Checked: ${fxPl(C.length,'card')} can be verified from their “Pulled from”, ${SV.unsure.length} left for you to check.${errs?` ${errs} couldn’t be checked because Scryfall was busy — they’re tried again next time.`:''}`;render();
-  if(!C.length){if(!stopped&&!errs){D.srcv2=today();save()}if(!auto)toast('No cards could be verified from their “Pulled from”');return}
-  /* owner's choice: a card whose pull source points to exactly ONE printing is verified automatically; anything uncertain stays for the user to verify */
-  C.forEach(x=>{if(fxVerifyPrint(x.name,x.p,'from “Pulled from”',true))SV.ok.push(x.name)});SV.cand=[];if(!stopped&&!errs)D.srcv2=today();saveArt();save();
-  SV.msg=`Done: ${fxPl(SV.ok.length,'card')} verified from their “Pulled from”, ${SV.unsure.length} left for you to check.`;render();
+  SV.msg=stopped?`Paused — Scryfall stopped answering (or you went offline). Tap the button to carry on; cards already checked are remembered for 24 hours.`:`Checked: ${fxPl(C.length,'card')} can be verified from their “Pulled from”, ${SV.unsure.length} left for you to check.`;render();
+  if(!C.length){if(!stopped){D.srcv3=today();save()}if(!auto)toast(stopped?'Verification paused — Scryfall stopped answering':'No cards could be verified from their “Pulled from”');return}
+  /* owner's choice: a card whose pull sources all point to exactly ONE printing is verified automatically (every copy); anything uncertain stays for the user */
+  C.forEach(x=>{const e=findCard(x.name);if(!e)return;let ok=false;if(!e.verified)ok=fxVerifyPrint(x.name,x.p,'from “Pulled from”',true);if(e.qty>1&&fxSetCopies(e,x.p,e.qty))ok=true;if(ok)SV.ok.push(x.name)});SV.cand=[];if(!stopped)D.srcv3=today();saveArt();save();
+  SV.msg=`${stopped?'Paused':'Done'}: ${fxPl(SV.ok.length,'card')} verified from their “Pulled from”, ${SV.unsure.length} left for you to check.${stopped?' Tap the button to check the rest.':''}`;render();
   toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their “Pulled from” — details in More → Data check`)}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
-function fxSrcAuto(){setTimeout(()=>{if(!D.srcv2&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
-function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards whose “Pulled from” names a real set (e.g. “Lorwyn Eclipsed Play Booster 3”), the app picks that set’s printing and marks the artwork verified ✓. If it isn’t sure (several possible printings in that set, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv2?` Last run: <b>${esc(D.srcv2)}</b>.`:''}</p>
-  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button></div><p id="svmsg" class="mut">${esc(SV.msg)}</p>
+function fxSrcAuto(){setTimeout(()=>{if(!D.srcv3&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
+function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv3?` Last run: <b>${esc(D.srcv3)}</b>.`:''}</p>
+  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button></div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
+
+/* ---------- Tidy up “Pulled from” names to the official WotC set names, keeping each box/pack number ---------- */
+let TS={running:false,msg:'',rows:null,S:null};
+const FXPRODS=['play booster','draft booster','set booster','collector booster','jumpstart booster','booster box','booster pack','bundle box','gift bundle','bundle','prerelease kit','prerelease pack','prerelease','commander deck','precon','starter kit','starter deck','beginner box','scene box','challenger deck','planeswalker deck','theme deck','intro pack'];
+const fxTitle=s=>s.replace(/\b[a-z]/g,m=>m.toUpperCase());
+function fxTidyName(src,set,S){let rest=String(src).trim(),num='';const m=rest.match(/^(.*?)\s+(\d+)(\s*\(.*\))?$/);if(m){rest=m[1];num=' '+m[2]+(m[3]||'')}
+  let prod='';for(const p of FXPRODS){const re=new RegExp('\\b'+p+'\\b','i');if(re.test(rest)){prod=p;rest=rest.replace(re,' ');break}}
+  const W=new Set(['commander','deck','the','of','and']);(snorm(set.n)).trim().split(' ').forEach(w=>W.add(w));if(S)for(const [k,L] of S.al)if(L.includes(set))k.trim().split(' ').forEach(w=>W.add(w));
+  const left=rest.split(/\s+/).filter(w=>{const n=snorm(w).trim();return n&&!W.has(n)}).join(' ').replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g,'');
+  if(set.t==='commander'||prod==='commander deck'||prod==='precon'){const base=/\sCommander$/i.test(set.n)?set.n.replace(/\s+Commander$/i,'')+' Commander Deck':/^Commander\b/i.test(set.n)?set.n+' Deck':set.n+' Commander Deck';return base+(left?' – '+left:'')+num}
+  return set.n+(prod?' '+fxTitle(prod):'')+(left?' '+left:'')+num}
+async function fxTidyScan(){if(TS.running||SV.running||RO)return;if(!navigator.onLine)return toast('You’re offline — try again when connected');
+  TS={running:true,msg:'Loading the list of WotC sets…',rows:null,S:null};render();const S=await fxSets();
+  if(!S){TS={running:false,msg:'Couldn’t load the list of sets from Scryfall — try again later.',rows:null};render();return}
+  const used=new Set(D.cards.flatMap(c=>cardSources(c))),srcs=allSources().filter(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)&&(used.has(s)||D.acq.some(a=>canonSrc(a.source)===s))),memo=new Map(),rows=[],low=new Set(allSources().map(x=>x.toLowerCase()));
+  for(let i=0;i<srcs.length;i++){const s=srcs[i];svMsg(`Checking “Pulled from” names: ${i+1} of ${srcs.length}…`);TS.msg=`Checking ${i+1} of ${srcs.length}…`;
+    const set=await fxSetFor(s,S,memo);if(set===undefined){TS={running:false,msg:'Paused — Scryfall stopped answering (or you went offline). Try again in a minute.',rows:null};render();return}
+    if(!set){rows.push({old:s,set:'',neu:'',on:false});continue}const neu=fxTidyName(s,set,S);if(neu===s)continue;
+    const merge=neu.toLowerCase()!==s.toLowerCase()&&low.has(neu.toLowerCase());rows.push({old:s,set:set.n,neu,on:!merge,merge})}
+  TS={running:false,msg:'',rows,S};render();fxTidyOpen()}
+function fxTidyOpen(){const R=TS.rows||[],ch=R.filter(r=>r.set),no=R.filter(r=>!r.set);
+  if(!R.length)return toast('✓ Every “Pulled from” name already uses the official set name');
+  const row=(r)=>{const i=R.indexOf(r);return `<div class="sec" style="margin:6px 0;padding:8px 10px"><label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input type="checkbox" ${r.on?'checked':''} onchange="TS.rows[${i}].on=this.checked" style="margin-top:3px"><span style="flex:1"><span class="mut" style="font-size:12px">Now:</span> ${esc(r.old)} <span class="mut" style="font-size:12px">· ${fxPl(sum(D.cards.filter(c=>cardSources(c).includes(r.old))),'card')}</span></span></label>
+    <div class="f" style="margin:6px 0 0"><label style="font-size:12px">WotC set</label><input list="tsets" value="${esc(r.set)}" placeholder="Pick the set (optional)" onchange="fxTidySet(${i},this.value)"></div>
+    <div class="f" style="margin:6px 0 0"><label style="font-size:12px">New name</label><textarea id="tsn${i}" rows="2" style="resize:none;width:100%;box-sizing:border-box" placeholder="—" oninput="TS.rows[${i}].neu=this.value.trim();TS.rows[${i}].on=!!this.value.trim();this.closest('.sec').querySelector('input[type=checkbox]').checked=TS.rows[${i}].on">${esc(r.neu)}</textarea></div>
+    ${r.merge?`<p class="mut" style="font-size:12px;margin:4px 0 0">⚠ “${esc(r.neu)}” already exists — ticking this joins the two into one. Leave it unticked or change the name if they’re different boxes.</p>`:''}</div>`};
+  openM(`<h3>🏷 Tidy up “Pulled from” names</h3><p class="mut">Suggested official WotC set names for your “Pulled from” entries. The number you gave each box or pack stays exactly the same. Untick anything you want to keep as it is, or edit the new name.</p>
+    ${ch.length?`<h4 style="margin:12px 0 4px">Suggested (${ch.length})</h4>${ch.map(row).join('')}`:''}
+    ${no.length?`<details style="margin-top:10px"><summary>No WotC set found (${no.length}) — pick one if it is a set</summary>${no.map(row).join('')}</details>`:''}
+    <datalist id="tsets">${TS.S.s.map(x=>`<option value="${esc(x.n)}">`).join('')}</datalist>
+    <div class="row" style="margin-top:12px"><button class="pri" onclick="fxTidyApply()">Rename ticked names</button><button onclick="closeM()">Cancel</button></div>`)}
+function fxTidySet(i,v){const r=TS.rows[i],set=TS.S.s.find(x=>x.n.toLowerCase()===String(v).trim().toLowerCase());r.set=set?set.n:'';r.neu=set?fxTidyName(r.old,set,TS.S):'';r.on=!!r.neu;r.merge=!!r.neu&&r.neu.toLowerCase()!==r.old.toLowerCase()&&allSources().some(x=>x.toLowerCase()===r.neu.toLowerCase());KEEPSCROLL=true;fxTidyOpen()}
+async function fxTidyApply(){const L=(TS.rows||[]).filter(r=>r.on&&r.neu&&r.neu!==r.old);if(!L.length)return toast('Nothing ticked to rename');
+  if(L.some(r=>isCustomSrc(r.neu)))return toast('“Custom Cards” is reserved for custom cards — pick another name');
+  if(!(await ask(`Rename ${fxPl(L.length,'“Pulled from” name')}?\n\n${L.slice(0,12).map(r=>`${r.old} → ${r.neu}`).join('\n')}${L.length>12?`\n…and ${L.length-12} more`:''}\n\nThe numbers stay the same. Your cards, their history and the import history are updated — nothing else changes.\n\nOK = Rename\nCancel = Go back`)))return;
+  const M=new Map(L.map(r=>[r.old,r.neu]));let n=0;
+  D.cards.forEach(c=>{const ss=cardSources(c);if(!ss.some(s=>M.has(s)))return;const o=c.source,out=[];ss.map(s=>M.get(s)||s).forEach(x=>{if(!out.some(y=>y.toLowerCase()===x.toLowerCase()))out.push(x)});c.source=out.join(', ');logEdit(c.name,'Pulled from',o,c.source);n++});
+  D.acq.forEach(a=>{const x=canonSrc(a.source);if(M.has(x))a.source=M.get(x)});(D.imports||[]).forEach(h=>{if(M.has(h.src))h.src=M.get(h.src)});
+  try{const ls=localStorage.getItem('mtg_lastsrc_v1');if(ls&&M.has(ls))localStorage.setItem('mtg_lastsrc_v1',M.get(ls))}catch(e){}
+  save();closeM();TS.rows=null;TS.msg='';render();toast(`✓ Renamed ${fxPl(L.length,'name')} on ${fxPl(n,'card')} — now checking artwork from the new names…`);setTimeout(()=>fxSrcVerify(),400)}
 
 
 /* ---------- pop-ups: the page behind never scrolls while one is open ---------- */
