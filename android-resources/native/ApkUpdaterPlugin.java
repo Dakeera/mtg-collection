@@ -152,4 +152,31 @@ public class ApkUpdaterPlugin extends Plugin {
             call.reject("Couldn't open the installer: " + e.getMessage());
         }
     }
+
+    /* Opens the phone's file manager at Documents/MtG-DeckMaster (manual backups). Tries the Files app's folder view first, then any file manager. */
+    @PluginMethod
+    public void openFolder(PluginCall call) {
+        String rel = call.getString("path", "Documents/MtG-DeckMaster");
+        String[] types = {"vnd.android.document/directory", "resource/folder", "*/*"};
+        Uri doc = Uri.parse("content://com.android.externalstorage.documents/document/primary%3A" + Uri.encode(rel));
+        for (String t : types) {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setDataAndType(doc, t);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getContext().startActivity(i);
+                JSObject r = new JSObject(); r.put("opened", true); r.put("how", t); call.resolve(r); return;
+            } catch (Exception e) { /* try the next way */ }
+        }
+        try {
+            Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+            i.setType("*/*");
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(Intent.createChooser(i, "Open the MtG-DeckMaster folder").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            JSObject r = new JSObject(); r.put("opened", true); r.put("how", "picker"); call.resolve(r);
+        } catch (Exception e) {
+            call.reject("No file manager app was found.");
+        }
+    }
 }

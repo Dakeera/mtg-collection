@@ -789,6 +789,7 @@ function vMore(m){
   <label>Backup file type</label><select onchange="BKF=this.value"><option value="sqlite" ${BKF==='sqlite'?'selected':''}>SQLite database (.sqlite)</option><option value="json" ${BKF==='json'?'selected':''}>JSON (.json)</option></select>
   <div class="row"><button class="pri" onclick="doBackup(true)">📤 Back up to Drive / Files…</button><button onclick="doBackup(false)">⬇ Download to phone</button></div>
   <p class="mut">The first button opens your phone’s share sheet so you can save the file to Google Drive or Files, or send it to yourself. The .sqlite file opens in any database viewer and can be restored here too.</p>
+  <div class="row"><button onclick="fxOpenBkFolder()">📂 Open my backups folder</button></div>
   <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Reset to starting data</button>${autoBox()}<p class="mut" id="ver" style="margin-top:18px"></p>`;
   m.innerHTML=`<h2>More</h2><div class="chips">${tabs.map(([k,l])=>`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render()">${l}</button>`).join('')}</div>${body}`;
   if(V.sub==='backup'){checkPersist();autoRefresh();appVersion()}
@@ -866,8 +867,10 @@ async function nativeSave(blob,name,share){
   catch(e){if(/cancel/i.test(String(e&&e.message||e)))return {cancelled:true};throw e}
   return {shared:true,fellBack:!share};
 }
-async function doBackup(share){
-  FXBKKEYS=fxKeyAny()?confirm(`Include your saved API key${Object.keys(fxKeys0()).length>1?'s':''} (${fxKeyList()}) in this backup?\n\nOK = include them, so restoring this backup on a new device brings them back\nCancel = leave them out (safer if you’ll store or send the file somewhere others can see)`):false;
+async function doBackup(share,keys){
+  /* API keys: Yes (include) / No (leave out) / Cancel (no backup) */
+  if(keys===undefined&&fxKeyAny())return fxAsk('Include your API key'+(Object.keys(fxKeys0()).length>1?'s':'')+'?',`<p>You have a saved API key (${esc(fxKeyList())}).</p><p class="mut"><b>Yes</b> — include it, so restoring this backup on a new device brings it back.<br><b>No</b> — leave it out (safer if you’ll store or send the file somewhere others can see).<br><b>Cancel</b> — don’t make a backup.</p>`,[{t:'Yes',cls:'pri',fn:()=>doBackup(share,true)},{t:'No',fn:()=>doBackup(share,false)},{t:'Cancel'}]);
+  FXBKKEYS=!!keys;
   const ext=BKF==='json'?'json':'sqlite',name=`${fxPrefix()}backup_${tsName()}.${ext}`;let blob;
   try{blob=BKF==='json'?new Blob([fxWithImgs(D,FXBKKEYS)],{type:'application/json'}):new Blob([await sqliteBytes()],{type:'application/octet-stream'})}
   catch(e){return toast('The .sqlite export needs internet the first time — reconnect, or choose JSON')}

@@ -1097,6 +1097,13 @@ function fxCopySet(c,k,p){if(!confirm(`Use ${p.set_name} (${String(p.set).toUppe
   c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};if(fxPriceOf(p)){c.cps[k-1].price=fxPriceOf(p);c.cps[k-1].priceAt=today()}
   logEdit(c.name,`Printing (copy ${k+1})`,old?`${old.setName} #${old.cn} ✓`:'(not verified)',`${p.set_name} #${p.collector_number} ✓`);save();toast(`Copy ${k+1} verified`);fxCopiesOpen(c.name,true)}
 
+
+/* More → Backup → “📂 Open my backups folder”. Android: opens the phone's file manager at Documents/MtG-DeckMaster. Web: a browser can't open folders, so it says where the browser saved them. */
+async function fxOpenBkFolder(){
+  if(isNative()){const U=window.Capacitor.Plugins.ApkUpdater;try{if(U&&U.openFolder){await U.openFolder({path:'Documents/MtG-DeckMaster'});return}}catch(e){}
+    return fxAsk('Open your backups folder','<p>Your manual backups are saved in <b>Documents → MtG-DeckMaster</b> on this phone (automatic backups are in its <b>autosave</b> folder).</p><p class="mut">Open your phone’s <b>Files</b> app and go to Documents → MtG-DeckMaster.</p>',[{t:'OK',cls:'pri'}])}
+  fxAsk('Where your backups are','<p>Your browser saves backup files where it saves downloads — usually the <b>Downloads</b> folder — or wherever you picked in the share sheet (e.g. Google Drive or Files).</p><p class="mut">A web page isn’t allowed to open folders on your device. Open your <b>Files</b> app (iPhone: Files → Downloads, Android: Files → Downloads) to find them. Automatic backups on the web version stay inside the browser — see Automatic backups below.</p>',[{t:'OK',cls:'pri'}])}
+
 /* ---------- send my collection to my other device ---------- */
 async function fxSendDevice(){if(!D.uid)fxIdentity();if(!D.keys)await fxKeys();
   if(!confirm('Send your whole collection to another phone, tablet or computer of yours?\n\nThis is a full private backup — it includes the secret key that signs your share files. Only send it to yourself (for example to your own email, Google Drive or Quick Share).\n\nOn the other device: open MtG DeckMaster → More → My profile → “Open a file”, or the welcome screen’s “Restore my backup”.'))return;
