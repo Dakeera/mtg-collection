@@ -508,7 +508,13 @@ async function fxSimAsk(id){const s=simGet(id);if(!s)return;if(!confirm(s.note?'
 /* ---------- card prices (Scryfall, USD) and collection sorting ---------- */
 const fxMoney=v=>'$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const fxUnit=c=>{const p=(c&&c.price)||{},n=+p.n||0,f=+p.f||n,e=+p.e||f;return {Normal:n||f||e,Foil:f||n,'Etched Foil':e||n}};
-function fxVal(c){if(!c||!c.price)return 0;const u=fxUnit(c),fm=finMapOf(c);return sum(Object.keys(fm),k=>(fm[k]||0)*(u[k]??u.Normal))}
+/* Per-copy value: each copy is priced by its own verified printing (copies 2+ in c.cps carry their own Scryfall price); copies without their own printing use the card's price. Finishes are handed out to the copies in order (Normal first, then Foil, …). */
+function fxCopyVals(c){if(!c)return [];const fm=finMapOf(c),fins=[];Object.keys(fm).forEach(k=>{for(let i=0;i<(fm[k]||0);i++)fins.push(k)});const out=[];
+  for(let i=0;i<c.qty;i++){const own=i?(c.cps||[])[i-1]:null,src=own&&own.price?own:c,u=fxUnit(src),fin=fins[i]||'Normal';
+    out.push({k:i+1,fin,v:(u[fin]??u.Normal)||0,lab:i?(own?`${own.setName||''} · ${String(own.set||'').toUpperCase()} #${own.cn||''}`:'not verified — priced like copy 1'):(c.set&&c.verified?`${c.setName||''} · ${String(c.set||'').toUpperCase()} #${c.cn||''}`:'not verified'),own:!!(i?own:c.verified)})}
+  return out}
+const fxHasCopyPrices=c=>!!(c&&c.qty>1&&(c.cps||[]).some(x=>x&&x.price));
+function fxVal(c){if(!c)return 0;if(fxHasCopyPrices(c))return sum(fxCopyVals(c),x=>x.v);if(!c.price)return 0;const u=fxUnit(c),fm=finMapOf(c);return sum(Object.keys(fm),k=>(fm[k]||0)*(u[k]??u.Normal))}
 const fxEach=c=>c&&c.qty?fxVal(c)/c.qty:0;
 const fxSetPrice=(e,c)=>{if(c&&c.prices&&(!e.price||!e.scryId||e.scryId===c.id)){e.price={n:c.prices.usd||'',f:c.prices.usd_foil||'',e:c.prices.usd_etched||''};e.priceAt=today()}};
 let PRBUSY=false;
@@ -517,9 +523,13 @@ async function fetchPrices(force){if(PRBUSY||!D)return;const stale=c=>!c.custom&
   try{for(let i=0;i<todo.length;i+=75){const ch=todo.slice(i,i+75),r=await scryFetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:ch.map(ident)})});if(!r||!r.ok)throw 0;
     const j=await r.json(),byId=new Map(),bySN=new Map(),byN=new Map();(j.data||[]).forEach(x=>{byId.set(x.id,x);bySN.set(x.set+'|'+x.collector_number,x);if(!byN.has(norm(front(x.name))))byN.set(norm(front(x.name)),x)});
     ch.forEach(c=>{const x=(c.scryId&&byId.get(c.scryId))||(c.set&&c.cn&&bySN.get(String(c.set).toLowerCase()+'|'+c.cn))||byN.get(norm(front(c.name)));if(x&&x.prices){c.price={n:x.prices.usd||'',f:x.prices.usd_foil||'',e:x.prices.usd_etched||''};c.priceAt=today();got++}});
-    persist();await new Promise(r=>setTimeout(r,110))}}catch(e){}
+    persist();await new Promise(r=>setTimeout(r,110))}
+    const cp=todo.flatMap(c=>(c.cps||[]).filter(x=>x&&x.scryId));for(let i=0;i<cp.length;i+=75){const ch=cp.slice(i,i+75),r=await scryFetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:[...new Set(ch.map(x=>x.scryId))].map(id=>({id}))})});if(!r||!r.ok)break;
+      const j=await r.json(),byId=new Map((j.data||[]).map(x=>[x.id,x]));ch.forEach(x=>{const y=byId.get(x.scryId);if(y&&y.prices){x.price=fxPriceOf(y);x.priceAt=today();got++}});persist()}}catch(e){}
   PRBUSY=false;if(got&&V.view==='collection'&&!$('#modal').classList.contains('open')&&document.activeElement?.id!=='q'){const y=scrollY;render();scrollTo(0,y)}}
-function fxPriceRow(c){if(!c||!c.price||!findCard(c.name))return '';const u=fxUnit(c),fm=finMapOf(c),ks=Object.keys(fm).filter(k=>fm[k]>0),each=ks.map(k=>`${fxMoney(u[k]??u.Normal)}${ks.length>1?' '+esc(k):''}`).join(' · ');
+function fxPriceRow(c){if(!c||!findCard(c.name))return '';
+  if(fxHasCopyPrices(c)){const L=fxCopyVals(c);return `<div class="kv"><span>Value per copy <span style="font-weight:400;font-size:11px">(Scryfall${c.priceAt?', '+esc(c.priceAt):''})</span></span><b></b></div>${L.map(x=>`<div class="kv" style="padding-left:10px"><span style="font-weight:400">Copy ${x.k} · ${esc(x.lab)}${x.fin!=='Normal'?' · '+esc(x.fin):''}</span><b>${x.v?fxMoney(x.v):'<span class="mut">no price</span>'}</b></div>`).join('')}<div class="kv" style="border-top:1px solid var(--card2);margin-top:4px;padding-top:6px"><span><b>Total value of all ${c.qty} copies</b></span><b style="color:var(--gold)">${fxMoney(sum(L,x=>x.v))}</b></div>`}
+  if(!c.price)return '';const u=fxUnit(c),fm=finMapOf(c),ks=Object.keys(fm).filter(k=>fm[k]>0),each=ks.map(k=>`${fxMoney(u[k]??u.Normal)}${ks.length>1?' '+esc(k):''}`).join(' · ');
   if(!fxVal(c))return `<div class="kv"><span>Price</span><b class="mut">no price listed</b></div>`;
   return `<div class="kv"><span>Price <span style="font-weight:400;font-size:11px">(Scryfall, ${esc(c.priceAt||'')})</span></span><b>${each} each${c.qty>1?` · ${fxMoney(fxVal(c))} total`:''}</b></div>`}
 const fxTotalTile=()=>{const v=sum(D.cards,fxVal);return v?`<div title="Estimated from Scryfall market prices for the printings you set"><b>${fxMoney(v)}</b>est. value</div>`:''};
@@ -1051,9 +1061,10 @@ function fxDeckFind(again){const i=V.deck,d=D.decks[i];if(!d)return;const F=fxDF
 
 
 /* Give n not-yet-verified copies of a card the printing p (copy 1 first, then copies 2+ in c.cps). Verified copies are never replaced. Returns how many were set. */
+const fxPriceOf=p=>p&&p.prices?{n:p.prices.usd||'',f:p.prices.usd_foil||'',e:p.prices.usd_etched||''}:null;
 function fxSetCopies(e,p,n){if(!e||!p||fxBasic(e))return 0;let k=0;const pr={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};
   if(n>0&&!e.verified){Object.assign(e,pr,{verified:true});ART[e.name]=pr.art||ART[e.name]||'';ART2[e.name]=pr.art2||'';e.price=null;e.priceAt='';fxSetPrice(e,p);k++}
-  e.cps=e.cps||[];for(let i=0;i<e.qty-1&&k<n;i++){if(!e.cps[i]){e.cps[i]=Object.assign({},pr);k++}}while(e.cps.length&&!e.cps[e.cps.length-1])e.cps.pop();if(!e.cps.length)delete e.cps;return k}
+  e.cps=e.cps||[];for(let i=0;i<e.qty-1&&k<n;i++){if(!e.cps[i]){e.cps[i]=Object.assign({},pr,fxPriceOf(p)?{price:fxPriceOf(p),priceAt:today()}:{});k++}}while(e.cps.length&&!e.cps[e.cps.length-1])e.cps.pop();if(!e.cps.length)delete e.cps;return k}
 const fxUnverifiedCopies=e=>e&&!fxBasic(e)?fxCopyList(e).filter(x=>!x).length:0;
 /* ---------- Several copies of a card: each copy can have its own verified artwork (copy 1 = the card's own printing, copies 2+ in c.cps). Basic lands never need verifying. ---------- */
 const fxBasic=c=>!!c&&(c.type==='Basic Land'||/^Basic\b.*Land/i.test(c.type||''));
@@ -1066,7 +1077,7 @@ function fxCopiesOpen(name,force){const c=findCard(name);if(!c||!fxCopiesOn(c)||
   ${artOf(c.name)?`<div class="row"><button onclick="zoom(${esc(JSON.stringify(c.name))})">⛶ View the card full screen</button></div>`:''}`,()=>showCard(c.name));return true}
 function fxCopySet(c,k,p){if(!confirm(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`))return;
   c.cps=c.cps||[];while(c.cps.length<k)c.cps.push(null);const old=c.cps[k-1];
-  c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};
+  c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};if(fxPriceOf(p)){c.cps[k-1].price=fxPriceOf(p);c.cps[k-1].priceAt=today()}
   logEdit(c.name,`Printing (copy ${k+1})`,old?`${old.setName} #${old.cn} ✓`:'(not verified)',`${p.set_name} #${p.collector_number} ✓`);save();toast(`Copy ${k+1} verified`);fxCopiesOpen(c.name,true)}
 
 /* ---------- send my collection to my other device ---------- */
