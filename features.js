@@ -274,7 +274,7 @@ async function fxImpCommit(){
   if(IMP.kind==='collection'){const ok=it.filter(x=>x.card),n=sum(ok,x=>x.qty),src=fxImpSrc();
     if(!src){toast(IMP.sq&&isCustomSrc((IMP.sq.newSrc||IMP.sq.sel||'').trim())?'“Custom Cards” is only for custom cards — pick another “Pulled from”':'Choose where these cards came from first');document.getElementById('impsrc')?.scrollIntoView({block:'center'});return}
     if(!(await ask(`Add ${fxPl(n,'card')} (${fxPl(ok.length,'line')}) to your collection?\n\nPulled from: ${src}\n\nCards you already own get their quantity increased — no duplicates are created.`)))return;
-    ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];x.fin=fin;fxAddCard(x.card,x.qty,fin,src,x.price,x.notes,IMP.qa)});
+    ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];x.fin=fin;fxAddCard(x.card,x.qty,fin,src,x.price,x.notes,IMP.qa&&!x.nover)});
     const wasQa=IMP.qa,hid=fxHistAdd(src,ok,wasQa);
     saveArt();save();IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);
     if(!wasQa&&fxHistLeft(D.imports[0]).length&&await ask(`${fxPl(n,'card')} added.\n\nDo you want to verify their artwork now? You pick the matching printing card by card and can stop at any time — whatever is left stays in More → Bulk import → Import history.\n\nOK = verify now\nCancel = later`))fxHistVerify(hid);return}
@@ -1474,7 +1474,7 @@ async function fxCustomEditSave(name){const c=findCard(name);if(!c)return;const 
 
 /* ---------- several cards at once: choose the printing of each card, in the order typed ---------- */
 function fxQAPick(){if(IMP.kind==='verify')return fxVerPick();const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i],n=it.length,done=it.filter(y=>y.card&&!y.skip).length;
-  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Card ${i+1} of ${n}</b><span class="mut" style="font-size:12px">${done} ready</span></div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
+  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Card ${i+1} of ${n}</b><span class="mut" style="font-size:12px">${done} ready</span>${i+1<n||x.card?`<button style="flex:0 0 auto;padding:6px 10px;font-size:13px" onclick="fxQASkipArt()">⏭ Skip artwork for the rest</button>`:''}</div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
   const nav=`<div style="height:84px"></div><div class="qanav"><button onclick="fxQAPrev()">‹ ${i?'Previous':'Back'}</button><button onclick="fxQASkip()">${x.skip?'Don’t skip':'Skip this card'}</button><button class="pri" onclick="fxQANext()" ${!x.card&&!x.skip?'disabled':''}>${i+1<n?'Next ›':'Review all ›'}</button></div>`;
   if(x.skip)return head+`<h3>${esc(x.name)}</h3><p class="mut">Skipped — it won’t be added.</p>`+nav;
   if(x.reading)return head+`<h3>Reading the card…</h3><p class="mut" id="qamsg">${esc(x.reading)}</p>`;
@@ -1509,6 +1509,15 @@ function fxQAView(i,k){const x=IMP.items[i],list=x.prints||[x.card];if(!list[k])
   d.addEventListener('touchend',e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3)go(dx<0?1:-1)},{passive:true});
   draw();document.body.appendChild(d)}
 /* Copies box in the several-cards picker: lowering it brings the card up again for the remaining copies' artwork */
+/* Several cards: stop choosing artwork — this card and the rest keep the printing Scryfall matched and are added unverified (verify later in Data check / Import history) */
+async function fxQASkipArt(){const it=IMP.items,i=IMP.pi||0,rest=it.slice(i),ok=rest.filter(x=>x.card&&!x.skip),lost=rest.filter(x=>!x.card&&!x.skip);
+  if(!(await ask(`Skip the artwork for the rest?\n\nThe remaining ${fxPl(sum(ok,x=>x.qty),'card')} keep the printing Scryfall matched and are added without the ✓ — you can verify them later in More → Data check or Import history.${lost.length?`\n\n${fxPl(lost.length,'card')} still not found (${lost.map(x=>x.raw||x.name).join(', ')}) will be left out.`:''}\n\nOK = skip the artwork\nCancel = keep choosing`)))return;
+  rest.forEach(x=>{if(x.card)x.nover=true;else x.skip=true});IMP.stage='preview';render();scrollTo(0,0)}
+/* Single add: estimated value of the chosen printing (Scryfall market price for the finish × quantity) */
+function fxAddVal(){const c=A.card;if(!c)return '';if(!A.printOK)return `<div class="aval mut">${A.skipArt?'Estimated value: shown once the artwork is chosen (skipped).':'Estimated value: pick your artwork above to see it.'}</div>`;
+  const pr=c.prices||{},fin=String(A.finish||'Normal'),v=parseFloat(/etched/i.test(fin)?pr.usd_etched:/foil/i.test(fin)?(pr.usd_foil||pr.usd_etched):pr.usd)||0,q=A.qty||1;
+  return `<div class="aval"><span>Estimated value</span><b>${v?`${fxMoney(v)} each${q>1?` · ${fxMoney(v*q)} for ${q}`:''}`:'<span class="mut">no market price for this printing / finish</span>'}</b></div>`}
+async function fxSkipArt1(){if(!(await ask('Skip the artwork check?\n\nThe card is added with the printing Scryfall matched, without the ✓. You can verify it later from its card page (🎨) or More → Data check.\n\nOK = skip it\nCancel = choose the artwork')))return;A.printOK=false;A.skipArt=true;A.finish=A.finish||fins0();A.step='q';A.q=A.q||fxLastSrcQ({});render()}
 function fxQAQty(i,v){const x=IMP.items[i];if(!x)return;if(x.max==null)x.max=x.qty;x.qty=Math.max(1,parseInt(v,10)||1);if(x.qty>x.max)x.max=x.qty;render()}
 function fxQASplit(i){const x=IMP.items[i];if(!x||!x.card||x.skip||x.max==null)return;const rest=x.max-x.qty,nx=IMP.items[i+1],linked=nx&&nx.restOf===x;
   if(rest<=0){if(linked)IMP.items.splice(i+1,1);return}
