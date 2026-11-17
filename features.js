@@ -894,7 +894,7 @@ async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
 function fxSrcAuto(){setTimeout(()=>{if(!D.srcv3&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
 function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards with <b>no</b> verified artwork yet whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. It never changes a card that already has any verified copy. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one Commander set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv3?` Last run: <b>${esc(D.srcv3)}</b>.`:''}</p>
-  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button>${fxAutoLog().length?`<button onclick="fxUndoOpen()" ${SV.running?'disabled':''}>↩ Undo automatic verifications</button>`:''}</div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
+  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button></div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
 
@@ -1159,7 +1159,13 @@ function fxCopiesRow(c){const L=fxCopyList(c),v=L.filter(Boolean);return `${v.le
 function fxCopiesOpen(name,force){const c=findCard(name);if(!c||!fxCopiesOn(c)||RO)return false;const L=fxCopyList(c);
   openM(`<button onclick="showCard(${esc(JSON.stringify(c.name))})">← Back</button><h3>Your ${c.qty} copies of ${esc(c.name)}</h3><p class="mut">Each copy can be a different printing. Tap a copy to choose its artwork; <b>?</b> means ${fxBasic(c)?'no artwork chosen yet (basic lands don’t need it)':'that copy isn’t verified yet'}.</p>
   <div class="grid">${L.map((x,k)=>`<div class="tile" onclick="artPicker(${esc(JSON.stringify(c.name))},${k})"><div class="art">${x&&x.art?`<img src="${esc(x.art)}" alt=""><span class="vf" title="Artwork verified">✓</span>`:'<div class="qbox">?</div>'}</div><div class="nm setcap"><b>Copy ${k+1}</b><span>${x?esc(`${x.setName||''} · ${String(x.set||'').toUpperCase()} #${x.cn||''}`):'not verified yet'}</span></div></div>`).join('')}</div>
+  ${L[0]&&!fxBasic(c)&&L.some(x=>!x)?`<div class="row"><button class="pri" onclick="fxCopiesSame(${esc(JSON.stringify(c.name))})">Use copy 1’s artwork for the ${(n=>n+' unverified '+(n===1?'copy':'copies'))(L.filter(x=>!x).length)}</button></div>`:''}
   ${artOf(c.name)?`<div class="row"><button onclick="zoom(${esc(JSON.stringify(c.name))})">⛶ View the card full screen</button></div>`:''}`,()=>showCard(c.name));return true}
+/* copies screen: give every unverified copy copy 1's verified printing (asks first; verified copies are never changed) */
+async function fxCopiesSame(name){const c=findCard(name);if(!c||!c.verified||RO)return;const n=fxUnverifiedCopies(c);if(!n)return;
+  if(!(await ask(`Use copy 1’s artwork (${c.setName} · ${String(c.set||'').toUpperCase()} #${c.cn}) for the ${n} unverified ${n===1?'copy':'copies'} of ${c.name}?\n\nCopies that are already verified stay as they are.\n\nOK = Use it\nCancel = Go back`)))return;
+  c.cps=c.cps||[];let k=0;for(let i=0;i<c.qty-1;i++){if(!c.cps[i]){c.cps[i]={set:c.set,setName:c.setName,cn:c.cn,scryId:c.scryId,art:c.art||ART[c.name]||'',art2:c.art2||ART2[c.name]||''};if(c.price){c.cps[i].price=c.price;c.cps[i].priceAt=c.priceAt||today()}k++}}
+  logEdit(c.name,'Printing (copies)',`${k} copies not verified`,`${c.setName} #${c.cn} ✓ ×${k} (same as copy 1)`);save();toast(`✓ ${k} ${k===1?'copy':'copies'} verified`);fxCopiesOpen(c.name,true)}
 async function fxCopySet(c,k,p){if(!(await ask(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`)))return;
   c.cps=c.cps||[];while(c.cps.length<k)c.cps.push(null);const old=c.cps[k-1];
   c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};if(fxPriceOf(p)){c.cps[k-1].price=fxPriceOf(p);c.cps[k-1].priceAt=today()}
@@ -1807,25 +1813,3 @@ function fxKwFind(c){if(!c)return [];const kws=String(c.keywords||'').toLowerCas
 function fxKwBox(c){const L=fxKwFind(c);if(!L.length)return '';
   return `<div class="sec kwbox"><h4>Abilities explained</h4><ul>${L.map(([k,d])=>`<li><b>${esc(k)}</b> — ${symHtml(d)}</li>`).join('')}</ul></div>`}
 
-/* ---------- Undo what the automatic “Pulled from” verification did (edit log entries ending “(from “Pulled from”)”). Undone cards get c.noAuto so the automatic check never touches them again. ---------- */
-const fxAutoLog=()=>(D.edits||[]).map((x,i)=>({...x,i})).filter(x=>x.field==='Printing'&&/\(from “Pulled from”\)$/.test(x.now)&&!x.undone&&findCard(x.card));
-const fxPrintStr=s=>{const m=String(s||'').match(/^(.*) #(\S+?)( ✓)?(?: \(.*\))?$/);return m?{setName:m[1],cn:m[2],ver:!!m[3]}:null};
-async function fxUndoOpen(){const L=fxAutoLog().reverse();if(!L.length)return toast('Nothing to undo');
-  const S=await fxSets().catch(()=>null),row=x=>{const c=findCard(x.card),was=fxPrintStr(x.old),now=fxPrintStr(x.now),still=now&&c.verified&&c.setName===now.setName&&c.cn===now.cn,named=!S||cardSources(c).some(s=>fxSetIn(s,S)),tick=still&&(was&&was.ver||!named);
-    return `<label class="sec" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;padding:8px 10px;font-weight:400"><input type="checkbox" data-i="${x.i}" ${tick?'checked':''} ${still?'':'disabled'} style="margin-top:3px"><span style="flex:1"><b>${esc(x.card)}</b> <span class="mut" style="font-size:12px">· ${esc(x.when)}</span><br><span style="font-size:13px">Was: ${esc(x.old)}<br>Set to: ${esc(x.now.replace(/ \(from “Pulled from”\)$/,''))}</span><br><span class="mut" style="font-size:12px">Pulled from: ${esc(cardSources(c).join(', '))}${!still?' · changed since — left alone':was&&was.ver?' · <b style="color:var(--red,#e66)">it was already verified</b>':!named?' · no set name in “Pulled from”':''}</span></span></label>`};
-  openM(`<h3>↩ Undo automatic verifications</h3><p class="mut">These cards were verified automatically from their “Pulled from”. Tick the ones to put back the way they were. Undone cards are never verified automatically again — you choose their artwork yourself (🎨). Ticked for you: cards that were already verified before, and cards whose “Pulled from” isn’t a set name.</p>
-    ${L.map(row).join('')}<div class="row" style="margin-top:12px"><button class="pri" onclick="fxUndoApply()">Undo ticked</button><button onclick="closeM()">Cancel</button></div>`)}
-async function fxUndoApply(){const I=[...document.querySelectorAll('#mbody input[data-i]:checked')].map(x=>+x.dataset.i);if(!I.length)return toast('Nothing ticked');
-  if(!navigator.onLine)return toast('You’re offline — the earlier artwork has to be looked up on Scryfall. Try again when connected.');
-  if(!(await ask(`Undo the automatic verification of ${fxPl(I.length,'card')}?\n\nEach card goes back to the artwork it had before (verified again if it was verified before, otherwise unverified 🎨). Copies the check filled in are cleared. These cards will never be verified automatically again.\n\nOK = Undo\nCancel = Go back`)))return;
-  let done=0,fail=[];toast('Putting the earlier artwork back…');
-  for(const i of I){const x=D.edits[i],c=x&&findCard(x.card);if(!c)continue;const was=fxPrintStr(x.old),now=fxPrintStr(x.now);
-    if(!(now&&c.verified&&c.setName===now.setName&&c.cn===now.cn)){fail.push(x.card);continue}
-    const autoId=c.scryId,autoDay=x.when.slice(0,10);let p=null;
-    if(was){const pr=await fxPrintsAll(c.name);if(pr===null){fail.push(x.card);continue}p=(pr||[]).find(q=>q.set_name===was.setName&&String(q.collector_number)===was.cn)||null}
-    if(c.cps)c.cps=c.cps.map(y=>y&&y.scryId===autoId&&(!y.priceAt||y.priceAt>=autoDay)?null:y);if(c.cps){while(c.cps.length&&!c.cps[c.cps.length-1])c.cps.pop();if(!c.cps.length)delete c.cps}
-    if(p&&was.ver){c.verified=false;fxVerifyPrint(c.name,p,'restored — undo automatic',true)}
-    else{if(p){Object.assign(c,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id});ART[c.name]=sImg(p)||'';ART2[c.name]=sImg2(p)||'';c.price=null;c.priceAt='';fxSetPrice(c,p)}
-      c.verified=false;logEdit(c.name,'Printing',x.now.replace(/ \(from “Pulled from”\)$/,''),`${x.old} (undo automatic)`)}
-    c.noAuto=true;x.undone=true;done++}
-  saveArt();save();closeM();render();toast(`↩ ${fxPl(done,'card')} put back${fail.length?` · ${fail.length} skipped (changed since, or Scryfall didn’t answer)`:''}`)}
