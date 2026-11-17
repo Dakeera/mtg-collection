@@ -539,6 +539,7 @@ async function pickName(n){const c=await scry('/cards/named?exact='+encodeURICom
 async function pick(i){A.card=A.cands[i];A.step='verify';A.finish=fins0();A.qty=1;A.same=true;A.skipArt=false;A.q=null;A.prints=null;A.printOK=false;A.printNote='';A.pstat='';render();
   const p=await scry(A.card.prints_search_uri);if(!(p&&p.data&&A.step==='verify'))return;
   A.prints=p.data;const nm=A.card.name,e=findCard(nm);
+  {const pp=fxPaper(A.prints);if(pp.length===1){A.card=pp[0];A.printOK=true;A.printNote='Only one printing of this card exists, so there’s no artwork to check.';render();return}}
   if(e&&e.verified&&e.scryId){const m=A.prints.find(x=>x.id===e.scryId);if(m){A.card=m;A.printOK=true;A.printNote='Same printing you already verified for this card.'}}
   if(!A.printOK&&A.file){A.pstat='Reading the set number from your photo…';render();
     try{await loadTess();const r=await detectPrint(A.file,A.prints);
@@ -707,9 +708,9 @@ async function commit(){
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:A.finish,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
   const split=A.printOK&&n>1&&A.same===false&&!fxBasic(e);
-  if(A.printOK&&!fxBasic(e)){if(!e.set||!e.art)Object.assign(e,pr);fxSetCopies(e,c,split?1:n)}else if(!e.set||!e.art)Object.assign(e,pr);
+  const fresh=!e.verified&&(!e.set||!(e.art||ART[e.name]));if(A.printOK&&!fxBasic(e)){if(fresh)Object.assign(e,pr);fxSetCopies(e,c,split?1:n)}else if(fresh)Object.assign(e,pr);
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
-  ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
+  if(!e.verified||e.scryId===c.id)ART[e.name]=sImg(c)||ART[e.name]||'';saveArt();
   D.acq.push({date:q.date||today(),name:nm,set:c.set,cn:c.collector_number,finish:A.finish,qty:n,source:src,price:q.price||'',notes:q.notes||'',shared:had});
   if(q.deck!==undefined&&q.deck!=='')addToDeck(+q.deck,nm,n,true);save();
   A={step:'done',msg:`${n}× ${nm} (${c.set.toUpperCase()}) added from “${src}”${q.deck?` and placed in ${D.decks[+q.deck].name}`:''}.`};render();

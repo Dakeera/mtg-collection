@@ -277,6 +277,7 @@ async function fxImpCommit(){
     ok.forEach(x=>{const fins=(x.card.finishes||['nonfoil']).map(f=>finMap[f]||f),fin=fins.includes(x.fin)?x.fin:fins[0];x.fin=fin;fxAddCard(x.card,x.qty,fin,src,x.price,x.notes,IMP.qa&&!x.nover)});
     const wasQa=IMP.qa,hid=fxHistAdd(src,ok,wasQa);
     saveArt();save();IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);
+    setTimeout(()=>fxOneCheck(ok.map(x=>x.card.name)),300);
     if(!wasQa&&fxHistLeft(D.imports[0]).length&&await ask(`${fxPl(n,'card')} added.\n\nDo you want to verify their artwork now? You pick the matching printing card by card and can stop at any time — whatever is left stays in More → Bulk import → Import history.\n\nOK = verify now\nCancel = later`))fxHistVerify(hid);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
@@ -864,6 +865,14 @@ async function fxSrcInfer(src,S){if(!fxIsCmdSrc(src))return null;const cards=D.c
   let inter=null;for(const c of cards){const pr=await fxPrintsAll(c.name);if(pr===null)return undefined;if(!pr.length)continue;const cs=new Set(pr.map(p=>p.set));inter=inter?new Set([...inter].filter(x=>cs.has(x))):cs;if(!inter.size)return null}
   if(!inter)return null;const L=S.s.filter(x=>inter.has(x.c)&&x.t==='commander');return L.length===1?L[0]:null}
 async function fxSetFor(src,S,memo){if(memo.has(src))return memo.get(src);let x=fxSetIn(src,S);if(!x){x=await fxSrcInfer(src,S);if(x===undefined)return undefined}memo.set(src,x||null);return x||null}
+/* Only one paper printing exists → there is only one possible artwork, so every copy is verified without asking (owner's choice). Digital-only (Arena/MTGO) printings don't count. */
+const fxPaper=pr=>(pr||[]).filter(p=>!p.digital&&(!p.games||p.games.includes('paper')));
+function fxOneApply(e,p){if(!e||!p||RO||e.custom||fxBasic(e))return 0;const n=fxUnverifiedCopies(e);if(!n)return 0;
+  if(!e.verified)fxVerifyPrint(e.name,p,'only one printing exists',true);const k=fxSetCopies(e,p,fxUnverifiedCopies(e));
+  if(k)logEdit(e.name,'Printing (copies)',`${k} ${k===1?'copy':'copies'} not verified`,`${p.set_name} #${p.collector_number} ✓ ×${k} (only one printing exists)`);return n}
+/* after adding cards: verify those that have only one printing (quietly, in the background) */
+async function fxOneCheck(names){if(RO||!navigator.onLine)return;let n=0;for(const nm of [...new Set(names)]){const e=findCard(nm);if(!e||e.custom||fxBasic(e)||!fxUnverifiedCopies(e))continue;const pr=await fxPrintsAll(e.name);const pp=fxPaper(pr);if(pp&&pp.length===1&&fxOneApply(e,pp[0]))n++}
+  if(n){saveArt();save();render();toast(`✓ ${fxPl(n,'card')} verified automatically — only one printing exists`)}}
 /* what comes in a sealed precon: the regular card, not the display/thick commander or collector-booster variants */
 const fxPreconPrint=p=>!p.promo&&!(p.promo_types||[]).some(t=>/thick|serialized|surgefoil|galaxyfoil|textured|halofoil|confettifoil|raisedfoil/.test(t))&&!(p.frame_effects||[]).some(f=>/extendedart|showcase|inverted|etched/.test(f))&&p.border_color!=='borderless'&&!p.full_art;
 function fxSrcPrint(prints,src,set){if(!set)return {why:'no WotC set found for “'+src+'”'};let c=prints.filter(p=>p.set===set.c);if(!c.length)return {why:`no printing in ${set.n} (“${src}”)`};
@@ -872,28 +881,31 @@ function fxSrcPrint(prints,src,set){if(!set)return {why:'no WotC set found for �
   return c.length===1?{p:c[0]}:{why:`${c.length} printings in ${set.n}`}}
 const svMsg=t=>{SV.msg=t;const e=document.getElementById('svmsg');if(e)e.textContent=t};
 async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){if(!auto)toast('You’re offline — try again when connected');return}
-  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&!c.noAuto&&!fxCopyList(c).some(Boolean)&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
+  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&!c.noAuto&&fxUnverifiedCopies(c)>0);let one=0;
   SV={running:true,msg:'',ok:[],unsure:[],cand:[]};if(!auto)render();let stopped=false;svMsg('Loading the list of WotC sets…');
   const S=await fxSets();if(!S){SV.running=false;SV.msg='Couldn’t load the list of sets from Scryfall — it tries again next time.';render();return}
   const memo=new Map();
   for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
-    if(c.noAuto||fxCopyList(c).some(Boolean))continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
+    if(c.noAuto||!fxUnverifiedCopies(c))continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
     const pr=await fxPrintsAll(c.name);if(pr===null){stopped=true;break}if(!pr.length){SV.unsure.push([c.name,'not found on Scryfall']);continue}
+    {const pp=fxPaper(pr);if(pp.length===1){if(fxOneApply(c,pp[0])){one++;SV.ok.push(c.name)}continue}}
+    /* the “Pulled from” rule only ever touches cards with NO verified copy */
+    if(fxCopyList(c).some(Boolean)||!srcs.some(s=>!SV_SKIP.test(s)))continue;
     const res=[];for(const s of srcs){if(SV_SKIP.test(s)){res.push({why:'also from “'+s+'”'});continue}const set=await fxSetFor(s,S,memo);if(set===undefined){stopped=true;break}res.push(fxSrcPrint(pr,s,set))}if(stopped)break;
     const bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
     if(bad||ids.size!==1){SV.unsure.push([c.name,bad?bad.why:'its “Pulled from” entries point to different printings']);continue}
     SV.cand.push({name:c.name,p:res[0].p,src:srcs.join(', ')})}
-  SV.running=false;const C=SV.cand;
+  SV.running=false;const C=SV.cand;if(one){saveArt();save()}
   SV.msg=stopped?`Paused — Scryfall stopped answering (or you went offline). Tap the button to carry on; cards already checked are remembered for 24 hours.`:`Checked: ${fxPl(C.length,'card')} can be verified from their “Pulled from”, ${SV.unsure.length} left for you to check.`;render();
-  if(!C.length){if(!stopped){D.srcv3=today();save()}if(!auto)toast(stopped?'Verification paused — Scryfall stopped answering':'No cards could be verified from their “Pulled from”');return}
+  if(!C.length){if(!stopped){D.srcv4=today();save()}if(!auto||one)toast(stopped?'Verification paused — Scryfall stopped answering':one?`✓ Artwork verified for ${fxPl(one,'card')} with only one printing`:'No cards could be verified from their “Pulled from”');return}
   /* owner's choice: a card whose pull sources all point to exactly ONE printing is verified automatically (every copy); anything uncertain stays for the user */
   C.forEach(x=>{const e=findCard(x.name);if(!e||e.noAuto||fxCopyList(e).some(Boolean))return;/* never touches a card with ANY verified copy */
-    if(!fxVerifyPrint(x.name,x.p,'from “Pulled from”',true))return;if(e.qty>1){const n=fxSetCopies(e,x.p,e.qty-1);if(n)logEdit(e.name,`Printing (copies 2–${e.qty})`,'(not verified)',`${x.p.set_name} #${x.p.collector_number} ✓ ×${n} (from “Pulled from”)`)}SV.ok.push(x.name)});SV.cand=[];if(!stopped)D.srcv3=today();saveArt();save();
+    if(!fxVerifyPrint(x.name,x.p,'from “Pulled from”',true))return;if(e.qty>1){const n=fxSetCopies(e,x.p,e.qty-1);if(n)logEdit(e.name,`Printing (copies 2–${e.qty})`,'(not verified)',`${x.p.set_name} #${x.p.collector_number} ✓ ×${n} (from “Pulled from”)`)}SV.ok.push(x.name)});SV.cand=[];if(!stopped)D.srcv4=today();saveArt();save();
   SV.msg=`${stopped?'Paused':'Done'}: ${fxPl(SV.ok.length,'card')} verified from their “Pulled from”, ${SV.unsure.length} left for you to check.${stopped?' Tap the button to check the rest.':''}`;render();
   toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their “Pulled from” — details in More → Data check`)}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
-function fxSrcAuto(){setTimeout(()=>{if(!D.srcv3&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
-function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards with <b>no</b> verified artwork yet whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. It never changes a card that already has any verified copy. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one Commander set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv3?` Last run: <b>${esc(D.srcv3)}</b>.`:''}</p>
+function fxSrcAuto(){setTimeout(()=>{if(!D.srcv4&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
+function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">Cards with only one printing ever made get every copy verified (there’s only one possible artwork). For cards with <b>no</b> verified artwork yet whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. It never changes a card that already has any verified copy. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one Commander set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${(D.srcv4||D.srcv3)?` Last run: <b>${esc(D.srcv4||D.srcv3)}</b>.`:''}</p>
   <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button></div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
