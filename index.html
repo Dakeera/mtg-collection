@@ -157,7 +157,7 @@ const NS='';const LS='mtg_state_v1'+NS,AS='mtg_art_v1'+NS,BK='mtg_backup_v1'+NS,
 let IDX=null,D,A={step:'start'},PD='',ART={},ART2={},FACE=false;try{ART=JSON.parse(localStorage.getItem(AS)||'{}')}catch(e){}try{ART2=JSON.parse(localStorage.getItem(AS+'_b')||'{}')}catch(e){}
 const V={view:'collection',q:'',type:'',color:'',deck:null,sub:''};
 const persist=()=>{if(RO)return;try{localStorage.setItem(LS,JSON.stringify(D))}catch(e){toast('Storage full — export a backup!')}};
-const save=()=>{if(RO){IDX=null;return}if(!D.uid&&(D.cards.length||D.decks.length))fxIdentity();try{reconcileLoans()}catch(e){}IDX=null;D.updated=Date.now();persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
+const save=()=>{if(RO){IDX=null;return}if(!D.uid&&(D.cards.length||D.decks.length))fxIdentity();try{reconcileLoans()}catch(e){}IDX=null;try{if(typeof fxAllocAll==='function')fxAllocAll()}catch(e){}IDX=null;D.updated=Date.now();persist();try{localStorage.setItem(DY,'1')}catch(e){}autoSchedule()};
 const saveArt=()=>{if(RO)return;try{localStorage.setItem(AS,JSON.stringify(ART));localStorage.setItem(AS+'_b',JSON.stringify(ART2))}catch(e){}};
 const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,''),front=s=>String(s).split(' // ')[0];
 const p2=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`},tsName=()=>{const d=new Date();return `${String(d.getFullYear()).slice(2)}${p2(d.getMonth()+1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`},sum=(a,f=x=>x.qty)=>a.reduce((s,x)=>s+f(x),0);
@@ -306,8 +306,8 @@ function showCard(name,keep){
   ${has(c.text)||has(c.keywords)?`<div class="sec"><h4>Rules</h4>${has(c.text)?`<pre>${symHtml(c.text)}</pre>`:''}${has(c.keywords)?`<p class="mut" style="margin:8px 0 0">${esc(c.keywords)}</p>`:''}</div>`:''}${fxKwBox(c)}
   ${fxUnknownBox(c)}${c.custom?'':legalBox(c)}
   <div class="sec"><h4>My collection</h4>${kv('Owned',c.qty)}${has(c.finish)?kv('Finish',esc(c.finish)):''}${c.custom||fxBasic(c)?'':kv('Printing',fxCopiesOn(c)?fxCopiesRow(c):c.set&&c.verified?`${esc(c.setName||'')} · ${esc(c.set.toUpperCase())} #${esc(c.cn||'')} <span style="color:var(--gold)">✓ verified</span>`:'<span class="mut">not verified yet — tap 🎨 to choose your artwork</span>')}${fxPriceRow(c)}</div>
-  <div class="sec"><h4>Pulled from</h4>${c.source&&c.source!=='None'?`<ul>${c.source.split(', ').map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<span class="mut">—</span>'}</div>
-  <div class="sec"><h4>In decks</h4>${u.length?u.map(x=>kv(esc(x.d.name),'×'+x.q)).join(''):'<span class="mut">Not in any deck</span>'}</div>
+  ${fxSrcBox(c)}
+  <div class="sec"><h4>In decks</h4>${u.length?u.map(x=>{const a=x.d.srcs&&x.d.srcs[norm(c.name)],lo=loanedIn(x.d.name,c.name),ms=x.d.miss?fxMissQ(x.d,c.name):0,parts=(a?Object.keys(a).map(s=>`${a[s]} from ${esc(s)}`):[]).concat(lo?[`${lo} borrowed from another deck`]:[]);return kv(esc(x.d.name),'×'+x.q+(parts.length?`<br><span class="mut" style="font-size:12px;font-weight:400">${parts.join(' · ')}</span>`:''))}).join(''):'<span class="mut">Not in any deck</span>'}</div>
   ${acq.length?`<div class="sec"><h4>Added in app</h4>${acq.map(a=>kv(esc(a.date),`${esc(a.source)} ×${a.qty}`)).join('')}</div>`:''}
   ${findCard(c.name)?`<div class="sec"><div class="kv"><span>Copies owned</span><b style="display:flex;align-items:center;gap:12px"><button class="qb" data-q="-1" data-qn="${esc(c.name)}">−</button>${c.qty}<button class="qb" data-q="1" data-qn="${esc(c.name)}">＋</button></b></div></div>`:''}
   ${isReal(c)?`<button class="pri big" data-pd="${esc(c.name)}">Add to a deck…</button>`:''}</div>`);
@@ -821,8 +821,8 @@ function mkAIDeck(){
     const src='Pulled from: '+(cardSources(c).join(', ')||'unknown source');
     pl.from.forEach(x=>{makeLoan(c.name,x.q,x.deck,name,sec+' — taken from another deck','Deck Generator · '+src);lenders.add(x.deck);loaned+=x.q});
     if(pl.free>0&&c.type!=='Basic Land')D.swaps.push({deck:name,section:sec+' — from collection',header:hdr,row:[c.name,'Collection',String(pl.free),today(),'Deck Generator · '+src,'In Deck / Active']})});
-  const inG={};d.cards.forEach(e=>{const c=findCard(e.name);if(!c)return;const L=fxCardLabel(c),fromD=D.loans.filter(l=>l.status==='active'&&l.to===name&&norm(l.card)===norm(c.name));let q=e.qty;fromD.forEach(l=>{fxGrpPut(inG,'From deck: '+l.from,l.qty,c.name);q-=l.qty});if(q>0)fxGrpPut(inG,L.k,q,c.name,L.alt)});
-  save();G.res=null;G.name='';go('decks');V.deck=D.decks.length-1;render();scrollTo(0,0);fxPullSplash(name,inG,{});toast(loaned?`Deck created — ${loaned} card${loaned>1?'s':''} borrowed from ${[...lenders].join(', ')} (marked ★)`:'Deck created');
+  const inG={};d.cards.forEach(e=>{const c=findCard(e.name);if(!c)return;const L=fxCardLabel(c),fromD=D.loans.filter(l=>l.status==='active'&&l.to===name&&norm(l.card)===norm(c.name));fromD.forEach(l=>fxGrpPut(inG,'From deck: '+l.from,l.qty,c.name))});
+  save();fxAllocDiff(d,{},inG,null);G.res=null;G.name='';go('decks');V.deck=D.decks.length-1;render();scrollTo(0,0);fxPullSplash(name,inG,{});toast(loaned?`Deck created — ${loaned} card${loaned>1?'s':''} borrowed from ${[...lenders].join(', ')} (marked ★)`:'Deck created');
 }
 
 /* ---------- more ---------- */

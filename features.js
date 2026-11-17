@@ -49,7 +49,49 @@ function fxSetLabel(src){const x=canonSrc(src);if(x==='Singles Orders')return 'S
   const m=x.match(/^(.*?)\s+(?:Bundle(?:\s+Box)?|(?:(?:Play|Draft|Set|Collector|Family|Jumpstart|Theme)\s+)?Boosters?(?:\s+(?:Pack|Box))?|Prerelease(?:\s+(?:Kit|Pack))?|Commander\s+Deck|Starter\s+(?:Kit|Deck)|Fat\s+Pack|Gift\s+(?:Box|Bundle))\b/i);
   if(m&&m[1].trim().length>2)return m[1].trim();
   return x.replace(/\s+\d+(\s*\(.*\))?$/,'').trim()||x}
-function fxCardLabel(c){const l=[...new Set(cardSources(c).map(fxSetLabel))];return l.length?{k:l[0],alt:l.slice(1)}:{k:'Pulled from: unknown',alt:[]}}
+/* Where a copy physically lives: each WotC set is its own place; every other “Pulled from” (Bulk Box 1, Singles Orders, Trade, Gift, any custom source added later) shares ONE storage. Uses the Scryfall set list when loaded, else the product words in the name. */
+const FX_OTHER='Bulk & singles';
+const FXPRODRE=/^(.*?)\s+(?:Bundle(?:\s+Box)?|(?:(?:Play|Draft|Set|Collector|Family|Jumpstart|Theme)\s+)?Boosters?(?:\s+(?:Pack|Box))?|Prerelease(?:\s+(?:Kit|Pack))?|Commander\s+Deck|Starter\s+(?:Kit|Deck)|Fat\s+Pack|Gift\s+(?:Box|Bundle))\b/i;
+function fxStoreLabel(src){const x=canonSrc(src||'');if(!x||SV_SKIP.test(x)||isCustomSrc(x))return FX_OTHER;
+  if(typeof FXSETS!=='undefined'&&FXSETS){const s=fxSetIn(x,FXSETS);if(s)return s.n}
+  /* a WotC product without a recognisable set name (e.g. a precon typed by its deck name) is still its own place */
+  const m=x.match(FXPRODRE);return m&&m[1].trim().length>2?m[1].trim():FX_OTHER}
+function fxCardLabel(c){const l=[...new Set(cardSources(c).map(fxStoreLabel))];return l.length?{k:l[0],alt:l.slice(1)}:{k:FX_OTHER,alt:[]}}
+/* ---------- Which “Pulled from” each deck copy comes from: d.srcs = { normName: { source: qty } } (collection copies only — borrowed and missing copies are tracked elsewhere). Chosen automatically, kept stable, shown on the card page. ---------- */
+function fxSrcOwned(c){const m={};D.acq.filter(a=>norm(a.name)===norm(c.name)).forEach(a=>{const s=canonSrc(a.source||'');if(s&&(+a.qty||0)>0)m[s]=(m[s]||0)+(+a.qty||0)});
+  const ss=cardSources(c);let tot=sum(Object.values(m),v=>v);
+  if(tot<c.qty){const s=ss.find(x=>!(x in m))||ss[0]||'Unknown';m[s]=(m[s]||0)+(c.qty-tot)}
+  else if(tot>c.qty){let over=tot-c.qty;for(const k of Object.keys(m).reverse()){const t=Math.min(over,m[k]);m[k]-=t;over-=t;if(!m[k])delete m[k];if(!over)break}}
+  return m}
+function fxDeckNeed(d,c){return Math.max(0,sum(d.cards.filter(e=>norm(e.name)===norm(c.name)))-loanedIn(d.name,c.name)-(d.miss?fxMissQ(d,c.name):0))}
+function fxAllocAll(){if(!D||RO)return;const own=new Map();
+  D.decks.forEach(d=>{d.srcs=d.srcs||{};const names=new Map();d.cards.forEach(e=>names.set(norm(e.name),e.name));
+    Object.keys(d.srcs).forEach(k=>{if(!names.has(k))delete d.srcs[k]});
+    names.forEach((nm,k)=>{const c=findCard(nm);if(!c){delete d.srcs[k];return}if(!own.has(k))own.set(k,{c,m:fxSrcOwned(c)});
+      const m=d.srcs[k]=d.srcs[k]||{};let over=sum(Object.values(m),v=>v)-fxDeckNeed(d,c);
+      for(const s of Object.keys(m).reverse()){if(over<=0)break;const t=Math.min(over,m[s]);m[s]-=t;over-=t;if(!m[s])delete m[s]}});
+    if(!Object.keys(d.srcs).length)delete d.srcs});
+  /* a source can't hand out more copies than came from it (e.g. after a rename or a lower quantity) */
+  own.forEach(({m},k)=>{const used={};D.decks.forEach(d=>{const a=d.srcs&&d.srcs[k];if(a)for(const s in a)used[s]=(used[s]||0)+a[s]});
+    for(const s in used){let over=used[s]-(m[s]||0);if(over<=0)continue;[...D.decks].reverse().forEach(d=>{const a=d.srcs&&d.srcs[k];if(!a||!a[s]||over<=0)return;const t=Math.min(over,a[s]);a[s]-=t;over-=t;if(!a[s])delete a[s]})}});
+  /* fill: copies not yet assigned take the source with the most free copies */
+  D.decks.forEach(d=>{const names=new Map();d.cards.forEach(e=>names.set(norm(e.name),e.name));names.forEach((nm,k)=>{const o=own.get(k);if(!o)return;
+    d.srcs=d.srcs||{};const m=d.srcs[k]=d.srcs[k]||{};let want=fxDeckNeed(d,o.c)-sum(Object.values(m),v=>v);
+    while(want>0){const free={};for(const s in o.m)free[s]=o.m[s];D.decks.forEach(x=>{const a=x.srcs&&x.srcs[k];if(a)for(const s in a)free[s]=(free[s]||0)-a[s]});
+      const best=Object.keys(free).filter(s=>free[s]>0).sort((a,b)=>free[b]-free[a])[0];if(!best)break;const t=Math.min(want,free[best]);m[best]=(m[best]||0)+t;want-=t}
+    if(!Object.keys(m).length)delete d.srcs[k]});if(d.srcs&&!Object.keys(d.srcs).length)delete d.srcs})}
+const fxSrcSnap=d=>JSON.parse(JSON.stringify(d&&d.srcs||{}));
+/* pull list lines from what the allocation changed: added copies come FROM a source, removed ones go BACK to it */
+function fxAllocDiff(d,before,inG,outG){const after=d.srcs||{},keys=new Set([...Object.keys(before||{}),...Object.keys(after)]);
+  keys.forEach(k=>{const b=(before||{})[k]||{},a=after[k]||{},nm=(findCard(k)||{}).name||(d.cards.find(e=>norm(e.name)===k)||{}).name||k;
+    new Set([...Object.keys(b),...Object.keys(a)]).forEach(s=>{const dq=(a[s]||0)-(b[s]||0);if(!dq)return;const G=dq>0?inG:outG;if(G)fxGrpPut(G,fxStoreLabel(s),Math.abs(dq),nm,FXPULL(s))})})}
+const FXPULL=s=>[`pulled from ${s}`];
+/* card page: copies per “Pulled from”, and which deck uses them */
+function fxSrcUse(c){const k=norm(c.name),own=fxSrcOwned(c),rows={};for(const s in own)rows[s]={own:own[s],decks:[]};
+  D.decks.forEach(d=>{const a=d.srcs&&d.srcs[k];if(a)for(const s in a){rows[s]=rows[s]||{own:0,decks:[]};rows[s].decks.push([d.name,a[s]])}});return rows}
+function fxSrcBox(c){if(!findCard(c.name)||c.custom&&false)return '';const R=fxSrcUse(c),ks=Object.keys(R);if(!ks.length)return `<div class="sec"><h4>Pulled from</h4><span class="mut">—</span></div>`;
+  return `<div class="sec"><h4>Pulled from</h4>${ks.map(s=>{const r=R[s],used=sum(r.decks,x=>x[1]),free=Math.max(0,r.own-used);return `<div class="kv" style="align-items:flex-start"><span>${esc(s)}<br><span class="mut" style="font-size:12px;font-weight:400">stored in: ${esc(fxStoreLabel(s))}</span></span><b style="text-align:right">${r.own} ${r.own===1?'copy':'copies'}<br><span class="mut" style="font-size:12px;font-weight:400">${r.decks.map(([n,q])=>`${q} in ${esc(n)}`).concat(free?[`${free} free`]:[]).join(' · ')||'—'}</span></b></div>`}).join('')}</div>`}
+
 
 /* ---------- collection list: load more cards as you scroll ---------- */
 addEventListener('scroll',()=>{try{if(V.view!=='collection')return;const m=document.getElementById('more');
@@ -74,30 +116,30 @@ async function fxDraftSave(opt){opt=opt||{};
   if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],ch=Object.values(DRAFT.m).filter(x=>x.qty!==x.base),adds=ch.filter(x=>x.qty>x.base),rems=ch.filter(x=>x.qty<x.base);
   const na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty);
   if(!opt.yes&&!(await ask(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.\n\nOK = save\nCancel = keep editing`)))return;
-  const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=opt.allowed||D.decks.filter(x=>x!==d).map(x=>x.name);
+  const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=opt.allowed||D.decks.filter(x=>x!==d).map(x=>x.name),before=fxSrcSnap(d);
   // 1) removals: decide where each physical copy goes, then take it off the list
   rems.forEach(x=>{const n=x.base-x.qty,c=findCard(x.name),lo=loanedOut(d.name,x.name);let perm=Math.max(0,lo-x.qty),phys=n-Math.min(n,perm);perm=Math.min(n,perm);
     if(perm>0)actLoans().filter(l=>l.from===d.name&&norm(l.card)===norm(x.name)).forEach(l=>{if(perm<=0)return;const k=Math.min(perm,l.qty);perm-=k;put(outG,'Nothing to move — already in deck: '+l.to,k,x.name);
       if(k>=l.qty){l.status='permanent';l.done=today();setSwapStatus(l.id,'Permanent '+today())}else l.qty-=k});
     if(phys>0)[...actLoans()].reverse().filter(l=>l.to===d.name&&norm(l.card)===norm(x.name)).forEach(l=>{if(phys<=0)return;const k=Math.min(phys,l.qty);phys-=k;put(outG,'Return to deck: '+l.from,k,x.name);
       if(k>=l.qty){l.status='returned';l.done=today();setSwapStatus(l.id,'Returned '+today())}else l.qty-=k});
-    if(phys>0){const L=c?fxCardLabel(c):{k:'Not in your collection',alt:[]};put(outG,L.k,phys,x.name,L.alt)}
+    if(phys>0&&!c)put(outG,'Not in your collection',phys,x.name)
     let left=n;d.cards.filter(e=>norm(e.name)===norm(x.name)).forEach(e=>{const k=Math.min(left,e.qty);e.qty-=k;left-=k});d.cards=d.cards.filter(e=>e.qty>0)});
   try{reconcileLoans()}catch(e){}
   // 2) additions: free copies come from the collection (by set); the rest are borrowed from other decks
   adds.forEach(x=>{const n=x.qty-x.base,c=findCard(x.name);
     if(!c)put(inG,'Not in your collection',n,x.name);
-    else if(c.type==='Basic Land'){const L=fxCardLabel(c);put(inG,L.k,n,c.name,L.alt)}
-    else{const pl=planCard(c,n,others),L=fxCardLabel(c);if(pl.free>0)put(inG,L.k,pl.free,c.name,L.alt);
+    else if(c.type==='Basic Land'){}
+    else{const pl=planCard(c,n,others);
       pl.from.forEach(f=>{makeLoan(c.name,f.q,f.deck,d.name);put(inG,'From deck: '+f.deck,f.q,c.name)});
       if(pl.short>0)put(inG,'Not enough copies — you own fewer than the deck lists',pl.short,c.name)}
     const e=d.cards.find(e=>norm(e.name)===norm(x.name));e?e.qty+=n:d.cards.push({name:c?c.name:x.name,qty:n,finish:c?.finish||'Normal'})});
   if(d.miss){d.miss.forEach(m=>{const have=sum(d.cards.filter(e=>norm(e.name)===norm(m.name)));m.qty=Math.min(m.qty,have)});d.miss=d.miss.filter(m=>m.qty>0);if(!d.miss.length)delete d.miss}
-  DRAFT=null;save();fxOverrideAuto(i);render();fxPullSplash(d.name,inG,outG)}
+  DRAFT=null;save();fxAllocDiff(d,before,inG,outG);fxOverrideAuto(i);render();fxPullSplash(d.name,inG,outG)}
 function fxPullSplash(deck,inG,outG){
   const ord=G=>Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b)),tot=G=>sum(Object.values(G).flat(),x=>x.q);
-  const grp=G=>ord(G).map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(or ${esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join('');
-  const txt=(t,G)=>tot(G)?`${t}\n`+ord(G).map(k=>`  ${k}\n`+G[k].map(x=>`    ${x.q}x ${x.name}`).join('\n')).join('\n')+'\n':'';
+  const grp=G=>ord(G).map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ')):'or '+esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join('');
+  const txt=(t,G)=>tot(G)?`${t}\n`+ord(G).map(k=>`  ${k}\n`+G[k].map(x=>`    ${x.q}x ${x.name}${x.alt.length&&/^pulled from /.test(x.alt[0])?` (${x.alt.join(', ')})`:''}`).join('\n')).join('\n')+'\n':'';
   window.FXPULL=`${deck} — pull list\n\n`+txt('CARDS ADDED',inG)+'\n'+txt('CARDS REMOVED',outG);
   openM(`<div class="pull"><h3>✓ ${esc(deck)} updated</h3><p class="mut">Your pull list, grouped by where each card is stored.</p>
   <h4>Cards added (${tot(inG)}) — pull these from:</h4>${grp(inG)||'<p class="mut">None.</p>'}
@@ -823,7 +865,9 @@ async function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
     if(!(await ask(`Save ${x.card.set_name} #${x.card.collector_number} as the verified artwork for ${n>1?n+' copies of ':''}${x.name}?`)))return;
     if(e&&e.qty>1){logEdit(e.name,'Printing',`${fxUnverifiedCopies(e)} copies not verified`,`${x.card.set_name} #${x.card.collector_number} ✓ ×${n} (import history)`);if(fxSetCopies(e,x.card,n)){saveArt();save();if(!x.done)IMP.vdone++;x.done=true}}
     else if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}
-    const left=fxUnverifiedCopies(findCard(x.name));if(left>0&&!(IMP.items[IMP.pi+1]&&IMP.items[IMP.pi+1].restOf===x))IMP.items.splice(IMP.pi+1,0,Object.assign({},x,{restOf:x,done:false,vq:0,vmax:left}))}
+    /* bring the card back for its other copies — but when verifying one “Pulled from” group, only for copies that came from THAT group */
+    const n0=Math.min(x.vq||x.vmax||1,n),srcLeft=x.cap!=null?x.cap-n0:Infinity,left=Math.min(fxUnverifiedCopies(findCard(x.name)),srcLeft);
+    if(left>0&&!(IMP.items[IMP.pi+1]&&IMP.items[IMP.pi+1].restOf===x))IMP.items.splice(IMP.pi+1,0,Object.assign({},x,{restOf:x,done:false,vq:0,vmax:left,cap:x.cap!=null?left:undefined}))}
   if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else fxVerStop()}
 function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
   if(src!=null){const l=(fxMissArt()[src]||[]).length;IMP.stage='idle';IMP.items=null;IMP.kind='';IMP.vsrc=null;go('more');V.sub='check';V.maOpen=true;render();scrollTo(0,0);
@@ -840,7 +884,7 @@ function fxMissArtView(){const G=fxMissArt(),ks=Object.keys(G).sort((a,b)=>G[b].
     <details><summary class="mut" style="font-size:13px">Cards pulled from here</summary><div style="font-size:13px;margin-top:4px">${G[s].map(c=>{const o=cardSources(c).filter(x=>x!==s);return `${cl(c.name)} <span class="mut">· ${fxUnverifiedCopies(c)} of ${c.qty} not verified${o.length?' · also from '+esc(o.join(', ')):''}</span>`}).join('<br>')}</div></details></div>`).join(''):''}`
   :'<p class="mut" style="margin:4px 0">✓ Every card’s artwork is verified (basic lands and custom cards don’t need it).</p>'}</div>`}
 function fxMissArtGo(s){const L=(fxMissArt()[s]||[]);if(!L.length)return toast('Nothing left to verify there');
-  Object.assign(IMP,{stage:'pick',kind:'verify',vid:null,vsrc:s,qa:false,pi:0,vdone:0,items:L.map(c=>{const u=fxUnverifiedCopies(c),fs=fxSrcQty(c,s);return {name:c.name,qty:c.qty,sid:c.scryId||'',stub:true,vmax:u,vq:fs&&fs<u?fs:0,src:s,card:{name:c.name,id:c.scryId||'',finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(c.name)}}})});
+  Object.assign(IMP,{stage:'pick',kind:'verify',vid:null,vsrc:s,qa:false,pi:0,vdone:0,items:L.map(c=>{const u=fxUnverifiedCopies(c),fs=fxSrcQty(c,s);return {name:c.name,qty:c.qty,sid:c.scryId||'',stub:true,vmax:u,vq:fs&&fs<u?fs:0,cap:fs&&fs<u?fs:u,src:s,card:{name:c.name,id:c.scryId||'',finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(c.name)}}})});
   go('more');V.sub='import';render();scrollTo(0,0)}
 
 /* ---------- Existing cards: verify the artwork from a “pulled from” source that names a real set ---------- */
@@ -904,7 +948,7 @@ async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){
   SV.msg=`${stopped?'Paused':'Done'}: ${fxPl(SV.ok.length,'card')} verified from their “Pulled from”, ${SV.unsure.length} left for you to check.${stopped?' Tap the button to check the rest.':''}`;render();
   toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their “Pulled from” — details in More → Data check`)}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
-function fxSrcAuto(){setTimeout(()=>{if(!D.srcv4&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
+function fxSrcAuto(){try{const c=JSON.parse(localStorage.getItem('mtg_sets_v1')||'null');if(c&&c.s&&!FXSETS)FXSETS=fxSetIdx(c.s)}catch(e){}if(navigator.onLine&&!FXSETS)fxSets().catch(()=>{});setTimeout(()=>{if(!D.srcv4&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
 function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">Cards with only one printing ever made get every copy verified (there’s only one possible artwork). For cards with <b>no</b> verified artwork yet whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. It never changes a card that already has any verified copy. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one Commander set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${(D.srcv4||D.srcv3)?` Last run: <b>${esc(D.srcv4||D.srcv3)}</b>.`:''}</p>
   <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button></div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
@@ -947,6 +991,7 @@ async function fxTidyApply(){const L=(TS.rows||[]).filter(r=>r.on&&r.neu&&r.neu!
   const M=new Map(L.map(r=>[r.old,r.neu]));let n=0;
   D.cards.forEach(c=>{const ss=cardSources(c);if(!ss.some(s=>M.has(s)))return;const o=c.source,out=[];ss.map(s=>M.get(s)||s).forEach(x=>{if(!out.some(y=>y.toLowerCase()===x.toLowerCase()))out.push(x)});c.source=out.join(', ');logEdit(c.name,'Pulled from',o,c.source);n++});
   D.acq.forEach(a=>{const x=canonSrc(a.source);if(M.has(x))a.source=M.get(x)});(D.imports||[]).forEach(h=>{if(M.has(h.src))h.src=M.get(h.src)});
+  D.decks.forEach(d=>{if(d.srcs)for(const k in d.srcs){const m=d.srcs[k],o={};for(const s in m){const t=M.get(s)||s;o[t]=(o[t]||0)+m[s]}d.srcs[k]=o}});
   try{const ls=localStorage.getItem('mtg_lastsrc_v1');if(ls&&M.has(ls))localStorage.setItem('mtg_lastsrc_v1',M.get(ls))}catch(e){}
   save();closeM();TS.rows=null;TS.msg='';render();toast(`✓ Renamed ${fxPl(L.length,'name')} on ${fxPl(n,'card')} — now checking artwork from the new names…`);setTimeout(()=>fxSrcVerify(),400)}
 
@@ -959,7 +1004,7 @@ function fxLockCheck(){const on=!!document.querySelector('.modal.open,#cam,#apfu
 /* Returns why a card may not be added under the deck’s rules (banned, not legal, outside commander colors, custom card in an official format), or ''. */
 function fxRuleBlock(c,qty,F,cmdC){const x=fxCardIssues(c,qty,F,cmdC).find(i=>['banned','notlegal','color','custom'].includes(i.kind));return x?x.title.toLowerCase():''}
 const fxGrpPut=(G,k,q,name,alt)=>{if(q>0)(G[k]=G[k]||[]).push({q,name,alt:alt||[]})};
-const fxGrpHtml=G=>{const ks=Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b));return ks.length?ks.map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(or ${esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join(''):'<p class="mut">None.</p>'};
+const fxGrpHtml=G=>{const ks=Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b));return ks.length?ks.map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ')):'or '+esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join(''):'<p class="mut">None.</p>'};
 
 /* ---------- ✨ Optimize Deck: the Deck Generator’s tools pointed at an existing deck ---------- */
 let OPT={};
@@ -1102,10 +1147,9 @@ async function fxBuildMake(){const B=BP,name=(B.name||'').trim();if(!name)return
   {const bor=sum(B.rows.filter(r=>r.borrow),r=>sum(r.lend,x=>x.q)),mis=sum(B.rows,r=>r.buy+(r.borrow?0:sum(r.lend,x=>x.q)));if(!(await ask(`Create “${name}”?${bor?`\n\n${fxPl(bor,'card')} will be borrowed from your other decks (they get a red ★).`:''}${mis?`\n${fxPl(mis,'card')} will be listed as missing.`:''}`)))return}
   const d={name,format:B.src.format,sleeve:'',commander:B.src.commander,info:`Built from ${B.src.owner}’s “${B.src.name}”`,cards:[],tokens:[],miss:[]};D.decks.push(d);const inG={},sec='Built from a shared deck';
   B.rows.forEach(r=>{const e={name:r.name,qty:r.need,finish:'Normal'};if(!r.c){Object.assign(e,{type:r.snap.type,cmc:r.snap.cmc,colors:r.snap.colors})}d.cards.push(e);
-    if(r.free&&r.c){const L=fxCardLabel(r.c);fxGrpPut(inG,L.k,r.free,r.name,L.alt)}
     r.lend.forEach(x=>{if(r.borrow){makeLoan(r.name,x.q,x.deck,name,sec+' — borrowed from another deck');fxGrpPut(inG,'From deck: '+x.deck,x.q,r.name)}else d.miss.push({name:r.name,qty:x.q,why:'deck',deck:x.deck,st:'missing',at:today()})});
     if(r.buy)d.miss.push({name:r.name,qty:r.buy,why:'buy',st:'missing',at:today(),usd:r.usd||0})});
-  if(!d.miss.length)delete d.miss;BP=null;save();closeM();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
+  if(!d.miss.length)delete d.miss;BP=null;save();fxAllocDiff(d,{},inG,null);closeM();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
   const nm=sum(d.miss||[],m=>m.qty);if(Object.keys(inG).length)fxPullSplash(name,inG,{});toast(nm?`Deck created — ${fxPl(nm,'card')} marked missing (🛒)`:'Deck created')}
 /* Missing-cards box on the deck page */
 function fxMissBox(i){const d=D.decks[i];if(RO||!d||!(d.miss||[]).length)return '';const L=d.miss,mi=L.filter(m=>m.st==='missing'),buy=mi.filter(m=>m.why==='buy');
