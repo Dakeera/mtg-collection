@@ -250,7 +250,7 @@ function fxAddCard(c,n,fin,src,price,notes,ver){
     D.cards.push({name:nm,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
       text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin,status:'Added in app'});e=D.cards[D.cards.length-1];IDX=null}
   const pr={art:sImg(c),art2:sImg2(c),set:c.set,setName:c.set_name,cn:c.collector_number,scryId:c.id};
-  if(!e.set||!e.art)Object.assign(e,pr);if(ver&&!fxBasic(e)&&!/Basic Land/.test(c.type_line||''))fxSetCopies(e,c,n);
+  if(!e.verified&&(!e.set||!(e.art||ART[e.name])))Object.assign(e,pr);if(ver&&!fxBasic(e)&&!/Basic Land/.test(c.type_line||''))fxSetCopies(e,c,n);
   if(c.color_identity)e.ci=c.color_identity;if(c.legalities){e.leg=legOf(c.legalities);e.legAt=today()}fxSetPrice(e,c);
   ART[e.name]=sImg(c)||ART[e.name]||'';ART2[e.name]=sImg2(c)||ART2[e.name]||'';
   D.acq.push({date:today(),name:nm,set:c.set,cn:c.collector_number,finish:fin,qty:n,source:src,price:price||'',notes:notes||'Bulk import',shared:had});return e}
@@ -788,7 +788,7 @@ function fxSrcPick(kind,x){const q=SQ();if(kind==='new'){q.newSrc=x;const i=docu
 
 
 /* ---------- Verified artwork: one helper for every way a printing gets confirmed (gold ✓) ---------- */
-function fxVerifyPrint(name,p,why,quiet){const e=findCard(name);if(!e||!p||RO)return false;const vb=true;
+function fxVerifyPrint(name,p,why,quiet){const e=findCard(name);if(!e||!p||RO)return false;if(/Pulled from/.test(why||'')&&(e.noAuto||fxCopyList(e).some(Boolean)))return false;const vb=true;
   logEdit(e.name,'Printing',e.set?`${e.setName} #${e.cn}${e.verified?' ✓':''}`:'(not set)',`${p.set_name} #${p.collector_number} ✓${why?' ('+why+')':''}`);
   Object.assign(e,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,verified:vb});e.price=null;e.priceAt='';fxSetPrice(e,p);
   ART[e.name]=sImg(p)||ART[e.name]||'';ART2[e.name]=sImg2(p)||'';if(!quiet){saveArt();save()}return true}
@@ -860,9 +860,9 @@ function fxSetIn(src,S){const t=snorm(src);let best=null,bl=0;for(const [k,L] of
 /* every printing of a card (cached) — [] when Scryfall doesn't know it, null when Scryfall couldn't be reached */
 async function fxPrintsAll(n){const r=await scry(fxPrintsUrl(n));if(!r)return scry.st===404?[]:null;let pr=r.data||[],nx=r.has_more&&r.next_page;while(nx){const r2=await scry(nx);if(!r2||!r2.data)break;pr=pr.concat(r2.data);nx=r2.has_more&&r2.next_page}return pr}
 /* a source with no set in its name (e.g. a precon called just “Blight Curse Commander Deck 1”): the one set that contains ALL its cards */
-async function fxSrcInfer(src,S){const cards=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&cardSources(c).includes(src)).slice(0,12);if(cards.length<3)return null;
+async function fxSrcInfer(src,S){if(!fxIsCmdSrc(src))return null;const cards=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&cardSources(c).includes(src)).slice(0,12);if(cards.length<3)return null;
   let inter=null;for(const c of cards){const pr=await fxPrintsAll(c.name);if(pr===null)return undefined;if(!pr.length)continue;const cs=new Set(pr.map(p=>p.set));inter=inter?new Set([...inter].filter(x=>cs.has(x))):cs;if(!inter.size)return null}
-  if(!inter)return null;let L=S.s.filter(x=>inter.has(x.c));if(L.length>1){const cm=L.filter(x=>x.t==='commander');if(cm.length&&fxIsCmdSrc(src))L=cm}return L.length===1?L[0]:null}
+  if(!inter)return null;const L=S.s.filter(x=>inter.has(x.c)&&x.t==='commander');return L.length===1?L[0]:null}
 async function fxSetFor(src,S,memo){if(memo.has(src))return memo.get(src);let x=fxSetIn(src,S);if(!x){x=await fxSrcInfer(src,S);if(x===undefined)return undefined}memo.set(src,x||null);return x||null}
 /* what comes in a sealed precon: the regular card, not the display/thick commander or collector-booster variants */
 const fxPreconPrint=p=>!p.promo&&!(p.promo_types||[]).some(t=>/thick|serialized|surgefoil|galaxyfoil|textured|halofoil|confettifoil|raisedfoil/.test(t))&&!(p.frame_effects||[]).some(f=>/extendedart|showcase|inverted|etched/.test(f))&&p.border_color!=='borderless'&&!p.full_art;
@@ -872,12 +872,12 @@ function fxSrcPrint(prints,src,set){if(!set)return {why:'no WotC set found for �
   return c.length===1?{p:c[0]}:{why:`${c.length} printings in ${set.n}`}}
 const svMsg=t=>{SV.msg=t;const e=document.getElementById('svmsg');if(e)e.textContent=t};
 async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){if(!auto)toast('You’re offline — try again when connected');return}
-  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&fxUnverifiedCopies(c)>0&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
+  const todo=D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)&&!c.noAuto&&!fxCopyList(c).some(Boolean)&&cardSources(c).some(s=>!SV_SKIP.test(s)&&!isCustomSrc(s)));
   SV={running:true,msg:'',ok:[],unsure:[],cand:[]};if(!auto)render();let stopped=false;svMsg('Loading the list of WotC sets…');
   const S=await fxSets();if(!S){SV.running=false;SV.msg='Couldn’t load the list of sets from Scryfall — it tries again next time.';render();return}
   const memo=new Map();
   for(let i=0;i<todo.length;i++){if(RO){stopped=true;break}while(fxBusy())await new Promise(z=>setTimeout(z,700));const c=todo[i];svMsg(`Checking ${i+1} of ${todo.length}…`);
-    if(!fxUnverifiedCopies(c))continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
+    if(c.noAuto||fxCopyList(c).some(Boolean))continue;const srcs=cardSources(c).filter(s=>!isCustomSrc(s));
     const pr=await fxPrintsAll(c.name);if(pr===null){stopped=true;break}if(!pr.length){SV.unsure.push([c.name,'not found on Scryfall']);continue}
     const res=[];for(const s of srcs){if(SV_SKIP.test(s)){res.push({why:'also from “'+s+'”'});continue}const set=await fxSetFor(s,S,memo);if(set===undefined){stopped=true;break}res.push(fxSrcPrint(pr,s,set))}if(stopped)break;
     const bad=res.find(x=>!x.p),ids=new Set(res.filter(x=>x.p).map(x=>x.p.id));
@@ -887,13 +887,14 @@ async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){
   SV.msg=stopped?`Paused — Scryfall stopped answering (or you went offline). Tap the button to carry on; cards already checked are remembered for 24 hours.`:`Checked: ${fxPl(C.length,'card')} can be verified from their “Pulled from”, ${SV.unsure.length} left for you to check.`;render();
   if(!C.length){if(!stopped){D.srcv3=today();save()}if(!auto)toast(stopped?'Verification paused — Scryfall stopped answering':'No cards could be verified from their “Pulled from”');return}
   /* owner's choice: a card whose pull sources all point to exactly ONE printing is verified automatically (every copy); anything uncertain stays for the user */
-  C.forEach(x=>{const e=findCard(x.name);if(!e)return;let ok=false;if(!e.verified)ok=fxVerifyPrint(x.name,x.p,'from “Pulled from”',true);if(e.qty>1&&fxSetCopies(e,x.p,e.qty))ok=true;if(ok)SV.ok.push(x.name)});SV.cand=[];if(!stopped)D.srcv3=today();saveArt();save();
+  C.forEach(x=>{const e=findCard(x.name);if(!e||e.noAuto||fxCopyList(e).some(Boolean))return;/* never touches a card with ANY verified copy */
+    if(!fxVerifyPrint(x.name,x.p,'from “Pulled from”',true))return;if(e.qty>1){const n=fxSetCopies(e,x.p,e.qty-1);if(n)logEdit(e.name,`Printing (copies 2–${e.qty})`,'(not verified)',`${x.p.set_name} #${x.p.collector_number} ✓ ×${n} (from “Pulled from”)`)}SV.ok.push(x.name)});SV.cand=[];if(!stopped)D.srcv3=today();saveArt();save();
   SV.msg=`${stopped?'Paused':'Done'}: ${fxPl(SV.ok.length,'card')} verified from their “Pulled from”, ${SV.unsure.length} left for you to check.${stopped?' Tap the button to check the rest.':''}`;render();
   toast(`✓ Artwork verified for ${fxPl(SV.ok.length,'card')} from their “Pulled from” — details in More → Data check`)}
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
 function fxSrcAuto(){setTimeout(()=>{if(!D.srcv3&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
-function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv3?` Last run: <b>${esc(D.srcv3)}</b>.`:''}</p>
-  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button></div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
+function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled from”</h4><p class="mut" style="margin:4px 0">For cards with <b>no</b> verified artwork yet whose “Pulled from” is a real set (e.g. “Lorwyn Eclipsed Play Booster 3” or a Commander deck), the app picks that set’s printing and marks the artwork verified ✓. It never changes a card that already has any verified copy. A Commander deck counts as its Commander set even when only the deck’s name was typed (the app finds the one Commander set that has all of its cards), and only the regular printing that comes in the box is used. If it isn’t sure (several possible printings, or a “Pulled from” that isn’t a set) the card is left unverified for you.${D.srcv3?` Last run: <b>${esc(D.srcv3)}</b>.`:''}</p>
+  <div class="row"><button onclick="fxSrcVerify()" ${SV.running?'disabled':''}>${SV.running?'Checking…':'✓ Verify from “Pulled from”'}</button><button onclick="fxTidyScan()" ${TS.running||SV.running?'disabled':''}>${TS.running?'Checking…':'🏷 Tidy up “Pulled from” names'}</button>${fxAutoLog().length?`<button onclick="fxUndoOpen()" ${SV.running?'disabled':''}>↩ Undo automatic verifications</button>`:''}</div><p id="svmsg" class="mut">${esc(TS.running||TS.msg&&!SV.running?TS.msg:SV.msg)}</p>
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
 
@@ -1560,9 +1561,11 @@ async function fxQALoad(i){const x=IMP.items[i];if(!x||!x.card||x.prints||x.load
   x.loading=false;if(x.stub){if(!all.length){x.err=true}else{x.stub=false;x.err=false;x.card=all.find(p=>p.id===x.sid)||all[0];x.prints=all}if(IMP.stage==='pick'&&IMP.pi===i)render();return}x.loading=false;x.prints=all.length?all:[x.card];if(!x.prints.some(p=>p.id===x.card.id))x.prints.unshift(x.card);if(!x.picked){const e=findCard(x.card.name),m=e&&e.verified&&e.scryId&&x.prints.find(p=>p.id===e.scryId);if(m){x.card=m;x.mine=true}}if(IMP.stage==='pick'&&IMP.pi===i)render()}
 function fxQAPrint(i,k){const x=IMP.items[i];const p=(x.prints||[])[k];if(!p)return;x.card=p;x.picked=true;x.mine=false;render()}
 /* Full-screen artwork viewer for the add-several picker: swipe or use ‹ › to browse every printing, flip double-faced cards, “Use this one” picks it. */
-function fxQAView(i,k){const x=IMP.items[i],list=x.prints||[x.card];if(!list[k])return;let face=0;$('#qafull')?.remove();const d=document.createElement('div');d.id='qafull';
+function fxQAView(i,k){const x=IMP.items[i];fxPrintView(x.prints||[x.card],k,x.card&&x.card.id,kk=>fxQAPrint(i,kk))}
+/* Full-screen artwork viewer shared by the several-cards picker and the artwork picker: ‹ › / swipe through the printings, ↻ Flip, “Use this one” selects (onUse) */
+function fxPrintView(list,k,selId,onUse){if(!list[k])return;let face=0;$('#qafull')?.remove();const d=document.createElement('div');d.id='qafull';
   const big=(p,f)=>{const cf=p.card_faces;if(cf&&cf[f]&&cf[f].image_uris)return cf[f].image_uris.large||cf[f].image_uris.normal||'';return p.image_uris?.large||p.image_uris?.normal||cf?.[0]?.image_uris?.large||cf?.[0]?.image_uris?.normal||''};
-  const draw=()=>{const p=list[k],sel=x.card&&p.id===x.card.id,two=!!(p.card_faces&&p.card_faces[1]&&p.card_faces[1].image_uris);
+  const draw=()=>{const p=list[k],sel=!!selId&&p.id===selId,two=!!(p.card_faces&&p.card_faces[1]&&p.card_faces[1].image_uris);
     d.innerHTML=`<div class="qft"><span>${k+1} of ${list.length}</span>${sel?'<b class="qfsel">✓ Selected</b>':''}<button class="qfx" aria-label="Close">✕</button></div>
     <div class="im"><button class="qfa ql" ${k?'':'disabled'} aria-label="Previous">‹</button><img src="${esc(big(p,face))}" alt=""><button class="qfa qr" ${k+1<list.length?'':'disabled'} aria-label="Next">›</button></div>
     <div class="qfc"><b>${esc(p.set_name)}</b> · ${esc(String(p.set||'').toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''} ${fxFinLabel(p)}</div>
@@ -1570,7 +1573,7 @@ function fxQAView(i,k){const x=IMP.items[i],list=x.prints||[x.card];if(!list[k])
     d.querySelector('.qfx').onclick=d.querySelector('.qfb').onclick=()=>d.remove();
     d.querySelector('.ql').onclick=()=>go(-1);d.querySelector('.qr').onclick=()=>go(1);
     if(two)d.querySelector('.qff').onclick=()=>{face=face?0:1;draw()};
-    d.querySelector('.qfu').onclick=()=>{d.remove();fxQAPrint(i,k)}};
+    d.querySelector('.qfu').onclick=()=>{d.remove();onUse(k)}};
   const go=s=>{const n=k+s;if(n<0||n>=list.length)return;k=n;face=0;draw()};
   let sx=null,sy=0;d.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
   d.addEventListener('touchend',e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3)go(dx<0?1:-1)},{passive:true});
@@ -1803,3 +1806,26 @@ function fxKwFind(c){if(!c)return [];const kws=String(c.keywords||'').toLowerCas
   return out.sort((a,b)=>txt.indexOf(a[0].toLowerCase())-txt.indexOf(b[0].toLowerCase()))}
 function fxKwBox(c){const L=fxKwFind(c);if(!L.length)return '';
   return `<div class="sec kwbox"><h4>Abilities explained</h4><ul>${L.map(([k,d])=>`<li><b>${esc(k)}</b> — ${symHtml(d)}</li>`).join('')}</ul></div>`}
+
+/* ---------- Undo what the automatic “Pulled from” verification did (edit log entries ending “(from “Pulled from”)”). Undone cards get c.noAuto so the automatic check never touches them again. ---------- */
+const fxAutoLog=()=>(D.edits||[]).map((x,i)=>({...x,i})).filter(x=>x.field==='Printing'&&/\(from “Pulled from”\)$/.test(x.now)&&!x.undone&&findCard(x.card));
+const fxPrintStr=s=>{const m=String(s||'').match(/^(.*) #(\S+?)( ✓)?(?: \(.*\))?$/);return m?{setName:m[1],cn:m[2],ver:!!m[3]}:null};
+async function fxUndoOpen(){const L=fxAutoLog().reverse();if(!L.length)return toast('Nothing to undo');
+  const S=await fxSets().catch(()=>null),row=x=>{const c=findCard(x.card),was=fxPrintStr(x.old),now=fxPrintStr(x.now),still=now&&c.verified&&c.setName===now.setName&&c.cn===now.cn,named=!S||cardSources(c).some(s=>fxSetIn(s,S)),tick=still&&(was&&was.ver||!named);
+    return `<label class="sec" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;padding:8px 10px;font-weight:400"><input type="checkbox" data-i="${x.i}" ${tick?'checked':''} ${still?'':'disabled'} style="margin-top:3px"><span style="flex:1"><b>${esc(x.card)}</b> <span class="mut" style="font-size:12px">· ${esc(x.when)}</span><br><span style="font-size:13px">Was: ${esc(x.old)}<br>Set to: ${esc(x.now.replace(/ \(from “Pulled from”\)$/,''))}</span><br><span class="mut" style="font-size:12px">Pulled from: ${esc(cardSources(c).join(', '))}${!still?' · changed since — left alone':was&&was.ver?' · <b style="color:var(--red,#e66)">it was already verified</b>':!named?' · no set name in “Pulled from”':''}</span></span></label>`};
+  openM(`<h3>↩ Undo automatic verifications</h3><p class="mut">These cards were verified automatically from their “Pulled from”. Tick the ones to put back the way they were. Undone cards are never verified automatically again — you choose their artwork yourself (🎨). Ticked for you: cards that were already verified before, and cards whose “Pulled from” isn’t a set name.</p>
+    ${L.map(row).join('')}<div class="row" style="margin-top:12px"><button class="pri" onclick="fxUndoApply()">Undo ticked</button><button onclick="closeM()">Cancel</button></div>`)}
+async function fxUndoApply(){const I=[...document.querySelectorAll('#mbody input[data-i]:checked')].map(x=>+x.dataset.i);if(!I.length)return toast('Nothing ticked');
+  if(!navigator.onLine)return toast('You’re offline — the earlier artwork has to be looked up on Scryfall. Try again when connected.');
+  if(!(await ask(`Undo the automatic verification of ${fxPl(I.length,'card')}?\n\nEach card goes back to the artwork it had before (verified again if it was verified before, otherwise unverified 🎨). Copies the check filled in are cleared. These cards will never be verified automatically again.\n\nOK = Undo\nCancel = Go back`)))return;
+  let done=0,fail=[];toast('Putting the earlier artwork back…');
+  for(const i of I){const x=D.edits[i],c=x&&findCard(x.card);if(!c)continue;const was=fxPrintStr(x.old),now=fxPrintStr(x.now);
+    if(!(now&&c.verified&&c.setName===now.setName&&c.cn===now.cn)){fail.push(x.card);continue}
+    const autoId=c.scryId,autoDay=x.when.slice(0,10);let p=null;
+    if(was){const pr=await fxPrintsAll(c.name);if(pr===null){fail.push(x.card);continue}p=(pr||[]).find(q=>q.set_name===was.setName&&String(q.collector_number)===was.cn)||null}
+    if(c.cps)c.cps=c.cps.map(y=>y&&y.scryId===autoId&&(!y.priceAt||y.priceAt>=autoDay)?null:y);if(c.cps){while(c.cps.length&&!c.cps[c.cps.length-1])c.cps.pop();if(!c.cps.length)delete c.cps}
+    if(p&&was.ver){c.verified=false;fxVerifyPrint(c.name,p,'restored — undo automatic',true)}
+    else{if(p){Object.assign(c,{art:sImg(p),art2:sImg2(p),set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id});ART[c.name]=sImg(p)||'';ART2[c.name]=sImg2(p)||'';c.price=null;c.priceAt='';fxSetPrice(c,p)}
+      c.verified=false;logEdit(c.name,'Printing',x.now.replace(/ \(from “Pulled from”\)$/,''),`${x.old} (undo automatic)`)}
+    c.noAuto=true;x.undone=true;done++}
+  saveArt();save();closeM();render();toast(`↩ ${fxPl(done,'card')} put back${fail.length?` · ${fail.length} skipped (changed since, or Scryfall didn’t answer)`:''}`)}
