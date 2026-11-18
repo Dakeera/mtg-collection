@@ -1,4 +1,4 @@
-const V='mtg-v32', KEEP=[V,'mtg-img','mtg-lib'], SHELL=['./','index.html','features.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/nav-generate.png','icons/nav-collection.png','icons/nav-decks.svg','icons/nav-add.svg','icons/nav-generate-orb.svg','icons/nav-more.svg'];
+const V='mtg-v33', KEEP=[V,'mtg-img','mtg-lib'], SHELL=['./','index.html','features.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/nav-generate.png','icons/nav-collection.png','icons/nav-decks.svg','icons/nav-add.svg','icons/nav-generate-orb.svg','icons/nav-more.svg'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>Promise.all(SHELL.map(u=>c.add(u).catch(()=>{})))));self.skipWaiting()});
 self.addEventListener('activate',e=>{imgMetaInit().catch(()=>{});e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>!KEEP.includes(x)).map(x=>caches.delete(x)))));self.clients.claim()});
 const cacheFirst=(e,name)=>e.respondWith(caches.open(name).then(async c=>{const h=await c.match(e.request);if(h)return h;
@@ -21,11 +21,19 @@ async function imgStat(){const K=await imgKeep(),L=await imgAll();let kept=0,oth
 async function imgTrim(force){if(!force&&Date.now()-imgTrimAt<30000)return;imgTrimAt=Date.now();const K=await imgKeep(),L=(await imgAll()).filter(x=>!K.has(imgKey(x.u)));let tot=L.reduce((s,x)=>s+(x.n||0),0);if(tot<=IMG_MAX)return;
   L.sort((x,y)=>x.a-y.a);const drop=[];for(const x of L){if(tot<=IMG_MAX*0.9)break;tot-=x.n||0;drop.push(x.u)}
   const c=await caches.open(IMG),db=await imgDb();await Promise.all(drop.map(u=>c.delete(u)));if(db){const tx=db.transaction('r','readwrite');drop.forEach(u=>tx.objectStore('r').delete(u))}}
-const imgFirst=e=>e.respondWith(caches.open(IMG).then(async c=>{const u=e.request.url,h=await c.match(e.request);
-  if(h){const t=imgSeen.get(u)||0;if(Date.now()-t>36e5){imgSeen.set(u,Date.now());imgNote(u,null).catch(()=>{})}return h}
-  try{const r=await fetch(e.request);if(r.ok||r.type==='opaque'){const k=r.clone();c.put(e.request,k.clone()).then(async()=>{let n=IMG_EST;try{if(k.type!=='opaque')n=(await k.blob()).size}catch(x){}imgNote(u,n)}).catch(()=>{})}return r}catch(x){return Response.error()}}));
+/* A picture is fetched with CORS when possible, so its status is known: only real pictures (200 + image) are saved — a failed answer is never kept.
+   (Saved copies made with CORS also work for both kinds of <img>; a CORS-less copy can't be shown by a crossorigin <img>.) Without CORS it falls back to the old CORS-less fetch.
+   The page adds “fxr=…” when a picture didn't load: that copy is fetched fresh and saved under the normal address, replacing the broken one. */
+const imgStrip=u=>u.replace(/([?&])fxr=\d+(&|$)/,(m,a,b)=>b?a:'').replace(/[?&]$/,'');
+async function imgSave(c,u,r){const k=r.clone();try{await c.put(u,k.clone());let n=IMG_EST;try{if(k.type!=='opaque'){const b=await k.blob();n=b.size;if(!n){await c.delete(u);return}}}catch(x){}imgNote(u,n)}catch(x){}}
+const imgFirst=e=>e.respondWith(caches.open(IMG).then(async c=>{const fresh=/[?&]fxr=\d+/.test(e.request.url),u=imgStrip(e.request.url),mode=fresh?'reload':'default';
+  if(!fresh){const h=await c.match(u);if(h){const t=imgSeen.get(u)||0;if(Date.now()-t>36e5){imgSeen.set(u,Date.now());imgNote(u,null).catch(()=>{})}return h}}
+  let r=null;try{r=await fetch(u,{mode:'cors',credentials:'omit',cache:mode})}catch(x){}
+  if(r){if(r.ok&&/^image\//.test(r.headers.get('content-type')||'image/'))imgSave(c,u,r);else c.delete(u).catch(()=>{});return r}
+  try{const o=await fetch(u,{mode:'no-cors',credentials:'omit',cache:mode});if(o.type==='opaque'||o.ok)imgSave(c,u,o);return o}catch(x){return Response.error()}}));
 self.addEventListener('message',e=>{const d=e.data||{},port=e.ports&&e.ports[0],reply=x=>{if(port)port.postMessage(x)};
   if(d.type==='imgkeep')(async()=>{const L=(d.urls||[]).map(imgKey);KEEP_SET=new Set(L);const db=await imgDb();if(db)db.transaction('m','readwrite').objectStore('m').put(L,'keep');imgTrim(true);reply({ok:true})})().catch(()=>reply({ok:false}));
+  if(d.type==='imgdrop')(async()=>{const u=imgStrip(String(d.u||'')),c=await caches.open(IMG),db=await imgDb();await c.delete(u);if(db)db.transaction('r','readwrite').objectStore('r').delete(u);reply({ok:true})})().catch(()=>reply({ok:false}));
   if(d.type==='imgstat')(async()=>{await imgMetaInit();reply(await imgStat())})().catch(()=>reply({size:0,kept:0,other:0}));
   if(d.type==='imgclear')(async()=>{const K=await imgKeep(),c=await caches.open(IMG),db=await imgDb(),L=(await imgAll()).filter(x=>!K.has(imgKey(x.u)));await Promise.all(L.map(x=>c.delete(x.u)));if(db){const tx=db.transaction('r','readwrite');L.forEach(x=>tx.objectStore('r').delete(x.u))}reply({ok:true,n:L.length})})().catch(()=>reply({ok:false}))});
 self.addEventListener('fetch',e=>{

@@ -168,7 +168,30 @@ const usage=n=>D.decks.map(d=>{const q=Math.max(0,sum(d.cards.filter(x=>norm(x.n
 const toast=m=>{const t=$('#toast');if(!t)return;t.textContent=m;t.style.display='block';t.onclick=()=>{t.style.display='none'};clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',Math.min(4500,1800+String(m).length*30))};
 let MBACK=null,SLD=false,KEEPSCROLL=false;
 const openM=(h,back)=>{const was=$('#modal').classList.contains('open');$('#mbody').innerHTML=h;$('#modal').classList.add('open');MBACK=back||null;if(!(KEEPSCROLL&&was))$('#modal').scrollTop=0;KEEPSCROLL=false},closeM=()=>{$('#modal').classList.remove('open');$('#modal').scrollTop=0;MBACK=null;SLD=false;SLN=null;CR=null};
-const imgErr=i=>{if(i.src.includes('/large/')){i.src=i.src.replace('/large/','/normal/');return}if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else{const w=document.createElement('div');w.innerHTML=typeof fxPh==='function'?fxPh(findCard(i.alt)||{name:i.alt}):`<div class="ph">${esc(i.alt)}</div>`;i.replaceWith(w.firstElementChild)}};
+const imgErr=i=>{if(i.src.includes('/large/')){i.src=i.src.replace('/large/','/normal/');return}if(i.crossOrigin){i.removeAttribute('crossorigin');i.src=i.src}else fxImgRepair(i,()=>{const w=document.createElement('div');w.innerHTML=typeof fxPh==='function'?fxPh(findCard(i.alt)||{name:i.alt}):`<div class="ph">${esc(i.alt)}</div>`;i.replaceWith(w.firstElementChild)})};
+/* ---------- Card pictures that won't load (e.g. a broken copy saved on the device, or Scryfall moved the picture): 1) drop the saved copy and load it fresh from Scryfall; 2) ask Scryfall for the card's current picture links and try those (other sizes too); 3) still nothing → a card-shaped “picture not available” box (offline: retried when the connection comes back). ---------- */
+const FXIMGALT=new Map(),FXIMGST=new WeakMap(),fxImgK=u=>String(u).split('?')[0];
+const fxImgSvg=(a,b)=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 680"><rect x="4" y="4" width="480" height="672" rx="26" fill="#1d1d25" stroke="#555" stroke-width="6"/><text x="244" y="320" fill="#ddd" font-family="sans-serif" font-size="30" text-anchor="middle">${a}</text><text x="244" y="365" fill="#999" font-family="sans-serif" font-size="22" text-anchor="middle">${b}</text></svg>`);
+function fxImgNA(i,off,fail){const src=i.dataset.fxsrc;FXIMGST.delete(i);
+  if(off){i.src=fxImgSvg('Picture not saved yet','It loads when you are online');addEventListener('online',()=>{if(i.isConnected&&src){i.dataset.fxsrc='';i.src=src}},{once:true});return}
+  if(fail)return fail();i.src=fxImgSvg('Picture not available','Scryfall has no picture for it')}
+function fxImgFixCards(oldU,newU){if(!window.D||!D.cards||typeof RO!=='undefined'&&RO)return;const k=fxImgK(oldU);let n=0;
+  D.cards.forEach(c=>{['art','art2'].forEach(f=>{if(c[f]&&fxImgK(c[f])===k){c[f]=newU;n++}});(c.cps||[]).forEach(x=>{if(x)['art','art2'].forEach(f=>{if(x[f]&&fxImgK(x[f])===k){x[f]=newU;n++}})})});
+  if(n&&typeof persist==='function')try{persist()}catch(e){}}
+async function fxImgRepair(i,fail){const src=i.dataset.fxsrc||i.src;if(!/cards\.scryfall\.io/.test(src))return fail&&fail();i.dataset.fxsrc=src;
+  const k=fxImgK(src),st=FXIMGST.get(i)||{n:0,todo:null};FXIMGST.set(i,st);st.n++;
+  if(st.n===1){const alt=FXIMGALT.get(k);if(alt&&fxImgK(alt)!==k){i.src=alt;return}}
+  if(!navigator.onLine)return fxImgNA(i,true,fail);
+  if(st.n<=2){try{await fxSwMsg('imgdrop',{u:src})}catch(e){}i.src=src+(src.includes('?')?'&':'?')+'fxr='+Date.now();st.n=2;return}
+  if(!st.todo){st.todo=[];const m=k.match(/\/(\w+)\/(front|back)\/.\/.\/([0-9a-f-]{36})\.(jpg|png)$/);
+    if(m){const r=await scryFetchNet('/cards/'+m[3]).catch(()=>null);
+      if(r&&r.ok){const j=await r.json().catch(()=>null);if(j){try{const s=JSON.stringify(j),u='https://api.scryfall.com/cards/'+m[3];SCRYC.set(u,{t:Date.now(),j:s});scryCPut(u,s)}catch(e){}
+        const F=j.card_faces||[],iu=(m[2]==='back'?(F[1]&&F[1].image_uris):(j.image_uris||(F[0]&&F[0].image_uris)))||{};
+        [m[1],'normal','large','png','small'].forEach(z=>{const u=iu[z];if(u&&u!==src&&!st.todo.includes(u))st.todo.push(u)})}}
+      else if(!r&&!navigator.onLine)return fxImgNA(i,true,fail)}}
+  const nx=st.todo.shift();if(nx){i.addEventListener('load',()=>{FXIMGALT.set(k,nx);fxImgFixCards(src,nx)},{once:true});i.src=nx;return}
+  FXIMGALT.delete(k);fxImgNA(i,false,fail)}
+document.addEventListener('error',e=>{const i=e.target;if(i&&i.tagName==='IMG'&&!i.getAttribute('onerror')&&/cards\.scryfall\.io/.test(i.src||''))fxImgRepair(i)},true);
 const artOf=n=>{const c=findCard(n);return (c&&c.custom&&CIMG[c.name])||(c&&c.art)||ART[n]||''};
 const imgTag=(n,cls='',big)=>{let u=artOf(n);if(!u)return '';if(big)u=u.replace('/normal/','/large/');return `<img ${cls} loading="lazy" crossorigin="anonymous" src="${esc(u)}" alt="${esc(n)}" onerror="imgErr(this)">`};
 const cl=n=>`<span class="lk" data-card="${esc(n)}">${esc(n)}</span>`;
@@ -316,7 +339,7 @@ function drawList(jump){
   if(jump){const l=$('#list'),bar=document.querySelector('.bar');if(l&&bar){const top=bar.getBoundingClientRect().bottom+6,r=l.getBoundingClientRect().top;if(r<top)scrollTo(0,Math.max(0,scrollY+r-top))}}
 }
 function zoom(n){const cur=()=>(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/'),u=cur();if(!u)return;const d=document.createElement('div');d.id='zoom';
-  d.innerHTML=`<img src="${esc(u)}" alt="${esc(n)}" onerror="if(this.src.includes('/large/'))this.src=this.src.replace('/large/','/normal/')">${backUrl(n)?`<button class="zflip">${FACE?'↻ Show front':'↻ Show back'}</button>`:''}`;d.onclick=()=>d.remove();
+  d.innerHTML=`<img src="${esc(u)}" alt="${esc(n)}" onerror="if(this.src.includes('/large/'))this.src=this.src.replace('/large/','/normal/');else fxImgRepair(this)">${backUrl(n)?`<button class="zflip">${FACE?'↻ Show front':'↻ Show back'}</button>`:''}`;d.onclick=()=>d.remove();
   const fb=d.querySelector('.zflip');if(fb)fb.onclick=e=>{e.stopPropagation();flip(n);d.querySelector('img').src=cur();fb.textContent=FACE?'↻ Show front':'↻ Show back'};document.body.appendChild(d)}
 function flip(n){FACE=!FACE;const im=document.querySelector('.frame img[data-zoom]');if(im)im.src=(FACE&&backUrl(n)?backUrl(n):artOf(n)).replace('/normal/','/large/');const b=document.querySelector('[data-flip]');if(b)b.textContent=FACE?'↻ Show front':'↻ Show back'}
 function showCard(name,keep){

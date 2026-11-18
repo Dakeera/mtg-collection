@@ -972,7 +972,7 @@ async function fxSrcVerify(auto){if(SV.running||RO)return;if(!navigator.onLine){
 const fxBusy=()=>IMP.stage==='work'||(IMP.items||[]).some(x=>x&&x.loading)||A.step==='reading'||!!(A.prints===null&&A.step==='verify');
 function fxSrcAuto(){setTimeout(()=>{try{fxImgKeepSoon()}catch(e){}},3000);try{const c=JSON.parse(localStorage.getItem('mtg_sets_v1')||'null');if(c&&c.s&&!FXSETS)FXSETS=fxSetIdx(c.s)}catch(e){}if(navigator.onLine&&!FXSETS)fxSets().catch(()=>{});setTimeout(()=>{if(!D.srcv4&&!RO&&D.cards.length&&navigator.onLine)fxSrcVerify(true)},5000)}
 /* Card pictures saved by the service worker (300 MB limit) — ask it for the size / to clear */
-function fxSwMsg(type){return new Promise(ok=>{const c=navigator.serviceWorker&&navigator.serviceWorker.controller;if(!c)return ok(null);const ch=new MessageChannel();ch.port1.onmessage=e=>ok(e.data);setTimeout(()=>ok(null),4000);c.postMessage({type},[ch.port2])})}
+function fxSwMsg(type,x){return new Promise(ok=>{const c=navigator.serviceWorker&&navigator.serviceWorker.controller;if(!c)return ok(null);const ch=new MessageChannel();ch.port1.onmessage=e=>ok(e.data);setTimeout(()=>ok(null),4000);c.postMessage(Object.assign({type},x||{}),[ch.port2])})}
 /* tell the service worker which pictures belong to VERIFIED artwork of cards in the collection — those are kept outside the 300 MB limit */
 function fxKeepUrls(){const S=new Set(),add=u=>{if(u&&/cards\.scryfall\.io/.test(u)){S.add(u);S.add(u.replace('/normal/','/large/'));S.add(u.replace('/large/','/normal/'))}};
   D.cards.forEach(c=>{if(c.custom)return;if(c.verified){add(c.art||ART[c.name]);add(c.art2||ART2[c.name])}(c.cps||[]).slice(0,Math.max(0,c.qty-1)).forEach(x=>{if(x){add(x.art);add(x.art2)}})});return [...S]}
