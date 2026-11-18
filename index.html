@@ -375,16 +375,23 @@ async function qtyChange(name,dl,fin,src){
   if(ks.length>1&&!fin){const opts=dl<0?ks.filter(k=>fm[k]>0):ks;
     return openM(`<h3>${dl<0?'Remove':'Add'} one copy of ${esc(e.name)}</h3><p class="mut">Which finish?</p>${opts.map(k=>`<div class="res" data-q="${dl}" data-qn="${esc(e.name)}" data-qf="${esc(k)}"><span>${esc(k)}</span><span class="mut">${fm[k]} owned</span></div>`).join('')}<button data-card="${esc(e.name)}">Cancel</button>`)}
   const f=fin||ks[0],u=usage(e.name),nq=e.qty+dl,srcs=cardSources(e);
+  if(dl>0&&!src){if(e.custom)src=CUSTOM_SRC;else{const own=srcs.filter(x=>x&&x!=='None'&&!isCustomSrc(x));
+    return openM(`<h3>Add one ${esc(f)} copy of ${esc(e.name)}</h3><p class="mut">Where did this copy come from? (“Pulled from”)</p>${own.length?`<p class="mut" style="margin-bottom:4px">Same as your other copies:</p>`:''}${own.map(x=>`<div class="res" data-q="1" data-qn="${esc(e.name)}" data-qf="${esc(f)}" data-qs="${esc(x)}"><span>${esc(x)}</span><span class="mut">${typeof fxStoreLabel==='function'?esc(fxStoreLabel(x)):''}</span></div>`).join('')}
+      <p class="mut" style="margin:12px 0 4px">${own.length?'Or somewhere else:':'Pulled from:'}</p><input id="qsrc" list="qsrcl" placeholder="e.g. Bulk Box 2, Trade, Gift, a set’s booster…" autocomplete="off"><datalist id="qsrcl">${allSources().filter(x=>!isCustomSrc(x)&&!own.includes(x)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+      <div class="row" style="margin-top:10px"><button data-card="${esc(e.name)}">Cancel</button><button class="pri" onclick="qtyNewSrc(${esc(JSON.stringify(e.name))},${esc(JSON.stringify(f))})">Next</button></div>`)}}
   if(dl<0&&nq>0&&!src){
     if(srcs.length===1)src=srcs[0];
     else if(srcs.length>1)return openM(`<h3>Remove one copy of ${esc(e.name)}</h3><p class="mut">Which “Pulled from” is this copy being removed from?</p>${srcs.map(x=>{const t=sum(D.acq.filter(a=>norm(a.name)===norm(e.name)&&canonSrc(a.source)===x),a=>a.qty);return `<div class="res" data-q="-1" data-qn="${esc(e.name)}" data-qf="${esc(f)}" data-qs="${esc(x)}"><span>${esc(x)}</span><span class="mut">${t?t+' added in app':''}</span></div>`}).join('')}<button data-card="${esc(e.name)}">Cancel</button>`)}
-  let msg=dl>0?`Add one ${f} copy of ${e.name}?\n(${e.qty} → ${nq})`:nq<=0?`Remove your LAST copy of ${e.name}? It will be deleted from your collection.${u.length?`\n\nIt is still listed in: ${u.map(x=>x.d.name).join(', ')} (it stays in those decks until you remove it there).`:''}\n\nThis can only be undone by restoring a backup.`:`Remove one ${f} copy of ${e.name}${src?` that came from “${src}”`:''}?\n(${e.qty} → ${nq})`;
+  let msg=dl>0?`Add one ${f} copy of ${e.name}?\n\nPulled from: ${src}\n(${e.qty} → ${nq})`:nq<=0?`Remove your LAST copy of ${e.name}? It will be deleted from your collection.${u.length?`\n\nIt is still listed in: ${u.map(x=>x.d.name).join(', ')} (it stays in those decks until you remove it there).`:''}\n\nThis can only be undone by restoring a backup.`:`Remove one ${f} copy of ${e.name}${src?` that came from “${src}”`:''}?\n(${e.qty} → ${nq})`;
   if(!(await ask(msg)))return;
   logEdit(e.name,'Quantity',e.qty,Math.max(0,nq));fm[f]=(fm[f]||0)+dl;e.qty=Math.max(0,nq);e.finish=finStr(fm);
   if(e.qty<=0){if(CIMG[e.name]){delete CIMG[e.name];fxImgDel(e.name)}D.acq=D.acq.filter(a=>norm(a.name)!==norm(e.name));D.cards.splice(D.cards.indexOf(e),1);IDX=null;save();closeM();render();return toast(e.name+' removed from your collection')}
+  if(dl>0&&src){const had=cardSources(e).includes(src);if(!had){e.source=(e.source&&e.source!=='None'?e.source+', ':'')+src;logEdit(e.name,'Pulled from','',src)}D.acq.push({date:today(),name:e.name,set:e.set||'',cn:e.cn||'',finish:f,qty:1,source:src,price:'',notes:'Added on the card page',shared:had})}
   let dropped=false;if(dl<0&&src)dropped=await dropSource(e,src);
   save();render();showCard(e.name,true);toast(dl>0?'Copy added':dropped?`Copy removed — “${src}” no longer listed`:'Copy removed');
 }
+function qtyNewSrc(name,fin){const v=String(($('#qsrc')||{}).value||'').trim();if(!v)return toast('Please say where this copy came from');if(isCustomSrc(v))return toast('“Custom Cards” is only for custom cards — please pick another “Pulled from”');
+  const ex=allSources().find(x=>x.toLowerCase()===v.toLowerCase());qtyChange(name,1,fin,ex||autoNumber(v))}
 function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}</span><span class="mut">${sum(d.cards)} cards</span></div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
 
 const vfAsk=async n=>{if(await ask(`The artwork for ${n} is marked verified ✓.\n\nDo you want to change it?`))artPicker(n)};
