@@ -372,13 +372,16 @@ async function dropSource(e,src){
   return drop}
 async function qtyChange(name,dl,fin,src){
   const e=findCard(name);if(!e)return;const fm=finMapOf(e),ks=Object.keys(fm);
-  if(ks.length>1&&!fin){const opts=dl<0?ks.filter(k=>fm[k]>0):ks;
+  if(dl<0&&ks.length>1&&!fin){const opts=ks.filter(k=>fm[k]>0);
     return openM(`<h3>${dl<0?'Remove':'Add'} one copy of ${esc(e.name)}</h3><p class="mut">Which finish?</p>${opts.map(k=>`<div class="res" data-q="${dl}" data-qn="${esc(e.name)}" data-qf="${esc(k)}"><span>${esc(k)}</span><span class="mut">${fm[k]} owned</span></div>`).join('')}<button data-card="${esc(e.name)}">Cancel</button>`)}
-  const f=fin||ks[0],u=usage(e.name),nq=e.qty+dl,srcs=cardSources(e);
+  let f=fin||ks[0];const u=usage(e.name),nq=e.qty+dl,srcs=cardSources(e);
   if(dl>0&&!src){if(e.custom)src=CUSTOM_SRC;else{const own=srcs.filter(x=>x&&x!=='None'&&!isCustomSrc(x));
-    return openM(`<h3>Add one ${esc(f)} copy of ${esc(e.name)}</h3><p class="mut">Where did this copy come from? (“Pulled from”)</p>${own.length?`<p class="mut" style="margin-bottom:4px">Same as your other copies:</p>`:''}${own.map(x=>`<div class="res" data-q="1" data-qn="${esc(e.name)}" data-qf="${esc(f)}" data-qs="${esc(x)}"><span>${esc(x)}</span><span class="mut">${typeof fxStoreLabel==='function'?esc(fxStoreLabel(x)):''}</span></div>`).join('')}
+    return openM(`<h3>Add one copy of ${esc(e.name)}</h3><p class="mut">Where did this copy come from? (“Pulled from”)</p>${own.length?`<p class="mut" style="margin-bottom:4px">Same as your other copies:</p>`:''}${own.map(x=>`<div class="res" data-q="1" data-qn="${esc(e.name)}" data-qs="${esc(x)}"><span>${esc(x)}</span><span class="mut">${typeof fxStoreLabel==='function'?esc(fxStoreLabel(x)):''}</span></div>`).join('')}
       <p class="mut" style="margin:12px 0 4px">${own.length?'Or somewhere else:':'Pulled from:'}</p><input id="qsrc" list="qsrcl" placeholder="e.g. Bulk Box 2, Trade, Gift, a set’s booster…" autocomplete="off"><datalist id="qsrcl">${allSources().filter(x=>!isCustomSrc(x)&&!own.includes(x)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
-      <div class="row" style="margin-top:10px"><button data-card="${esc(e.name)}">Cancel</button><button class="pri" onclick="qtyNewSrc(${esc(JSON.stringify(e.name))},${esc(JSON.stringify(f))})">Next</button></div>`)}}
+      <div class="row" style="margin-top:10px"><button data-card="${esc(e.name)}">Cancel</button><button class="pri" onclick="qtyNewSrc(${esc(JSON.stringify(e.name))})">Next</button></div>`)}}
+  if(dl>0&&!fin){const L=await qtyFins(e,src);if(!L)return;if(L.fins.length===1)fin=L.fins[0];
+    else return openM(`<h3>Add one copy of ${esc(e.name)}</h3><p class="mut">Pulled from: <b>${esc(src)}</b></p><p class="mut">Which finish is this copy?${L.note?`<br><span style="font-size:12px">${esc(L.note)}</span>`:''}</p>${L.fins.map(k=>`<div class="res" data-q="1" data-qn="${esc(e.name)}" data-qf="${esc(k)}" data-qs="${esc(src)}"><span>${esc(k)}</span><span class="mut">${fm[k]?fm[k]+' owned':''}</span></div>`).join('')}<button data-card="${esc(e.name)}">Cancel</button>`)}
+  if(dl>0)f=fin;
   if(dl<0&&nq>0&&!src){
     if(srcs.length===1)src=srcs[0];
     else if(srcs.length>1)return openM(`<h3>Remove one copy of ${esc(e.name)}</h3><p class="mut">Which “Pulled from” is this copy being removed from?</p>${srcs.map(x=>{const t=sum(D.acq.filter(a=>norm(a.name)===norm(e.name)&&canonSrc(a.source)===x),a=>a.qty);return `<div class="res" data-q="-1" data-qn="${esc(e.name)}" data-qf="${esc(f)}" data-qs="${esc(x)}"><span>${esc(x)}</span><span class="mut">${t?t+' added in app':''}</span></div>`}).join('')}<button data-card="${esc(e.name)}">Cancel</button>`)}
@@ -390,8 +393,17 @@ async function qtyChange(name,dl,fin,src){
   let dropped=false;if(dl<0&&src)dropped=await dropSource(e,src);
   save();render();showCard(e.name,true);toast(dl>0?'Copy added':dropped?`Copy removed — “${src}” no longer listed`:'Copy removed');
 }
-function qtyNewSrc(name,fin){const v=String(($('#qsrc')||{}).value||'').trim();if(!v)return toast('Please say where this copy came from');if(isCustomSrc(v))return toast('“Custom Cards” is only for custom cards — please pick another “Pulled from”');
-  const ex=allSources().find(x=>x.toLowerCase()===v.toLowerCase());qtyChange(name,1,fin,ex||autoNumber(v))}
+/* Which finishes can a new copy from this “Pulled from” be? Printings of the card (saved lookups / Scryfall; paper only), narrowed to the source's WotC set when it has one (boosters → booster printings, precons → the regular precon card). Offline with nothing saved → every finish. */
+async function qtyFins(e,src){const fm=finMapOf(e),own=Object.keys(fm).filter(k=>k&&k!=='None');if(e.custom)return {fins:own.length?own:['Normal']};
+  openM(`<h3>Add one copy of ${esc(e.name)}</h3><p class="mut">Pulled from: <b>${esc(src)}</b></p><p class="mut">Checking which finishes this card comes in…</p>`);
+  let pr=null;try{pr=typeof fxPrintsAll==='function'?await fxPrintsAll(e.name):null}catch(x){}
+  if(!$('#modal').classList.contains('open'))return null;
+  const all=['Normal','Foil','Etched Foil'];if(!pr||!pr.length)return {fins:all.filter(k=>k!=='Etched Foil'||own.includes(k)).concat(own.filter(k=>!all.includes(k))),note:'Couldn’t check the printings right now (offline?) — every finish is shown.'};
+  let pp=typeof fxPaper==='function'?fxPaper(pr):pr;if(!pp.length)pp=pr;let note='Finishes this card was printed in.';
+  try{const S=await fxSets();const set=S&&fxSetIn(src,S);if(set){let c=pp.filter(p=>p.set===set.c);if(c.length>1&&/booster|bundle|prerelease|pack/i.test(src)){const b=c.filter(p=>p.booster);if(b.length)c=b}if(c.length>1&&(set.t==='commander'||fxIsCmdSrc(src))){const b=c.filter(fxPreconPrint);if(b.length)c=b}if(c.length){pp=c;note=`Finishes printed in ${set.n}.`}}}catch(x){}
+  const F=[];pp.forEach(p=>(p.finishes||['nonfoil']).forEach(f=>{const k=finMap[f]||f;if(!F.includes(k))F.push(k)}));F.sort((a,b)=>all.indexOf(a)-all.indexOf(b));return {fins:F.length?F:['Normal'],note}}
+function qtyNewSrc(name){const v=String(($('#qsrc')||{}).value||'').trim();if(!v)return toast('Please say where this copy came from');if(isCustomSrc(v))return toast('“Custom Cards” is only for custom cards — please pick another “Pulled from”');
+  const ex=allSources().find(x=>x.toLowerCase()===v.toLowerCase());qtyChange(name,1,'',ex||autoNumber(v))}
 function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}</span><span class="mut">${sum(d.cards)} cards</span></div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
 
 const vfAsk=async n=>{if(await ask(`The artwork for ${n} is marked verified ✓.\n\nDo you want to change it?`))artPicker(n)};
