@@ -426,8 +426,10 @@ function apDraw(more=''){
   $('#apg').querySelectorAll('.setcap').forEach((e,k)=>e.onclick=()=>apSel(ls[k].id));apBar();
 }
 function apSel(id){AP.sel=id;KEEPSCROLL=true;apDraw()}
-function apBar(){const b=$('#apbar');if(!b)return;const p=AP.list.find(x=>x.id===AP.sel);
-  b.innerHTML=p?`<span><b>${esc(p.set_name)}</b> · ${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${AP.sel===AP.cur?' <span class="mut">(current)</span>':''}</span><button class="pri" ${AP.sel===AP.cur?'disabled':''} onclick="useArt(AP.sel)">Use this artwork</button>`:`<span class="mut">Tap a set name to select it</span><button class="pri" disabled>Use this artwork</button>`}
+function apBar(){const b=$('#apbar');if(!b)return;const p=AP.list.find(x=>x.id===AP.sel);b.style.flexWrap='wrap';
+  let fc='';if(p){const c=findCard(AP.name),fm=c?finMapOf(c):{},fins=fxPFins(p);if(!fins.includes(AP.fin))AP.fin=fxFinDefault(fm,fins);
+    fc=fins.length>1?`<span class="chips" style="margin:0;flex-basis:100%">${fins.map(f=>`<button class="${AP.fin===f?'on':''}" onclick="AP.fin='${f}';apBar()">${f}${fm[f]?` <span class="mut">(${fm[f]} owned)</span>`:''}</button>`).join('')}</span>`:`<span class="mut" style="flex-basis:100%;font-size:12px">This printing only comes as ${esc(fins[0])}</span>`}
+  b.innerHTML=p?`${fc}<span><b>${esc(p.set_name)}</b> · ${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${AP.sel===AP.cur?' <span class="mut">(current)</span>':''}</span><button class="pri" ${AP.sel===AP.cur&&!fxFinChange(c0(),AP.fin)?'disabled':''} onclick="useArt(AP.sel)">Use this artwork</button>`:`<span class="mut">Tap a set name to select it</span><button class="pri" disabled>Use this artwork</button>`}
 async function apScan(file){
   if(!file)return;const say=t=>{const e=$('#apst');if(e)e.textContent=t};
   say('Loading text reader…');try{await loadTess()}catch(e){return say("The text reader couldn't load (are you online?).")}
@@ -452,9 +454,10 @@ function apView(id){const p=AP.list.find(x=>x.id===id);if(!p)return;
   d.querySelector('.nb').onclick=()=>d.remove();d.querySelector('.yb').onclick=()=>{d.remove();useArt(id)};document.body.appendChild(d)}
 async function useArt(id){
   const p=AP.list.find(x=>x.id===id),c=findCard(AP.name);if(!p||!c)return;
-  if(AP.copy)return fxCopySet(c,AP.copy,p);
-  if(!(await ask(`Use ${p.set_name} (${p.set.toUpperCase()}) #${p.collector_number} for ${c.name}?\n\nYour “Pulled from” stays the same.`)))return;
-  fxVerifyPrint(c.name,p);render();toast('Artwork and set info updated');const back=()=>fxCopiesOn(c)?fxCopiesOpen(c.name):showCard(c.name);if(!verifyEntry(c,p,back))back();
+  const fin=fxPFins(p).includes(AP.fin)?AP.fin:fxFinDefault(finMapOf(c),fxPFins(p));
+  if(AP.copy)return fxCopySet(c,AP.copy,p,fin);
+  if(!(await ask(`Use ${p.set_name} (${p.set.toUpperCase()}) #${p.collector_number} (${fin}) for ${c.name}?\n\nYour “Pulled from” stays the same.`)))return;
+  fxFinEnsure(c,fin,1,p);fxVerifyPrint(c.name,p);render();toast('Artwork and set info updated');const back=()=>fxCopiesOn(c)?fxCopiesOpen(c.name):showCard(c.name);if(!verifyEntry(c,p,back))back();
 }
 
 /* ---------- decks ---------- */

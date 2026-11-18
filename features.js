@@ -1343,7 +1343,15 @@ async function fxCopiesSame(name){const c=findCard(name);if(!c||!c.verified||RO)
   if(!(await ask(`Use copy 1’s artwork (${c.setName} · ${String(c.set||'').toUpperCase()} #${c.cn}) for the ${n} unverified ${n===1?'copy':'copies'} of ${c.name}?\n\nCopies that are already verified stay as they are.\n\nOK = Use it\nCancel = Go back`)))return;
   c.cps=c.cps||[];let k=0;for(let i=0;i<c.qty-1;i++){if(!c.cps[i]){c.cps[i]={set:c.set,setName:c.setName,cn:c.cn,scryId:c.scryId,art:c.art||ART[c.name]||'',art2:c.art2||ART2[c.name]||''};if(c.price){c.cps[i].price=c.price;c.cps[i].priceAt=c.priceAt||today()}k++}}
   logEdit(c.name,'Printing (copies)',`${k} copies not verified`,`${c.setName} #${c.cn} ✓ ×${k} (same as copy 1)`);save();toast(`✓ ${k} ${k===1?'copy':'copies'} verified`);fxCopiesOpen(c.name,true)}
-async function fxCopySet(c,k,p){if(!(await ask(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number} for copy ${k+1} of ${c.name}?`)))return;
+/* finish chosen with an artwork (artwork picker): finishes the printing comes in; default = Normal if owned, else a finish already owned; saving makes sure that many copies have that finish (moving them from another finish, logged) */
+const fxPFins=p=>[...new Set(((p&&p.finishes)||['nonfoil']).map(f=>finMap[f]||f))];
+const fxFinDefault=(fm,fins)=>fins.length===1?fins[0]:(fins.includes('Normal')&&fm.Normal>0)?'Normal':fins.find(f=>fm[f]>0)||fins[0];
+const c0=()=>findCard(AP.name);
+const fxFinChange=(e,fin)=>!!e&&!!fin&&!((finMapOf(e)[fin]||0)>0);
+function fxFinEnsure(e,fin,n,p){if(!e||!fin)return;const fm=finMapOf(e),have=fm[fin]||0;if(have>=n)return;let need=n-have,moved=0;const sup=fxPFins(p);
+  const order=Object.keys(fm).filter(k=>k!==fin&&fm[k]>0).sort((a,b)=>(sup.includes(a)?1:0)-(sup.includes(b)?1:0)||(a==='Normal'?-1:1));
+  for(const k of order){if(!need)break;const t=Math.min(need,fm[k]);fm[k]-=t;need-=t;moved+=t}fm[fin]=have+moved;const old=e.finish;e.finish=finStr(fm);if(old!==e.finish)logEdit(e.name,'Finish',old||'Normal',e.finish+' (artwork choice)')}
+async function fxCopySet(c,k,p,fin){if(!(await ask(`Use ${p.set_name} (${String(p.set).toUpperCase()}) #${p.collector_number}${fin?` (${fin})`:''} for copy ${k+1} of ${c.name}?`)))return;fxFinEnsure(c,fin,1,p);
   c.cps=c.cps||[];while(c.cps.length<k)c.cps.push(null);const old=c.cps[k-1];
   c.cps[k-1]={set:p.set,setName:p.set_name,cn:p.collector_number,scryId:p.id,art:sImg(p),art2:sImg2(p)};if(fxPriceOf(p)){c.cps[k-1].price=fxPriceOf(p);c.cps[k-1].priceAt=today()}
   logEdit(c.name,`Printing (copy ${k+1})`,old?`${old.setName} #${old.cn} ✓`:'(not verified)',`${p.set_name} #${p.collector_number} ✓`);save();toast(`Copy ${k+1} verified`);fxCopiesOpen(c.name,true)}
