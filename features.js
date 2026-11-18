@@ -988,7 +988,11 @@ async function fxCdbDownload(){if(CDB_RUN)return;const run=CDB_RUN={stop:false,d
     if(!dl)throw new Error(`card list link not found (Scryfall ${bd.status}; ${items.length?'files: '+items.map(x=>x&&(x.type||x.name)).join(', '):'reply: '+raw.slice(0,80).replace(/\s+/g,' ')})`);run.size=meta.size||0;
     const r=await fetch(dl);if(!r.ok||!r.body)throw new Error('download failed ('+r.status+')');
     const db=await fxCdbOpen();if(!db)throw new Error('this device can’t store it');await new Promise(ok=>{const tx=db.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
-    const rd=r.body.getReader(),dec=new TextDecoder();let head='',top='';let buf='',depth=0,inStr=false,esc=false,start=-1,batch=[];
+    /* Scryfall now serves the file gzip-compressed (.json.gz, application/gzip) without asking the browser to unpack it — unpack it here when it starts with the gzip signature */
+    let rd=r.body.getReader();const first=await rd.read();const b0=first.value||new Uint8Array(0);
+    {const rest=rd,src=new ReadableStream({start(c){if(b0.length)c.enqueue(b0);if(first.done)c.close()},async pull(c){const x=await rest.read();if(x.done)c.close();else c.enqueue(x.value)}});
+     if(b0[0]===0x1f&&b0[1]===0x8b){if(typeof DecompressionStream!=='function')throw new Error('this browser can’t unpack the compressed card list — try the Android app or another browser');rd=src.pipeThrough(new DecompressionStream('gzip')).getReader();run.size=0}else rd=src.getReader()}
+    const dec=new TextDecoder();let head='',top='';let buf='',depth=0,inStr=false,esc=false,start=-1,batch=[];
     const flush=async()=>{if(!batch.length)return;const b=batch;batch=[];await new Promise(ok=>{const tx=db.transaction('c','readwrite'),s=tx.objectStore('c');b.forEach(x=>s.put(x));tx.oncomplete=tx.onerror=()=>ok()})};
     for(;;){if(run.stop)throw new Error('stopped');const {done,value}=await rd.read();if(done)break;run.bytes+=value.length;const txt=dec.decode(value,{stream:true});if(head.length<200)head+=txt.slice(0,200-head.length);buf+=txt;
       let cut=0;
