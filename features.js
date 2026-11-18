@@ -60,7 +60,8 @@ function fxCardLabel(c){const l=[...new Set(cardSources(c).map(fxStoreLabel))];r
 /* ---------- Which “Pulled from” each deck copy comes from: d.srcs = { normName: { source: qty } } (collection copies only — borrowed and missing copies are tracked elsewhere). Chosen automatically, kept stable, shown on the card page. ---------- */
 function fxSrcOwned(c){const m={};D.acq.filter(a=>norm(a.name)===norm(c.name)).forEach(a=>{const s=canonSrc(a.source||'');if(s&&(+a.qty||0)>0)m[s]=(m[s]||0)+(+a.qty||0)});
   const ss=cardSources(c);let tot=sum(Object.values(m),v=>v);
-  if(tot<c.qty){const s=ss.find(x=>!(x in m))||ss[0]||'Unknown';m[s]=(m[s]||0)+(c.qty-tot)}
+  /* copies with no purchase record: every listed source that has none gets one copy first (a listed source held at least one), the rest go to the first of them */
+  if(tot<c.qty){let left=c.qty-tot;const miss=ss.filter(x=>!(x in m));for(const x of miss){if(!left)break;m[x]=1;left--}if(left){const x=miss[0]||ss[0]||'Unknown';m[x]=(m[x]||0)+left}}
   else if(tot>c.qty){let over=tot-c.qty;for(const k of Object.keys(m).reverse()){const t=Math.min(over,m[k]);m[k]-=t;over-=t;if(!m[k])delete m[k];if(!over)break}}
   return m}
 function fxDeckNeed(d,c){return Math.max(0,sum(d.cards.filter(e=>norm(e.name)===norm(c.name)))-loanedIn(d.name,c.name)-(d.miss?fxMissQ(d,c.name):0))}
@@ -90,11 +91,29 @@ const FXPULL=s=>[`pulled from ${s}`];
 function fxSrcUse(c){const k=norm(c.name),own=fxSrcOwned(c),rows={};for(const s in own)rows[s]={own:own[s],decks:[]};
   D.decks.forEach(d=>{const a=d.srcs&&d.srcs[k];if(a)for(const s in a){rows[s]=rows[s]||{own:0,decks:[]};rows[s].decks.push([d.name,a[s]])}});return rows}
 function fxSrcBox(c){if(!findCard(c.name)||c.custom&&false)return '';const R=fxSrcUse(c),ks=Object.keys(R);if(!ks.length)return `<div class="sec"><h4>Pulled from</h4><span class="mut">—</span></div>`;
-  return `<div class="sec"><h4>Pulled from</h4>${ks.map(s=>{const r=R[s],used=sum(r.decks,x=>x[1]),free=Math.max(0,r.own-used);return `<div class="kv" style="align-items:flex-start"><span>${esc(s)}<br><span class="mut" style="font-size:12px;font-weight:400">stored in: ${esc(fxStoreLabel(s))}</span></span><b style="text-align:right">${r.own} ${r.own===1?'copy':'copies'}<br><span class="mut" style="font-size:12px;font-weight:400">${r.decks.map(([n,q])=>`${q} in ${esc(n)}`).concat(free?[`${free} free`]:[]).join(' · ')||'—'}</span></b></div>`}).join('')}${fxSrcDeckRows(c)}</div>`}
+  return `<div class="sec"><h4>Pulled from</h4>${ks.map(s=>{const r=R[s],used=sum(r.decks,x=>x[1]),free=Math.max(0,r.own-used);return `<div class="kv" style="align-items:flex-start"><span>${esc(s)}<br><span class="mut" style="font-size:12px;font-weight:400">stored in: ${esc(fxStoreLabel(s))}</span></span><b style="text-align:right">${r.own} ${r.own===1?'copy':'copies'}<br><span class="mut" style="font-size:12px;font-weight:400">${r.decks.map(([n,q])=>`${q} in ${esc(n)}`).concat(free?[`${free} free`]:[]).join(' · ')||'—'}</span></b></div>`}).join('')}${!RO&&ks.length>1?`<button style="margin-top:8px" onclick="fxSrcFix(${esc(JSON.stringify(c.name))})">✎ Correct the copies per “Pulled from”</button>`:''}${fxSrcDeckRows(c)}</div>`}
 /* card page: per deck, which “Pulled from” its copies come from — with “Change” (owner request: choose the source after the deck is built) */
 function fxSrcDeckRows(c){if(RO)return '';const k=norm(c.name),own=fxSrcOwned(c);if(Object.keys(own).length<2)return '';
   const L=D.decks.map((d,i)=>({d,i,a:d.srcs&&d.srcs[k]})).filter(x=>x.a&&Object.keys(x.a).length);if(!L.length)return '';
   return `<p class="mut" style="margin:10px 0 4px;font-size:13px">Which copies each deck uses:</p>${L.map(({d,i,a})=>`<div class="kv" style="align-items:center"><span>${esc(d.name)}<br><span class="mut" style="font-size:12px;font-weight:400">${Object.keys(a).map(s=>`${a[s]} from ${esc(s)}`).join(' · ')}</span></span><button style="padding:6px 12px" onclick="fxDSrc(${esc(JSON.stringify(c.name))},${i})">⇄ Change</button></div>`).join('')}`}
+/* card page: correct how many copies came from each “Pulled from” (owner request). Saving rewrites this card's purchase records so they add up: extra copies are taken off the newest records of a source, missing ones are added as a “Corrected count” record. */
+let FXSF=null;
+function fxSrcFix(name){const c=findCard(name);if(!c||RO)return;FXSF={name:c.name,m:Object.assign({},fxSrcOwned(c))};cardSources(c).forEach(s=>{if(!(s in FXSF.m))FXSF.m[s]=0});fxSrcFixDraw()}
+function fxSrcFixDraw(){const c=findCard(FXSF.name),m=FXSF.m,tot=sum(Object.values(m),v=>v),ok=tot===c.qty;KEEPSCROLL=true;
+  openM(`<h3>Where did your ${c.qty} ${c.qty===1?'copy':'copies'} of ${esc(c.name)} come from?</h3><p class="mut">Set how many copies came from each “Pulled from”. The total has to match the ${c.qty} you own.</p>
+  ${Object.keys(m).map(s=>`<div class="kv" style="align-items:center"><span>${esc(s)}<br><span class="mut" style="font-size:12px;font-weight:400">stored in: ${esc(fxStoreLabel(s))}</span></span><span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxSrcFixSet(${esc(JSON.stringify(s))},-1)" ${m[s]>0?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${m[s]}</b><button style="padding:6px 12px" onclick="fxSrcFixSet(${esc(JSON.stringify(s))},1)" ${tot<c.qty?'':'disabled'}>+</button></span></div>`).join('')}
+  <p style="margin:10px 0;${ok?'':'color:#f39c12'}">${tot} of ${c.qty}${ok?' ✓':tot<c.qty?` — add ${c.qty-tot} more`:` — remove ${tot-c.qty}`}</p>
+  <div class="row"><button data-card="${esc(c.name)}">Cancel</button><button class="pri" onclick="fxSrcFixSave()" ${ok?'':'disabled'}>Save</button></div>`)}
+function fxSrcFixSet(s,dl){const c=findCard(FXSF.name),m=FXSF.m,tot=sum(Object.values(m),v=>v),v=m[s]+dl;if(v<0||dl>0&&tot>=c.qty)return;m[s]=v;fxSrcFixDraw()}
+async function fxSrcFixSave(){const c=findCard(FXSF.name);if(!c)return;const want=FXSF.m,old=fxSrcOwned(c);if(sum(Object.values(want),v=>v)!==c.qty)return;
+  const ch=Object.keys(want).filter(s=>(old[s]||0)!==want[s]);if(!ch.length){toast('Nothing changed');return showCard(c.name,true)}
+  const str=x=>Object.keys(x).filter(s=>x[s]).map(s=>`${x[s]}× ${s}`).join(', ');
+  if(!(await ask(`Save where your copies of ${c.name} came from?\n\nBefore: ${str(old)}\nAfter: ${str(want)}\n\nDecks using this card keep their copies; if a deck’s copies no longer fit a source, they’re reassigned to another one.`)))return;
+  const k=norm(c.name);for(const s of Object.keys(want)){const rec=D.acq.filter(a=>norm(a.name)===k&&canonSrc(a.source||'')===s);let have=sum(rec,a=>+a.qty||0),w=want[s];
+    if(have>w){let over=have-w;for(const a of rec.slice().reverse()){if(!over)break;const t=Math.min(over,+a.qty||0);a.qty=(+a.qty||0)-t;over-=t;if(a.qty<=0)D.acq.splice(D.acq.indexOf(a),1)}}
+    else if(have<w)D.acq.push({date:today(),name:c.name,set:c.set||'',cn:c.cn||'',finish:'',qty:w-have,source:s,price:'',notes:'Corrected count',shared:have>0})}
+  const keep=Object.keys(want).filter(s=>want[s]>0);if(keep.length){const o=c.source;c.source=cardSources(c).filter(s=>keep.includes(s)).concat(keep.filter(s=>!cardSources(c).includes(s))).join(', ');}
+  logEdit(c.name,'Copies per “Pulled from”',str(old),str(want));FXSF=null;save();showCard(c.name,true);toast('Copies per “Pulled from” updated')}
 let FXDS=null;
 function fxDSrc(name,di){const c=findCard(name),d=D.decks[di];if(!c||!d||RO)return;const k=norm(c.name);FXDS={name:c.name,di,m:Object.assign({},(d.srcs&&d.srcs[k])||{})};fxDSrcDraw()}
 function fxDSrcCaps(){const c=findCard(FXDS.name),d=D.decks[FXDS.di],k=norm(c.name),own=fxSrcOwned(c),cap={};
