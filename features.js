@@ -982,8 +982,9 @@ async function fxCdbDownload(){if(CDB_RUN)return;const run=CDB_RUN={stop:false,d
   try{say('Finding the latest card list…');const bd=await scryFetch('/bulk-data');if(!bd)throw new Error('Scryfall didn’t answer');let list=null,raw='';try{raw=await bd.text();list=JSON.parse(raw)}catch(e){}
     const items=Array.isArray(list)?list:(list&&(list.data||list.items))||[];let meta=items.find(x=>x&&/oracle/i.test((x.type||'')+' '+(x.name||'')));
     if(meta&&!meta.download_uri&&meta.uri){const one=await scryFetch(meta.uri);if(one&&one.ok){try{meta=await one.json()}catch(e){}}}
-    const dl=meta&&(meta.download_uri||meta.download_url);
-    if(!dl)throw new Error(`card list not found (Scryfall ${bd.status}; ${items.length?'files: '+items.map(x=>x&&(x.type||x.name)).join(', '):'reply: '+raw.slice(0,80).replace(/\s+/g,' ')})`);run.size=meta.size||0;
+    /* if Scryfall doesn't give a direct file link, ask the API for the file itself (?format=file redirects to it) */
+    const dl=meta&&(meta.download_uri||meta.download_url||((meta.uri||(meta.id?'https://api.scryfall.com/bulk-data/'+meta.id:(meta.type?'https://api.scryfall.com/bulk-data/'+meta.type:'')))?(meta.uri||'https://api.scryfall.com/bulk-data/'+(meta.id||meta.type))+'?format=file':''));
+    if(!dl)throw new Error(`card list link not found (Scryfall ${bd.status}; ${items.length?'files: '+items.map(x=>x&&(x.type||x.name)).join(', '):'reply: '+raw.slice(0,80).replace(/\s+/g,' ')})`);run.size=meta.size||0;
     const r=await fetch(dl);if(!r.ok||!r.body)throw new Error('download failed ('+r.status+')');
     const db=await fxCdbOpen();if(!db)throw new Error('this device can’t store it');await new Promise(ok=>{const tx=db.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
     const rd=r.body.getReader(),dec=new TextDecoder();let buf='',depth=0,inStr=false,esc=false,start=-1,batch=[];
