@@ -983,20 +983,24 @@ async function fxCdbDownload(){if(CDB_RUN)return;const run=CDB_RUN={stop:false,d
     const items=Array.isArray(list)?list:(list&&(list.data||list.items))||[];let meta=items.find(x=>x&&/oracle/i.test((x.type||'')+' '+(x.name||'')));
     if(meta&&!meta.download_uri&&meta.uri){const one=await scryFetch(meta.uri);if(one&&one.ok){try{meta=await one.json()}catch(e){}}}
     /* if Scryfall doesn't give a direct file link, ask the API for the file itself (?format=file redirects to it) */
-    const dl=meta&&(meta.download_uri||meta.download_url||((meta.uri||(meta.id?'https://api.scryfall.com/bulk-data/'+meta.id:(meta.type?'https://api.scryfall.com/bulk-data/'+meta.type:'')))?(meta.uri||'https://api.scryfall.com/bulk-data/'+(meta.id||meta.type))+'?format=file':''));
+    const anyLink=o=>{let u='';JSON.stringify(o||{},(k,v)=>{if(!u&&typeof v==='string'&&/^https:\/\/data\.scryfall\.io\/.+\.json/.test(v))u=v;return v});return u};
+    const dl=meta&&(meta.download_uri||meta.download_url||anyLink(meta)||((meta.uri||(meta.id?'https://api.scryfall.com/bulk-data/'+meta.id:(meta.type?'https://api.scryfall.com/bulk-data/'+meta.type:'')))?(meta.uri||'https://api.scryfall.com/bulk-data/'+(meta.id||meta.type))+'?format=file':''));
     if(!dl)throw new Error(`card list link not found (Scryfall ${bd.status}; ${items.length?'files: '+items.map(x=>x&&(x.type||x.name)).join(', '):'reply: '+raw.slice(0,80).replace(/\s+/g,' ')})`);run.size=meta.size||0;
     const r=await fetch(dl);if(!r.ok||!r.body)throw new Error('download failed ('+r.status+')');
     const db=await fxCdbOpen();if(!db)throw new Error('this device can’t store it');await new Promise(ok=>{const tx=db.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
-    const rd=r.body.getReader(),dec=new TextDecoder();let buf='',depth=0,inStr=false,esc=false,start=-1,batch=[];
+    const rd=r.body.getReader(),dec=new TextDecoder();let head='',top='';let buf='',depth=0,inStr=false,esc=false,start=-1,batch=[];
     const flush=async()=>{if(!batch.length)return;const b=batch;batch=[];await new Promise(ok=>{const tx=db.transaction('c','readwrite'),s=tx.objectStore('c');b.forEach(x=>s.put(x));tx.oncomplete=tx.onerror=()=>ok()})};
-    for(;;){if(run.stop)throw new Error('stopped');const {done,value}=await rd.read();if(done)break;run.bytes+=value.length;buf+=dec.decode(value,{stream:true});
+    for(;;){if(run.stop)throw new Error('stopped');const {done,value}=await rd.read();if(done)break;run.bytes+=value.length;const txt=dec.decode(value,{stream:true});if(head.length<200)head+=txt.slice(0,200-head.length);buf+=txt;
       let cut=0;
       for(let p=run.scan||0;p<buf.length;p++){const ch=buf[p];if(inStr){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch==='"')inStr=false;continue}
-        if(ch==='"'){inStr=true;continue}if(ch==='{'){if(depth===1)start=p;depth++}else if(ch==='}'){depth--;if(depth===1&&start>=0){try{const c=JSON.parse(buf.slice(start,p+1));if(c.object==='card'&&c.layout!=='art_series'&&c.layout!=='token'&&c.layout!=='double_faced_token'&&c.layout!=='emblem')batch.push(fxCdbSlim(c))}catch(e){}cut=p+1;start=-1;run.done++}}else if(ch==='['&&depth===0)depth=1}
+        if(ch==='"'){inStr=true;continue}if(ch==='{'){if(depth===0&&!top){top='{'}if(depth===1&&top==='[')start=p;depth++}else if(ch==='}'){depth--;if(depth===1&&start>=0){try{const c=JSON.parse(buf.slice(start,p+1));if(c.object==='card'&&c.layout!=='art_series'&&c.layout!=='token'&&c.layout!=='double_faced_token'&&c.layout!=='emblem')batch.push(fxCdbSlim(c))}catch(e){}cut=p+1;start=-1;run.done++}}else if(ch==='['&&depth===0){if(!top)top='[';depth=1}}
       if(cut){buf=buf.slice(cut);run.scan=buf.length}else run.scan=buf.length;if(start>=0&&cut){start-=cut}
       if(batch.length>=400)await flush();say(`Downloading… ${fxMB(run.bytes)}${run.size?' of '+fxMB(run.size):''} · ${run.done} cards`)}
-    await flush();fxCdbSetMeta({on:true,at:today(),n:run.done,bytes:run.bytes});CDB_RUN=null;render();toast(`✓ Offline card database ready — ${run.done} cards`)}
-  catch(e){CDB_RUN=null;const m=fxCdbMeta();if(m&&m.on&&!m.at)fxCdbSetMeta({on:true,err:String(e.message||e)});render();if(String(e.message)!=='stopped')toast('Couldn’t download the card database: '+String(e.message||e).slice(0,80))}}
+    await flush();
+    if(top!=='['||run.done<1000){const db2=await fxCdbOpen();if(db2)await new Promise(ok=>{const tx=db2.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
+      throw new Error(`that wasn’t the full card list — got ${run.done} entries, ${fxMB(run.bytes)} from ${String(r.url||dl).replace(/^https:\/\//,'').slice(0,70)} (${r.headers.get('content-type')||'?'}): “${head.replace(/\s+/g,' ').slice(0,110)}”`)}
+    fxCdbSetMeta({on:true,at:today(),n:run.done,bytes:run.bytes});CDB_RUN=null;render();toast(`✓ Offline card database ready — ${run.done} cards`)}
+  catch(e){CDB_RUN=null;const m=fxCdbMeta();if(m&&m.on)fxCdbSetMeta({on:true,err:String(e.message||e)});render();if(String(e.message)!=='stopped')toast('Couldn’t download the card database: '+String(e.message||e).slice(0,80))}}
 function fxCdbView(){const m=fxCdbMeta()||{},on=!!m.on,run=CDB_RUN;
   return `<div class="sec"><h4>Offline card database</h4><p class="mut" style="margin:4px 0">Optional. Downloads Scryfall’s full card list (about 150 MB, once) so card names, details and name suggestions still work without internet. Off by default; turning it off deletes the download. Never part of your backups.</p>
   <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" ${on?'checked':''} ${run?'disabled':''} onchange="fxCdbToggle(this.checked)"> Keep an offline card database on this device</label>
