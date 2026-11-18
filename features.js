@@ -887,13 +887,17 @@ function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
 /* Where the unverified copies physically are: each deck is its own place (“In deck: …”) for the copies it holds; the remaining copies are listed under their “Pulled from”.
    Returns { place: [{c, n}] } with n = copies of that card in that place (capped by how many copies are still unverified). */
 const FXDECKPFX='In deck: ';
-function fxMissArt(){const G={},put=(k,c,n)=>{n=Math.min(n,Math.max(0,n-((c.vplace&&c.vplace[k])||0)),fxUnverifiedCopies(c));if(n>0)(G[k]=G[k]||[]).push({c,n})};
+/* group name for a “Pulled from”: the numbers don't matter — every pack/box of a WotC set goes under the set's name (all Lorwyn Eclipsed packs → “Lorwyn Eclipsed”), other sources lose their number (“Bulk Box 1”, “Bulk Box 2” → “Bulk Box”) */
+function fxMissKey(s){const st=fxStoreLabel(s);if(st&&st!==FX_OTHER)return st;return String(s).replace(/\s+\d+(\s*\(.*\))?$/,'').trim()||s}
+function fxMissArt(){const G={},raw={},add=(k,c,n)=>{if(n<=0)return;const L=raw[k]=raw[k]||[],x=L.find(y=>y.c===c);if(x)x.n+=n;else L.push({c,n})};
   D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c))return;const u=fxUnverifiedCopies(c);if(!u)return;const k=norm(c.name);let inDecks=0;const used={};
-    D.decks.forEach(d=>{const q=Math.max(0,sum(d.cards.filter(e=>norm(e.name)===k),e=>e.qty)-(d.miss?fxMissQ(d,c.name):0));if(!q)return;const n=Math.min(q,c.qty-inDecks);if(n<=0)return;inDecks+=n;put(FXDECKPFX+d.name,c,Math.min(n,u));const a=d.srcs&&d.srcs[k];if(a)for(const s in a)used[s]=(used[s]||0)+a[s]});
+    D.decks.forEach(d=>{const q=Math.max(0,sum(d.cards.filter(e=>norm(e.name)===k),e=>e.qty)-(d.miss?fxMissQ(d,c.name):0));if(!q)return;const n=Math.min(q,c.qty-inDecks);if(n<=0)return;inDecks+=n;add(FXDECKPFX+d.name,c,n);const a=d.srcs&&d.srcs[k];if(a)for(const s in a)used[s]=(used[s]||0)+a[s]});
     const free=c.qty-inDecks;if(free<=0)return;const own=fxSrcOwned(c),ss=Object.keys(own).filter(s=>!isCustomSrc(s));let left=free;
-    if(!ss.length){put('No “Pulled from”',c,Math.min(free,u));return}
-    ss.forEach(s=>{const n=Math.max(0,Math.min(left,own[s]-(used[s]||0)));if(n>0){put(s,c,Math.min(n,u));left-=n}});
-    if(left>0)put(ss[0],c,Math.min(left,u))});
+    if(!ss.length){add('No “Pulled from”',c,free);return}
+    ss.forEach(s=>{const n=Math.max(0,Math.min(left,own[s]-(used[s]||0)));if(n>0){add(fxMissKey(s),c,n);left-=n}});
+    if(left>0)add(fxMissKey(ss[0]),c,left)});
+  /* copies already checked from a group aren't listed there again; never more than the card's unverified copies */
+  for(const k in raw)raw[k].forEach(({c,n})=>{n=Math.min(Math.max(0,n-((c.vplace&&c.vplace[k])||0)),fxUnverifiedCopies(c));if(n>0)(G[k]=G[k]||[]).push({c,n})});
   return G}
 function fxMissArtView(){const G=fxMissArt(),isD=k=>k.startsWith(FXDECKPFX),ks=Object.keys(G).sort((a,b)=>(isD(b)-isD(a))||G[b].length-G[a].length||a.localeCompare(b)),cards=new Set(Object.values(G).flat().map(x=>x.c)),copies=sum([...cards],c=>fxUnverifiedCopies(c));
   return `<div class="sec"><h4>Resolve missing artwork</h4>${cards.size?`<p class="mut" style="margin:4px 0">${fxPl(cards.size,'card')} (${copies} ${copies===1?'copy':'copies'}) still need their artwork verified. They’re listed by where they are now: cards in a deck are listed under that deck (🃏), the rest by where they were pulled from — so you can work through one deck, box or pack at a time. Your progress is saved card by card — tap <b>Finish later</b> any time.</p>
