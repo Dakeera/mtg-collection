@@ -1308,7 +1308,9 @@ async function fxCopySet(c,k,p){if(!(await ask(`Use ${p.set_name} (${String(p.se
 
 /* More → Backup → “📂 Open my backups folder”. Android: opens the phone's file manager at Documents/MtG-DeckMaster. Web: a browser can't open folders, so it says where the browser saved them. */
 async function fxOpenBkFolder(){
-  if(isNative()){const U=window.Capacitor.Plugins.ApkUpdater;try{if(U&&U.openFolder){await U.openFolder({path:'Documents/MtG-DeckMaster'});return}}catch(e){}
+  if(isNative()){const U=window.Capacitor.Plugins.ApkUpdater;try{if(U&&U.openFolder){const r=await U.openFolder({path:'Documents/MtG-DeckMaster'});
+      /* the phone's file browser opens inside the folder; tapping a backup hands it back here and it opens like any other file (with the usual checks before restoring) */
+      if(r&&r.picked&&r.data){const b=atob(r.data),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);await fxOpenFile(new File([u],r.name||'backup',{type:/\.sqlite$/i.test(r.name||'')?'application/x-sqlite3':'application/json'}))}return}}catch(e){if(e&&/too big|Couldn/.test(String(e.message||e)))return toast(String(e.message||e))}
     return fxAsk('Open your backups folder','<p>Your manual backups are saved in <b>Documents → MtG-DeckMaster</b> on this phone (automatic backups are in its <b>autosave</b> folder).</p><p class="mut">Open your phone’s <b>Files</b> app and go to Documents → MtG-DeckMaster.</p>',[{t:'OK',cls:'pri'}])}
   fxAsk('Where your backups are','<p>Your browser saves backup files where it saves downloads — usually the <b>Downloads</b> folder — or wherever you picked in the share sheet (e.g. Google Drive or Files).</p><p class="mut">A web page isn’t allowed to open folders on your device. Open your <b>Files</b> app (iPhone: Files → Downloads, Android: Files → Downloads) to find them. Automatic backups on the web version stay inside the browser — see Automatic backups below.</p>',[{t:'OK',cls:'pri'}])}
 

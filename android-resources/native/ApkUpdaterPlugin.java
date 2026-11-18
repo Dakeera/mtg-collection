@@ -1,6 +1,14 @@
 package com.dakeera.mtgdeckmaster;
 
+import android.app.Activity;
 import android.content.Intent;
+import android.database.Cursor;
+import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
+import android.util.Base64;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.annotation.ActivityCallback;
+import java.io.ByteArrayOutputStream;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -157,8 +165,18 @@ public class ApkUpdaterPlugin extends Plugin {
     @PluginMethod
     public void openFolder(PluginCall call) {
         String rel = call.getString("path", "Documents/MtG-DeckMaster");
-        String[] types = {"vnd.android.document/directory", "resource/folder", "*/*"};
         Uri doc = Uri.parse("content://com.android.externalstorage.documents/document/primary%3A" + Uri.encode(rel));
+        /* 1) the phone's file browser opened INSIDE the backups folder (Android 8+); tapping a file hands it back to the app */
+        try {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            if (Build.VERSION.SDK_INT >= 26) i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, doc);
+            startActivityForResult(call, i, "folderPicked");
+            return;
+        } catch (Exception e) { /* fall back below */ }
+        /* 2) older ways: ask a file manager to show the folder */
+        String[] types = {"vnd.android.document/directory", "resource/folder"};
         for (String t : types) {
             try {
                 Intent i = new Intent(Intent.ACTION_VIEW);
@@ -168,15 +186,24 @@ public class ApkUpdaterPlugin extends Plugin {
                 JSObject r = new JSObject(); r.put("opened", true); r.put("how", t); call.resolve(r); return;
             } catch (Exception e) { /* try the next way */ }
         }
-        try {
-            Intent i = new Intent(Intent.ACTION_GET_CONTENT);
-            i.setType("*/*");
-            i.addCategory(Intent.CATEGORY_OPENABLE);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(Intent.createChooser(i, "Open the MtG-DeckMaster folder").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            JSObject r = new JSObject(); r.put("opened", true); r.put("how", "picker"); call.resolve(r);
-        } catch (Exception e) {
-            call.reject("No file manager app was found.");
-        }
+        call.reject("No file manager app was found.");
+    }
+
+    @ActivityCallback
+    private void folderPicked(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject r = new JSObject(); r.put("opened", true);
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) { r.put("picked", false); call.resolve(r); return; }
+        Uri u = result.getData().getData();
+        String name = "backup";
+        try (Cursor c = getContext().getContentResolver().query(u, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) { int ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (ix >= 0) name = c.getString(ix); }
+        } catch (Exception e) { /* keep default name */ }
+        try (InputStream in = getContext().getContentResolver().openInputStream(u)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buf = new byte[65536]; int n; long tot = 0;
+            while ((n = in.read(buf)) > 0) { tot += n; if (tot > 60L * 1024 * 1024) { call.reject("That file is too big to open (over 60 MB)."); return; } out.write(buf, 0, n); }
+            r.put("picked", true); r.put("name", name); r.put("data", Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
+            call.resolve(r);
+        } catch (Exception e) { call.reject("Couldn't read that file: " + e.getMessage()); }
     }
 }
