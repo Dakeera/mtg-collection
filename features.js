@@ -979,8 +979,12 @@ async function fxCdbToggle(on){if(RO)return;
   if(CDB_RUN)CDB_RUN.stop=true;const db=await fxCdbOpen();try{db&&db.close()}catch(e){}cdbP=null;await new Promise(ok=>{const r=indexedDB.deleteDatabase('mtg_cardsdb');r.onsuccess=r.onerror=r.onblocked=()=>ok()});fxCdbSetMeta(null);render();toast('Offline card database deleted')}
 async function fxCdbUpdate(){if(!navigator.onLine)return toast('You’re offline');if(!(await fxCdbWifiOk()))return;fxCdbDownload()}
 async function fxCdbDownload(){if(CDB_RUN)return;const run=CDB_RUN={stop:false,done:0,total:0,bytes:0,size:0};const say=t=>{run.msg=t;const e=$('#cdbmsg');if(e)e.textContent=t};render();
-  try{say('Finding the latest card list…');const bd=await scryFetch('/bulk-data');const list=bd&&bd.ok?await bd.json():null;const meta=list&&(list.data||[]).find(x=>x.type==='oracle_cards');if(!meta||!meta.download_uri)throw new Error(bd?`Scryfall answered ${bd.status} for the card list`:'Scryfall didn’t answer');run.size=meta.size||0;
-    const r=await fetch(meta.download_uri);if(!r.ok||!r.body)throw new Error('download failed ('+r.status+')');
+  try{say('Finding the latest card list…');const bd=await scryFetch('/bulk-data');if(!bd)throw new Error('Scryfall didn’t answer');let list=null,raw='';try{raw=await bd.text();list=JSON.parse(raw)}catch(e){}
+    const items=Array.isArray(list)?list:(list&&(list.data||list.items))||[];let meta=items.find(x=>x&&/oracle/i.test((x.type||'')+' '+(x.name||'')));
+    if(meta&&!meta.download_uri&&meta.uri){const one=await scryFetch(meta.uri);if(one&&one.ok){try{meta=await one.json()}catch(e){}}}
+    const dl=meta&&(meta.download_uri||meta.download_url);
+    if(!dl)throw new Error(`card list not found (Scryfall ${bd.status}; ${items.length?'files: '+items.map(x=>x&&(x.type||x.name)).join(', '):'reply: '+raw.slice(0,80).replace(/\s+/g,' ')})`);run.size=meta.size||0;
+    const r=await fetch(dl);if(!r.ok||!r.body)throw new Error('download failed ('+r.status+')');
     const db=await fxCdbOpen();if(!db)throw new Error('this device can’t store it');await new Promise(ok=>{const tx=db.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
     const rd=r.body.getReader(),dec=new TextDecoder();let buf='',depth=0,inStr=false,esc=false,start=-1,batch=[];
     const flush=async()=>{if(!batch.length)return;const b=batch;batch=[];await new Promise(ok=>{const tx=db.transaction('c','readwrite'),s=tx.objectStore('c');b.forEach(x=>s.put(x));tx.oncomplete=tx.onerror=()=>ok()})};
