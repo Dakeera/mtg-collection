@@ -997,11 +997,11 @@ async function fxCdbDownload(){if(CDB_RUN)return;const run=CDB_RUN={stop:false,d
     for(;;){if(run.stop)throw new Error('stopped');const {done,value}=await rd.read();if(done)break;run.bytes+=value.length;const txt=dec.decode(value,{stream:true});if(head.length<200)head+=txt.slice(0,200-head.length);buf+=txt;
       let cut=0;
       for(let p=run.scan||0;p<buf.length;p++){const ch=buf[p];if(inStr){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch==='"')inStr=false;continue}
-        if(ch==='"'){inStr=true;continue}if(ch==='{'){if(depth===0&&!top){top='{'}if(depth===1&&top==='[')start=p;depth++}else if(ch==='}'){depth--;if(depth===1&&start>=0){try{const c=JSON.parse(buf.slice(start,p+1));if(c.object==='card'&&c.layout!=='art_series'&&c.layout!=='token'&&c.layout!=='double_faced_token'&&c.layout!=='emblem')batch.push(fxCdbSlim(c))}catch(e){}cut=p+1;start=-1;run.done++}}else if(ch==='['&&depth===0){if(!top)top='[';depth=1}}
+        if(ch==='"'){inStr=true;continue}if(ch==='{'){if(depth===0&&!top){top='{'}if((depth===1&&top==='[')||(depth===0&&top==='{'))start=p;depth++}else if(ch==='}'){depth--;if(depth===(top==='{'?0:1)&&start>=0){try{const c=JSON.parse(buf.slice(start,p+1));if(c.object==='card'&&c.layout!=='art_series'&&c.layout!=='token'&&c.layout!=='double_faced_token'&&c.layout!=='emblem')batch.push(fxCdbSlim(c))}catch(e){}cut=p+1;start=-1;run.done++}}else if(ch==='['&&depth===0){if(!top)top='[';depth=1}}
       if(cut){buf=buf.slice(cut);run.scan=buf.length}else run.scan=buf.length;if(start>=0&&cut){start-=cut}
       if(batch.length>=400)await flush();say(`Downloading… ${fxMB(run.bytes)}${run.size?' of '+fxMB(run.size):''} · ${run.done} cards`)}
     await flush();
-    if(top!=='['||run.done<1000){const db2=await fxCdbOpen();if(db2)await new Promise(ok=>{const tx=db2.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
+    if(run.done<1000){const db2=await fxCdbOpen();if(db2)await new Promise(ok=>{const tx=db2.transaction('c','readwrite');tx.objectStore('c').clear();tx.oncomplete=tx.onerror=()=>ok()});
       throw new Error(`that wasn’t the full card list — got ${run.done} entries, ${fxMB(run.bytes)} from ${String(r.url||dl).replace(/^https:\/\//,'').slice(0,70)} (${r.headers.get('content-type')||'?'}): “${head.replace(/\s+/g,' ').slice(0,110)}”`)}
     fxCdbSetMeta({on:true,at:today(),n:run.done,bytes:run.bytes});CDB_RUN=null;render();toast(`✓ Offline card database ready — ${run.done} cards`)}
   catch(e){CDB_RUN=null;const m=fxCdbMeta();if(m&&m.on)fxCdbSetMeta({on:true,err:String(e.message||e)});render();if(String(e.message)!=='stopped')toast('Couldn’t download the card database: '+String(e.message||e).slice(0,80))}}
