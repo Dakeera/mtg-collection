@@ -368,7 +368,7 @@ const vfAsk=async n=>{if(await ask(`The artwork for ${n} is marked verified ✓.
 let AP={name:'',list:[],q:''};
 async function artPicker(name,copy){if(findCard(name)?.custom)return fxCustomArt(name);
   AP={name,list:[],ls:[],q:'',copy:copy||0,sel:null};{const c0=findCard(name),cx=copy?((c0||{}).cps||[])[copy-1]:null;AP.sel=copy?(cx&&cx.scryId)||null:(c0&&c0.verified&&c0.scryId)||null;AP.cur=AP.sel}
-  openM(`<button onclick="AP.copy?fxCopiesOpen(AP.name,true):showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}${copy?` — copy ${copy+1}`:''}</h3><p class="mut">Tap the set name under a picture to select it, or tap the picture to see it full screen. Then tap “Use this artwork”. Your “Pulled from” stays the same.</p><input type="search" id="apq" placeholder="Filter by set name, code or number…" style="width:100%" oninput="AP.q=this.value;apDraw()"><button style="margin:8px 0;display:block" onclick="fxCam(apScan)">📷 Scan the card to verify it</button><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div><div id="apbar" class="apbar"></div>`,()=>showCard(AP.name));
+  openM(`<button onclick="AP.copy?fxCopiesOpen(AP.name,true):showCard(AP.name)">← Back</button><h3>Choose artwork for ${esc(name)}${copy?` — copy ${copy+1}`:''}</h3><p class="mut">Tap the set name under a picture to select it, or tap the picture to see it full screen. Then tap “Use this artwork”. Your “Pulled from” stays the same.</p><input type="search" id="apq" placeholder="🔍 Search set, code, number, year, foil…" style="width:100%" oninput="AP.q=this.value;apDraw()"><button style="margin:8px 0;display:block" onclick="fxCam(apScan)">📷 Scan the card to verify it</button><p id="apst" class="mut">Loading printings…</p><div id="apg" class="grid"></div><div id="apbar" class="apbar"></div>`,()=>showCard(AP.name));
   const base=await scry('/cards/named?fuzzy='+encodeURIComponent(front(name)));
   if(!base||base.object!=='card'){if($('#apst'))$('#apst').textContent='No printings found for this card.';return}
   let url=base.prints_search_uri,pages=0;
@@ -378,7 +378,7 @@ async function artPicker(name,copy){if(findCard(name)?.custom)return fxCustomArt
 function apDraw(more=''){
   if(!$('#apg'))return;const cur=findCard(AP.name)?.scryId,q=AP.q.toLowerCase();
   const sm=p=>p.image_uris?.small||p.card_faces?.[0]?.image_uris?.small||'';
-  const cpx=AP.copy?((findCard(AP.name)||{}).cps||[])[AP.copy-1]:null;const ls=AP.list.filter(p=>sm(p)&&(!q||`${p.set} ${p.set_name} ${p.collector_number}`.toLowerCase().includes(q)));
+  const cpx=AP.copy?((findCard(AP.name)||{}).cps||[])[AP.copy-1]:null;const ls=AP.list.filter(p=>sm(p)&&fxPQ(p,q));
   $('#apst').textContent=`${ls.length} of ${AP.list.length} printings${more}`;
   AP.ls=ls;$('#apg').innerHTML=ls.map((p,k)=>`<div class="tile" style="${p.id===AP.sel?'outline:3px solid var(--gold);border-radius:12px':''}"><div class="art" onclick="fxPrintView(AP.ls,${k},AP.sel,kk=>apSel(AP.ls[kk].id))"><img loading="lazy" src="${esc(sm(p))}" alt="${esc(p.name)}">${(AP.copy?cpx&&cpx.scryId===p.id:p.id===cur)?'<span class="badge">✓</span>':''}</div><div class="nm setcap"><b>${esc(p.set_name)}</b><span>${esc(p.set.toUpperCase())} #${esc(p.collector_number)}${p.released_at?' · '+esc(p.released_at.slice(0,4)):''}</span>${fxFinLabel(p)}</div></div>`).join('').replace(/<div class="nm setcap">/g,'<div class="nm setcap" style="cursor:pointer">');
   $('#apg').querySelectorAll('.setcap').forEach((e,k)=>e.onclick=()=>apSel(ls[k].id));apBar();
