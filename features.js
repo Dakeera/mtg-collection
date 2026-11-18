@@ -888,7 +888,7 @@ function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
    Returns { place: [{c, n}] } with n = copies of that card in that place (capped by how many copies are still unverified). */
 const FXDECKPFX='In deck: ';
 /* group name for a “Pulled from”: the numbers don't matter — every pack/box of a WotC set goes under the set's name (all Lorwyn Eclipsed packs → “Lorwyn Eclipsed”), other sources lose their number (“Bulk Box 1”, “Bulk Box 2” → “Bulk Box”) */
-function fxMissKey(s){const st=fxStoreLabel(s);if(st&&st!==FX_OTHER)return st;return String(s).replace(/\s+\d+(\s*\(.*\))?$/,'').trim()||s}
+function fxMissKey(s){const st=fxStoreLabel(s);if(st&&st!==FX_OTHER)return st;if(/^\s*bulk\s*box\b/i.test(s))return String(s).trim();return String(s).replace(/\s+\d+(\s*\(.*\))?$/,'').trim()||s}
 function fxMissArt(){const G={},raw={},add=(k,c,n)=>{if(n<=0)return;const L=raw[k]=raw[k]||[],x=L.find(y=>y.c===c);if(x)x.n+=n;else L.push({c,n})};
   D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c))return;const u=fxUnverifiedCopies(c);if(!u)return;const k=norm(c.name);let inDecks=0;const used={};
     D.decks.forEach(d=>{const q=Math.max(0,sum(d.cards.filter(e=>norm(e.name)===k),e=>e.qty)-(d.miss?fxMissQ(d,c.name):0));if(!q)return;const n=Math.min(q,c.qty-inDecks);if(n<=0)return;inDecks+=n;add(FXDECKPFX+d.name,c,n);const a=d.srcs&&d.srcs[k];if(a)for(const s in a)used[s]=(used[s]||0)+a[s]});
