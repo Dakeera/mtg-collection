@@ -904,6 +904,30 @@ function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
     return toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left in “${src}” for later`:` — “${src}” is done`}`:l?`${l} left in “${src}” — they wait in Data check`:'Done')}
   const h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
+/* ---------- Data check → cards that don't fit their “Pulled from” (owner request): a card listed under a WotC-set source (booster, bundle, precon…) whose name was never printed in that set (incl. its child sets, its parent and Special Guests) is probably the wrong card — e.g. a name typed for a card from another set. Uses each set's card list from Scryfall (saved lookups first). ---------- */
+let FXFIT=null;
+async function fxSrcFit(){if(FXFIT&&FXFIT.busy)return;if(!navigator.onLine&&!FXFIT)return toast('You’re offline — try again when connected');
+  FXFIT={busy:true,msg:'Loading the set list…',out:[],names:{}};render();const say=t=>{FXFIT.msg=t;const e=document.getElementById('fitmsg');if(e)e.textContent=t};
+  const S=await fxSets();if(!S){FXFIT={busy:false,err:'Couldn’t load the WotC set list — try again when online.',out:[]};return render()}
+  const by=new Map();D.cards.filter(c=>isReal(c)&&!c.custom&&!fxBasic(c)).forEach(c=>cardSources(c).forEach(s=>{const set=fxSetIn(s,S);if(!set)return;if(!by.has(set.c))by.set(set.c,{set,L:[]});by.get(set.c).L.push({c,s})}));
+  let i=0,miss=0;for(const [code,{set,L}] of by){say(`Checking ${set.n} (${++i} of ${by.size})…`);
+    const codes=[...new Set([code,set.p,...S.s.filter(x=>x.p===code).map(x=>x.c),'spg'].filter(Boolean))];
+    let url='/cards/search?unique=cards&include_extras=true&q='+encodeURIComponent('('+codes.map(x=>'e:'+x).join(' or ')+')'),names=new Set(),real=new Set(),ok=false,pg=0;
+    while(url&&pg<12){const r=await scry(url);if(!r||!r.data)break;ok=true;r.data.forEach(x=>{names.add(norm(front(x.name)));names.add(norm(x.name));real.add(front(x.name))});url=r.has_more?r.next_page:null;pg++}
+    if(!ok){miss++;continue}FXFIT.names[code]=[...real].sort();
+    L.forEach(({c,s})=>{if(c.srcOk&&c.srcOk[s])return;if(!names.has(norm(front(c.name)))&&!names.has(norm(c.name)))FXFIT.out.push({n:c.name,s,set:set.n,code})})}
+  FXFIT.busy=false;FXFIT.done=today();FXFIT.miss=miss;render()}
+function fxSrcFitView(){const F=FXFIT;let b='';
+  if(F&&F.busy)b=`<p id="fitmsg" class="mut">${esc(F.msg)}</p>`;
+  else if(F&&F.err)b=`<p class="mut" style="color:#f39c12">${esc(F.err)}</p>`;
+  else if(F&&F.done){const L=F.out.filter(x=>findCard(x.n)&&cardSources(findCard(x.n)).includes(x.s)&&!(findCard(x.n).srcOk||{})[x.s]);
+    b=(L.length?`<p class="mut" style="margin:4px 0">${fxPl(L.length,'card')} ${L.length===1?'isn’t':'aren’t'} printed in the set of ${L.length===1?'its':'their'} “Pulled from”. The name is probably wrong (the real card from that pack has another name), or the “Pulled from” is.</p>`+L.map(x=>`<div class="kv" style="align-items:flex-start;flex-wrap:wrap;gap:6px"><span><b>${esc(x.n)}</b><br><span class="mut" style="font-size:12px;font-weight:400">Pulled from: ${esc(x.s)} · not in ${esc(x.set)}</span></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button style="padding:6px 10px" onclick="fxFitFix(${esc(JSON.stringify(x.n))},${esc(JSON.stringify(x.code))})">Find the right card</button><button style="padding:6px 10px" onclick="showCard(${esc(JSON.stringify(x.n))})">Open</button><button style="padding:6px 10px" onclick="fxFitKeep(${esc(JSON.stringify(x.n))},${esc(JSON.stringify(x.s))})">It’s right</button></span></div>`).join(''):`<p class="mut">✓ Every card fits the set of its “Pulled from”.</p>`)+(F.miss?`<p class="mut" style="font-size:12px">${F.miss} set(s) couldn’t be checked (offline?).</p>`:'')}
+  return `<div class="sec"><h4>Cards that don’t fit their “Pulled from”</h4><p class="mut" style="margin:4px 0">Checks every card that came from a WotC product (booster, bundle, precon…) against that set’s card list.</p>${b}<button ${F&&F.busy?'disabled':''} onclick="fxSrcFit()">🔎 ${F&&F.done?'Check again':'Check my cards'}</button></div>`}
+async function fxFitKeep(n,s){const c=findCard(n);if(!c)return;if(!(await ask(`Keep ${c.name} as pulled from “${s}”?\n\nIt won’t be listed here again for that source.`)))return;c.srcOk=c.srcOk||{};c.srcOk[s]=1;logEdit(c.name,'Pulled from check',s,'kept (not in that set)');save();render()}
+function fxFitFix(n,code){const e=findCard(n);if(!e)return;const L=(FXFIT&&FXFIT.names[code])||[];window.FXUNK={name:e.name,done:()=>{closeM();render()},opts:[]};
+  openM(`<h3>Which card is “${esc(e.name)}” really?</h3><p class="mut">Type the name printed on the card. Suggestions come from the set of its “Pulled from”. Choosing one updates your existing card — quantity, sources and decks are kept, no duplicate is created.</p>
+  <div class="f"><label>Card name</label><input id="unkq" list="fitl" autocomplete="off" placeholder="Start typing…"><datalist id="fitl">${L.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
+  <div class="row"><button onclick="closeM();render()">Cancel</button><button onclick="fxSearchUnknown()">Search all cards</button><button class="pri" onclick="(function(){const v=($('#unkq').value||'').trim();if(!v)return toast('Type the card’s name');FXUNK.opts=[v];fxPickMatch(0)})()">Use this name</button></div>`)}
 /* ---------- Data check → Resolve missing artwork: every card with an unverified copy, grouped by pull source, one source at a time ---------- */
 /* Where the unverified copies physically are: each deck is its own place (“In deck: …”) for the copies it holds; the remaining copies are listed under their “Pulled from”.
    Returns { place: [{c, n}] } with n = copies of that card in that place (capped by how many copies are still unverified). */
