@@ -851,7 +851,7 @@ function fxHistVerify(id){const h=(D.imports||[]).find(x=>x.id===id),l=fxHistLef
   Object.assign(IMP,{stage:'pick',kind:'verify',vid:id,qa:false,pi:0,vdone:0,items:l.map(it=>({name:findCard(it.name).name,qty:it.qty,sid:it.sid,stub:true,card:{name:it.name,id:it.sid,finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(it.name)}}))});
   go('more');V.sub='import';render();scrollTo(0,0)}
 function fxVerPick(){const it=IMP.items,i=Math.min(IMP.pi||0,it.length-1),x=it[i],n=it.length,e=findCard(x.name);
-  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Verify artwork · ${i+1} of ${n}${IMP.vsrc!=null?`<br><span class="mut" style="font-weight:400;font-size:13px">Pulled from: ${esc(IMP.vsrc)}</span>`:''}</b><button style="padding:6px 10px" onclick="fxVerStop()">Finish later</button></div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
+  const head=`<div class="row" style="align-items:center;margin:0 0 6px"><b style="flex:1">Verify artwork · ${i+1} of ${n}${IMP.vsrc!=null?`<br><span class="mut" style="font-weight:400;font-size:13px">${String(IMP.vsrc).startsWith(FXDECKPFX)?'🃏 '+esc(IMP.vsrc)+' — check the copies in this deck':'Pulled from: '+esc(IMP.vsrc)}</span>`:''}</b><button style="padding:6px 10px" onclick="fxVerStop()">Finish later</button></div><div class="pbar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div>`;
   const ready=!x.stub&&!x.err&&x.prints;
   const nav=`<div style="height:84px"></div><div class="qanav"><button onclick="fxQAPrev()">‹ ${i?'Previous':'Back'}</button><button onclick="fxQASkip()">Skip for now</button><button class="pri" onclick="fxQANext()" ${ready?'':'disabled'}>${i+1<n?'✓ Save &amp; next ›':'✓ Save &amp; finish'}</button></div>`;
   if(!x.prints&&!x.loading&&!x.err)fxQALoad(i);
@@ -866,6 +866,7 @@ async function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
     if(e&&e.qty>1){logEdit(e.name,'Printing',`${fxUnverifiedCopies(e)} copies not verified`,`${x.card.set_name} #${x.card.collector_number} ✓ ×${n} (import history)`);if(fxSetCopies(e,x.card,n)){saveArt();save();if(!x.done)IMP.vdone++;x.done=true}}
     else if(fxVerifyPrint(x.name,x.card,'import history')){if(!x.done)IMP.vdone++;x.done=true}
     /* bring the card back for its other copies — but when verifying one “Pulled from” group, only for copies that came from THAT group */
+    if(IMP.vsrc!=null){e.vplace=e.vplace||{};e.vplace[IMP.vsrc]=(e.vplace[IMP.vsrc]||0)+Math.min(x.vq||x.vmax||1,n)}/* remember which place's copies were checked, so that place doesn't list them again */
     const n0=Math.min(x.vq||x.vmax||1,n),srcLeft=x.cap!=null?x.cap-n0:Infinity,left=Math.min(fxUnverifiedCopies(findCard(x.name)),srcLeft);
     if(left>0&&!(IMP.items[IMP.pi+1]&&IMP.items[IMP.pi+1].restOf===x))IMP.items.splice(IMP.pi+1,0,Object.assign({},x,{restOf:x,done:false,vq:0,vmax:left,cap:x.cap!=null?left:undefined}))}
   if(IMP.pi+1<IMP.items.length){IMP.pi++;render();scrollTo(0,0)}else fxVerStop()}
@@ -875,16 +876,25 @@ function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
   const h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
 /* ---------- Data check → Resolve missing artwork: every card with an unverified copy, grouped by pull source, one source at a time ---------- */
-function fxMissArt(){const G={};D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c)||!fxUnverifiedCopies(c))return;const ss=cardSources(c).filter(s=>!isCustomSrc(s));(ss.length?ss:['No “Pulled from”']).forEach(s=>{(G[s]=G[s]||[]).push(c)})});return G}
-const fxSrcQty=(c,s)=>sum(D.acq.filter(a=>norm(a.name)===norm(c.name)&&canonSrc(a.source)===s),a=>a.qty);
-function fxMissArtView(){const G=fxMissArt(),ks=Object.keys(G).sort((a,b)=>G[b].length-G[a].length||a.localeCompare(b)),cards=new Set(Object.values(G).flat()),copies=sum([...cards],c=>fxUnverifiedCopies(c));
-  return `<div class="sec"><h4>Resolve missing artwork</h4>${cards.size?`<p class="mut" style="margin:4px 0">${fxPl(cards.size,'card')} (${copies} ${copies===1?'copy':'copies'}) still need their artwork verified. They’re listed by where they were pulled from, so you can work through one box or pack at a time. Your progress is saved card by card — tap <b>Finish later</b> any time.</p>
+/* Where the unverified copies physically are: each deck is its own place (“In deck: …”) for the copies it holds; the remaining copies are listed under their “Pulled from”.
+   Returns { place: [{c, n}] } with n = copies of that card in that place (capped by how many copies are still unverified). */
+const FXDECKPFX='In deck: ';
+function fxMissArt(){const G={},put=(k,c,n)=>{n=Math.min(n,Math.max(0,n-((c.vplace&&c.vplace[k])||0)),fxUnverifiedCopies(c));if(n>0)(G[k]=G[k]||[]).push({c,n})};
+  D.cards.forEach(c=>{if(!isReal(c)||c.custom||fxBasic(c))return;const u=fxUnverifiedCopies(c);if(!u)return;const k=norm(c.name);let inDecks=0;const used={};
+    D.decks.forEach(d=>{const q=Math.max(0,sum(d.cards.filter(e=>norm(e.name)===k),e=>e.qty)-(d.miss?fxMissQ(d,c.name):0));if(!q)return;const n=Math.min(q,c.qty-inDecks);if(n<=0)return;inDecks+=n;put(FXDECKPFX+d.name,c,Math.min(n,u));const a=d.srcs&&d.srcs[k];if(a)for(const s in a)used[s]=(used[s]||0)+a[s]});
+    const free=c.qty-inDecks;if(free<=0)return;const own=fxSrcOwned(c),ss=Object.keys(own).filter(s=>!isCustomSrc(s));let left=free;
+    if(!ss.length){put('No “Pulled from”',c,Math.min(free,u));return}
+    ss.forEach(s=>{const n=Math.max(0,Math.min(left,own[s]-(used[s]||0)));if(n>0){put(s,c,Math.min(n,u));left-=n}});
+    if(left>0)put(ss[0],c,Math.min(left,u))});
+  return G}
+function fxMissArtView(){const G=fxMissArt(),isD=k=>k.startsWith(FXDECKPFX),ks=Object.keys(G).sort((a,b)=>(isD(b)-isD(a))||G[b].length-G[a].length||a.localeCompare(b)),cards=new Set(Object.values(G).flat().map(x=>x.c)),copies=sum([...cards],c=>fxUnverifiedCopies(c));
+  return `<div class="sec"><h4>Resolve missing artwork</h4>${cards.size?`<p class="mut" style="margin:4px 0">${fxPl(cards.size,'card')} (${copies} ${copies===1?'copy':'copies'}) still need their artwork verified. They’re listed by where they are now: cards in a deck are listed under that deck (🃏), the rest by where they were pulled from — so you can work through one deck, box or pack at a time. Your progress is saved card by card — tap <b>Finish later</b> any time.</p>
   <button class="pri" onclick="V.maOpen=!V.maOpen;render()">🎨 ${V.maOpen?'Hide the list':'Resolve missing artwork'}</button>
-  ${V.maOpen?ks.map(s=>`<div class="sec" style="margin:8px 0"><div class="row" style="align-items:center"><span style="flex:1"><b>${esc(s)}</b> <span class="mut">· ${fxPl(G[s].length,'card')}</span></span><button class="pri" style="flex:0 0 auto" onclick="fxMissArtGo(${esc(JSON.stringify(s))})">Start</button></div>
-    <details><summary class="mut" style="font-size:13px">Cards pulled from here</summary><div style="font-size:13px;margin-top:4px">${G[s].map(c=>{const o=cardSources(c).filter(x=>x!==s);return `${cl(c.name)} <span class="mut">· ${fxUnverifiedCopies(c)} of ${c.qty} not verified${o.length?' · also from '+esc(o.join(', ')):''}</span>`}).join('<br>')}</div></details></div>`).join(''):''}`
+  ${V.maOpen?ks.map(s=>`<div class="sec" style="margin:8px 0${isD(s)?';border-left:3px solid var(--gold)':''}"><div class="row" style="align-items:center"><span style="flex:1"><b>${isD(s)?'🃏 ':''}${esc(s)}</b> <span class="mut">· ${fxPl(G[s].length,'card')}</span></span><button class="pri" style="flex:0 0 auto" onclick="fxMissArtGo(${esc(JSON.stringify(s))})">Start</button></div>
+    <details><summary class="mut" style="font-size:13px">${isD(s)?'Cards in this deck':'Cards pulled from here'}</summary><div style="font-size:13px;margin-top:4px">${G[s].map(({c,n})=>{const o=ks.filter(x=>x!==s&&G[x].some(y=>y.c===c));return `${cl(c.name)} <span class="mut">· ${n} ${n===1?'copy':'copies'} to check here (${fxUnverifiedCopies(c)} of ${c.qty} not verified)${o.length?' · also in '+esc(o.join(', ')):''}</span>`}).join('<br>')}</div></details></div>`).join(''):''}`
   :'<p class="mut" style="margin:4px 0">✓ Every card’s artwork is verified (basic lands and custom cards don’t need it).</p>'}</div>`}
 function fxMissArtGo(s){const L=(fxMissArt()[s]||[]);if(!L.length)return toast('Nothing left to verify there');
-  Object.assign(IMP,{stage:'pick',kind:'verify',vid:null,vsrc:s,qa:false,pi:0,vdone:0,items:L.map(c=>{const u=fxUnverifiedCopies(c),fs=fxSrcQty(c,s);return {name:c.name,qty:c.qty,sid:c.scryId||'',stub:true,vmax:u,vq:fs&&fs<u?fs:0,cap:fs&&fs<u?fs:u,src:s,card:{name:c.name,id:c.scryId||'',finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(c.name)}}})});
+  Object.assign(IMP,{stage:'pick',kind:'verify',vid:null,vsrc:s,qa:false,pi:0,vdone:0,items:L.map(({c,n})=>{const u=fxUnverifiedCopies(c);return {name:c.name,qty:c.qty,sid:c.scryId||'',stub:true,vmax:u,vq:n<u?n:0,cap:Math.min(n,u),src:s,card:{name:c.name,id:c.scryId||'',finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(c.name)}}})});
   go('more');V.sub='import';render();scrollTo(0,0)}
 
 /* ---------- Existing cards: verify the artwork from a “pulled from” source that names a real set ---------- */
