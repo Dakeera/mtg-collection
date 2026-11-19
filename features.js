@@ -32,7 +32,7 @@ function aiNeedFmt(){if(dfmt(G.fmt))return true;toast('Choose your deck type fir
 /* ---------- small helpers ---------- */
 const fxSlug=n=>{n=String(n||'').trim().replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'');return n?n+'-':''};
 const fxDate=ms=>{try{return new Date(ms).toLocaleDateString([],{year:'numeric',month:'short',day:'numeric'})}catch(e){return ''}};
-const fxPl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+const fxPl=(n,w,p)=>`${n} ${n===1?w:(p||w+"s")}`;
 function fxMigrate(){if(!D)return;D.matchups=D.matchups||[];D.sims=D.sims||[];D.swaps=D.swaps||[];D.sleeves=D.sleeves||[];
   // Matchup log: only matchups that have actually been run are listed (drops old "Template / Pending" rows).
   D.matchups.forEach(s=>{if(/MASTER MATCHUP/i.test(s.title||'')&&s.rows)s.rows=s.rows.filter((r,i)=>i===0||!(/template|pending/i.test(String(r[r.length-1]))||String(r[5]).trim()==='-'))})}
@@ -1118,6 +1118,42 @@ function fxSrcView(){return `<div class="sec"><h4>Verify artwork from “Pulled 
   ${SV.ok.length?`<details><summary>Verified (${SV.ok.length})</summary><div style="font-size:13px">${SV.ok.map(n=>cl(n)).join(', ')}</div></details>`:''}
   ${SV.unsure.length?`<details><summary>Left unverified (${SV.unsure.length}) — tap a card, then 🎨</summary><div style="font-size:13px">${SV.unsure.map(([n,w])=>`${cl(n)} <span class="mut">— ${esc(w)}</span>`).join('<br>')}</div></details>`:''}</div>`}
 
+/* ---------- Rename “Pulled from” names everywhere they are used (shared by Tidy up and Manage “Pulled from”): cards (logged), purchase records, import history, deck source assignments, deck tokens, swap-log cells, kept-as-right marks, artwork-check progress, the remembered last source. M = Map(old → new); a new name that already exists merges the two. dry=true only counts. ---------- */
+function fxSrcRenameMap(M,dry){const R={cards:0,acq:0,imports:0,decks:0,tokens:0,swaps:0},tg=s=>M.get(canonSrc(s));
+  D.cards.forEach(c=>{const ss=cardSources(c);if(ss.some(s=>tg(s))){R.cards++;if(!dry){const o=c.source,out=[];ss.map(s=>tg(s)||s).forEach(x=>{if(!out.some(y=>y.toLowerCase()===x.toLowerCase()))out.push(x)});c.source=out.join(', ');logEdit(c.name,'Pulled from',o,c.source)}}
+    if(!dry)['srcOk','vplace'].forEach(f=>{const m=c[f];if(!m)return;for(const s in m){const t=tg(s);if(t&&t!==s){m[t]=(f==='vplace'?(m[t]||0)+m[s]:1);delete m[s]}}})});
+  D.acq.forEach(a=>{const t=tg(a.source);if(t){R.acq++;if(!dry)a.source=t}});
+  (D.imports||[]).forEach(h=>{const t=tg(h.src);if(t){R.imports++;if(!dry)h.src=t}});
+  D.decks.forEach(d=>{let hit=false;if(d.srcs)for(const k in d.srcs){const m=d.srcs[k];if(Object.keys(m).some(s=>tg(s))){hit=true;if(!dry){const o={};for(const s in m){const t=tg(s)||s;o[t]=(o[t]||0)+m[s]}d.srcs[k]=o}}}if(hit)R.decks++;
+    (d.tokens||[]).forEach(t=>{const x=tg(t.source);if(x){R.tokens++;if(!dry)t.source=x}})});
+  (D.swaps||[]).forEach(w=>{if(!Array.isArray(w.row))return;w.row.forEach((v,i)=>{const t=typeof v==='string'&&M.get(v.trim());if(t){R.swaps++;if(!dry)w.row[i]=t}})});
+  if(!dry){try{const ls=localStorage.getItem('mtg_lastsrc_v1');if(ls&&tg(ls))localStorage.setItem('mtg_lastsrc_v1',tg(ls))}catch(e){}FXFIT=null}
+  return R}
+
+/* ---------- More → Tools → “Pulled from” names (owner request): every source with where it's stored, cards, copies and decks; ✎ Rename asks for approval and changes the name everywhere (merging into an existing name asks separately). ---------- */
+function fxSrcStats(){const S={};const g=s=>S[s]=S[s]||{cards:0,copies:0,decks:new Set()};
+  allSources().forEach(s=>g(s));D.cards.filter(c=>c.qty>0).forEach(c=>{const own=fxSrcOwned(c);for(const s in own){if(!own[s])continue;const x=g(canonSrc(s));x.cards++;x.copies+=own[s]}});
+  D.decks.forEach(d=>{if(d.srcs)for(const k in d.srcs)for(const s in d.srcs[k])if(d.srcs[k][s])g(canonSrc(s)).decks.add(d.name)});return S}
+function fxSrcMgrView(){const S=fxSrcStats(),q=norm(V.sq||''),L=Object.keys(S).filter(s=>!q||norm(s).includes(q)||norm(fxStoreLabel(s)).includes(q)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  const grp={};L.forEach(s=>{const k=isCustomSrc(s)?'Custom cards':fxStoreLabel(s);(grp[k]=grp[k]||[]).push(s)});
+  const ks=Object.keys(grp).sort((a,b)=>(a===FX_OTHER?1:0)-(b===FX_OTHER?1:0)||(a==='Custom cards'?1:0)-(b==='Custom cards'?1:0)||a.localeCompare(b));
+  return `<p class="mut" style="margin:0 0 8px">Every “Pulled from” in your collection, grouped by where the cards are stored. Renaming changes it everywhere: your cards, purchase history, import history, decks and logs. Nothing changes until you approve it.</p>
+  <div class="acw"><input id="sqbox" placeholder="Search “Pulled from” names…" value="${esc(V.sq||'')}" oninput="V.sq=this.value;clearTimeout(window.__sqt);window.__sqt=setTimeout(()=>{render();const e=$('#sqbox');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length)}},250)"></div>
+  <p class="mut" style="font-size:12px;margin:6px 0">${fxPl(L.length,'name')}${q?' match':''}</p>
+  ${ks.map(k=>`<div class="sec"><h4>${esc(k)}</h4>${grp[k].map(s=>{const x=S[s],locked=isCustomSrc(s);return `<div class="kv" style="align-items:center"><span>${esc(s)}<br><span class="mut" style="font-size:12px;font-weight:400">${x.copies?`${fxPl(x.cards,'card')} · ${fxPl(x.copies,'copy','copies')}`:'not used by any card'}${x.decks.size?` · in ${fxPl(x.decks.size,'deck')}`:''}</span></span>${locked||RO?'<span class="mut" style="font-size:12px">reserved</span>':`<button style="padding:6px 12px;flex:0 0 auto" onclick="fxSrcRen(${esc(JSON.stringify(s))})">✎ Rename</button>`}</div>`}).join('')}</div>`).join('')||'<p class="mut">No “Pulled from” names yet.</p>'}`}
+function fxSrcRen(old){if(RO||isCustomSrc(old))return;openM(`<h3>Rename “Pulled from”</h3><p class="mut">Current name: <b>${esc(old)}</b></p>
+  <div class="f"><label>New name</label><input id="srnew" value="${esc(old)}" list="srnl" autocomplete="off" oninput="fxSrcRenHint(${esc(JSON.stringify(old))})"><datalist id="srnl">${allSources().filter(x=>x!==old&&!isCustomSrc(x)).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
+  <p id="srhint" class="mut" style="font-size:13px"></p>
+  <div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxSrcRenGo(${esc(JSON.stringify(old))})">Next</button></div>`);setTimeout(()=>{const e=$('#srnew');if(e){e.focus();e.select()}},50)}
+function fxSrcRenHint(old){const v=String(($('#srnew')||{}).value||'').trim(),h=$('#srhint');if(!h)return;const ex=allSources().find(x=>x!==old&&x.toLowerCase()===v.toLowerCase());
+  h.innerHTML=!v?'':isCustomSrc(v)?'<span style="color:#f39c12">“Custom Cards” is reserved for custom cards.</span>':ex?`<span style="color:#f39c12">“${esc(ex)}” already exists — renaming will merge the two into one.</span>`:v===old?'':`Will be stored in: ${esc(fxStoreLabel(v))}`}
+async function fxSrcRenGo(old){const v=String(($('#srnew')||{}).value||'').trim().replace(/\s+/g,' ');if(!v)return toast('Type the new name');if(v===old)return toast('That’s the same name');if(isCustomSrc(v))return toast('“Custom Cards” is reserved for custom cards — pick another name');
+  const ex=allSources().find(x=>x!==old&&x.toLowerCase()===v.toLowerCase()),neu=ex||v,M=new Map([[old,neu]]),R=fxSrcRenameMap(M,true);
+  const parts=[R.cards&&fxPl(R.cards,'card'),R.acq&&fxPl(R.acq,'purchase record'),R.imports&&fxPl(R.imports,'import history entry','import history entries'),R.decks&&fxPl(R.decks,'deck'),R.tokens&&fxPl(R.tokens,'token'),R.swaps&&fxPl(R.swaps,'swap log entry','swap log entries')].filter(Boolean);
+  const st0=fxStoreLabel(old),st1=fxStoreLabel(neu);
+  if(!(await ask(`${ex?'Merge':'Rename'} “Pulled from”?\n\n“${old}” → “${neu}”\n\n${ex?`“${neu}” already exists, so the two become one “Pulled from”. This can’t be split again automatically.\n\n`:''}This changes: ${parts.length?parts.join(', '):'nothing else (the name isn’t used yet)'}.${st0!==st1?`\n\nStorage changes from “${st0}” to “${st1}”.`:''}\n\nOK = ${ex?'Merge':'Rename'}\nCancel = Go back`)))return;
+  const r=fxSrcRenameMap(M);save();closeM();render();toast(`✓ “${old}” ${ex?'merged into':'renamed to'} “${neu}”${r.cards?` on ${fxPl(r.cards,'card')}`:''}`);setTimeout(()=>fxSrcVerify(),400)}
+
 /* ---------- Tidy up “Pulled from” names to the official WotC set names, keeping each box/pack number ---------- */
 let TS={running:false,msg:'',rows:null,S:null};
 const FXPRODS=['play booster','draft booster','set booster','collector booster','jumpstart booster','booster box','booster pack','bundle box','gift bundle','bundle','prerelease kit','prerelease pack','prerelease','commander deck','precon','starter kit','starter deck','beginner box','scene box','challenger deck','planeswalker deck','theme deck','intro pack'];
@@ -1152,11 +1188,7 @@ function fxTidySet(i,v){const r=TS.rows[i],set=TS.S.s.find(x=>x.n.toLowerCase()=
 async function fxTidyApply(){const L=(TS.rows||[]).filter(r=>r.on&&r.neu&&r.neu!==r.old);if(!L.length)return toast('Nothing ticked to rename');
   if(L.some(r=>isCustomSrc(r.neu)))return toast('“Custom Cards” is reserved for custom cards — pick another name');
   if(!(await ask(`Rename ${fxPl(L.length,'“Pulled from” name')}?\n\n${L.slice(0,12).map(r=>`${r.old} → ${r.neu}`).join('\n')}${L.length>12?`\n…and ${L.length-12} more`:''}\n\nThe numbers stay the same. Your cards, their history and the import history are updated — nothing else changes.\n\nOK = Rename\nCancel = Go back`)))return;
-  const M=new Map(L.map(r=>[r.old,r.neu]));let n=0;
-  D.cards.forEach(c=>{const ss=cardSources(c);if(!ss.some(s=>M.has(s)))return;const o=c.source,out=[];ss.map(s=>M.get(s)||s).forEach(x=>{if(!out.some(y=>y.toLowerCase()===x.toLowerCase()))out.push(x)});c.source=out.join(', ');logEdit(c.name,'Pulled from',o,c.source);n++});
-  D.acq.forEach(a=>{const x=canonSrc(a.source);if(M.has(x))a.source=M.get(x)});(D.imports||[]).forEach(h=>{if(M.has(h.src))h.src=M.get(h.src)});
-  D.decks.forEach(d=>{if(d.srcs)for(const k in d.srcs){const m=d.srcs[k],o={};for(const s in m){const t=M.get(s)||s;o[t]=(o[t]||0)+m[s]}d.srcs[k]=o}});
-  try{const ls=localStorage.getItem('mtg_lastsrc_v1');if(ls&&M.has(ls))localStorage.setItem('mtg_lastsrc_v1',M.get(ls))}catch(e){}
+  const M=new Map(L.map(r=>[r.old,r.neu]));const n=fxSrcRenameMap(M).cards;
   save();closeM();TS.rows=null;TS.msg='';render();toast(`✓ Renamed ${fxPl(L.length,'name')} on ${fxPl(n,'card')} — now checking artwork from the new names…`);setTimeout(()=>fxSrcVerify(),400)}
 
 
