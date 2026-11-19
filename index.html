@@ -897,7 +897,7 @@ function mkAIDeck(){
 
 /* ---------- more ---------- */
 function vMore(m){
-  const tabs=[['me','My profile'],['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['srcs','“Pulled from” names'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup'],...(isNative()?[['updates','App updates']]:[])];
+  const tabs=[['me','My profile'],['log','Acquisitions'],['swaps','Swap log'],['matchups','Matchups'],['import','Bulk import'],['imphist','Import history'],['others','Other collections'],['formats','Formats'],['sleeves','Sleeves'],['srcs','“Pulled from” names'],['check','Data check'+((D.flags||[]).length?' ('+D.flags.length+')':'')],['edits','Edit log'],['backup','Backup'],...(isNative()?[['updates','App updates']]:[])];
   let body='';
   if(V.sub==='log')body=D.acq.length?tbl(['Date','Card','Set','Finish','Qty','Pulled from','Price','Notes'],[...D.acq].reverse().map(a=>[a.date,{h:cl(a.name)},String(a.set||'').toUpperCase()+' '+(a.cn||''),a.finish,a.qty,a.source,a.price,a.notes])):'<p class="mut">Cards you add with this app are logged here.</p>';
   if(V.sub==='swaps')body=tbl(['Deck','Section','Card','From / To','Qty','Date','Notes','Status'],D.swaps.map(s=>(r=>(r[2]={h:cl(r[2])},r))([s.deck,s.section.replace(/^Section \w+:\s*/,''),...s.row].map(noEmoji))));
@@ -906,6 +906,7 @@ function vMore(m){
   if(V.sub==='updates')body=fxUpdView();
   if(V.sub==='matchups')body=fxMatchups();
   if(V.sub==='import')body=fxImportView();
+  if(V.sub==='imphist')body=fxImpHistPage();
   if(V.sub==='others')body=fxOthersView();
   if(V.sub==='formats')body=fxFormatsView();
   if(V.sub==='check')body=fxMissArtView()+fxSrcFitView()+fxSrcView()+fxCacheView()+fxImgCacheView()+fxCdbView()+`<p class="mut">Compares every card in your collection with the official Scryfall data (name, mana cost, type, power/toughness, rules text). Nothing changes until you approve each card. Last check: <b>${esc(D.lastCheck||'never')}</b></p><div class="row"><button class="pri" onclick="runDataCheck()" ${DC.running?'disabled':''}>${DC.running?'Checking…':'🔍 Run data check'}</button></div><p id="dcmsg" class="mut">${esc(DC.msg)}</p>`+(D.lastCheck&&!(D.flags||[]).length&&!DC.running?'<div class="sec">✓ No mismatches waiting for review.</div>':'')+(D.flags||[]).slice(0,25).map((f,i)=>`<div class="sec" data-dcd="${i}" style="cursor:pointer"><h4>Needs review · ${i+1} of ${D.flags.length} <span style="text-transform:none;letter-spacing:0">· tap for details</span></h4><b>${cl(f.name)}</b>${tbl(['Field','Yours','Official'],f.diffs.map(x=>[x.label,{h:symHtml(x.old)},{h:symHtml(x.now)}]))}<div class="row"><button data-dcf="${i}">Keep mine</button><button class="pri" data-dck="${i}">Fix to official</button></div></div>`).join('')+((D.flags||[]).length>25?`<p class="mut">Showing the first 25 of ${D.flags.length}. The rest appear as you finish these.</p>`:'')+fxUnknownList();
@@ -918,7 +919,7 @@ function vMore(m){
   <div class="row"><button onclick="fxOpenBkFolder()">📂 Open my backups folder</button></div>
   <div class="row"><label class="btn">⬆ Restore from a backup file<input type="file" accept=".json,.sqlite,.db,application/json,application/octet-stream" hidden onchange="importData(this.files[0])"></label></div><button class="danger" onclick="resetData()">Erase everything on this device</button>${autoBox()}<p class="mut" id="ver" style="margin-top:18px"></p>`;
   /* More menu in groups; once a page is open the groups fold into one row so the page starts near the top */
-  const T=Object.fromEntries(tabs),GR=[['My stuff',['me','backup','sleeves',...(isNative()?['updates']:[])]],['Tools',['import','srcs','check','matchups','formats']],['History',['log','swaps','edits']],['Other people',['others']]];
+  const T=Object.fromEntries(tabs),GR=[['My stuff',['me','backup','sleeves',...(isNative()?['updates']:[])]],['Tools',['import','imphist','srcs','check','matchups','formats']],['History',['log','swaps','edits']],['Other people',['others']]];
   const btn=k=>T[k]?`<button class="${V.sub===k?'on':''}" onclick="V.sub='${k}';render();scrollTo(0,0)">${T[k]}</button>`:'';
   m.innerHTML=`<h2>More</h2>${V.sub&&T[V.sub]?`<div class="row" style="align-items:center;margin-bottom:6px"><button onclick="V.sub='';render();scrollTo(0,0)" style="flex:0 0 auto">‹ All options</button><b style="flex:1;font-size:17px">${T[V.sub]}</b></div>`:GR.map(([g,ks])=>`<div class="mgrp"><h4>${g}</h4><div class="chips">${ks.map(btn).join('')}</div></div>`).join('')}${body}`;
   if(V.sub==='backup'){checkPersist();autoRefresh();appVersion()}

@@ -360,7 +360,7 @@ async function fxImpCommit(){
     const wasQa=IMP.qa,hid=fxHistAdd(src,ok,wasQa);
     saveArt();save();IMP.stage='idle';IMP.items=null;IMP.sq=null;IMP.text='';if(IMP.qa)V.qadd='';IMP.qa=false;render();toast(`${fxPl(n,'card')} added to your collection`);
     setTimeout(()=>fxOneCheck(ok.map(x=>x.card.name)),300);
-    if(!wasQa&&fxHistLeft(D.imports[0]).length&&await ask(`${fxPl(n,'card')} added.\n\nDo you want to verify their artwork now? You pick the matching printing card by card and can stop at any time — whatever is left stays in More → Bulk import → Import history.\n\nOK = verify now\nCancel = later`))fxHistVerify(hid);return}
+    if(!wasQa&&fxHistLeft(D.imports[0]).length&&await ask(`${fxPl(n,'card')} added.\n\nDo you want to verify their artwork now? You pick the matching printing card by card and can stop at any time — whatever is left stays in More → Import history.\n\nOK = verify now\nCancel = later`))fxHistVerify(hid);return}
   const name=IMP.dname.trim(),cards=[],by={};let added=0;
   it.forEach(x=>{if(!x.own&&!x.card)return;const nm=x.name,k=norm(nm);if(by[k])by[k].qty+=x.qty;else{by[k]={name:nm,qty:x.qty,finish:x.own?.finish||'Normal'};cards.push(by[k])}});
   if(!cards.length)return toast('None of those cards could be matched');
@@ -396,6 +396,7 @@ function fxExportCSV(){const q=v=>/[",\n]/.test(String(v))?'"'+String(v).replace
   D.cards.forEach(c=>{const fm=finMapOf(c);Object.keys(fm).filter(k=>fm[k]>0).forEach(k=>rows.push([c.name,fm[k],c.set||'',c.cn||'',k,c.source&&c.source!=='None'?c.source:'',c.type||'']))});
   fxDownload(rows.map(r=>r.map(q).join(',')).join('\r\n')+'\r\n',`${fxPrefix()}collection_${tsName()}.csv`,'text/csv')}
 function fxImportView(){
+  if(V.sub==='import'&&IMP.kind==='verify'&&IMP.vid&&IMP.stage!=='idle')return `<div class="sec"><p>An artwork check from Import history is in progress.</p><div class="row"><button class="pri" onclick="V.sub='imphist';render();scrollTo(0,0)">Open Import history</button></div></div>`;
   if(IMP.stage==='pick')return fxQAPick();
   if(IMP.stage==='work')return `<h3>Reading your ${IMP.kind==='deck'?'deck list':'cards'}…</h3><p class="mut" id="impt">Looking cards up…</p><div class="pbar"><i id="impb" style="width:3%"></i></div>`;
   if(IMP.stage==='preview'){const it=IMP.items,deck=IMP.kind==='deck',ok=it.filter(x=>x.card||x.own),bad=it.filter(x=>!x.card&&!x.own),own=it.filter(x=>x.own);
@@ -407,7 +408,7 @@ function fxImportView(){
     <div class="row"><button onclick="fxImpCancel()">Cancel</button>${IMP.qa&&!deck?`<button onclick="IMP.stage='pick';IMP.pi=IMP.items.length-1;render()">‹ Change printings</button>`:''}<button class="pri" onclick="fxImpCommit()" ${ok.length?'':'disabled'}>${deck?'Create deck':'Add to my collection'}</button></div>`}
   const site=(n,u,t)=>`<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
   return `<h3>Import cards into your collection</h3><p class="mut">Add many cards at once from a file or a pasted list. You see a preview first — nothing is added until you confirm.</p>
-  ${fxHistView()}<p class="mut" style="font-size:12px">You’ll choose where the cards were pulled from (one “Pulled from” for the whole import) on the last screen, before anything is added.</p>
+  ${(D.imports||[]).length?`<p class="mut" style="font-size:13px">Earlier imports and their artwork checks are in <a href="#" onclick="V.sub='imphist';render();scrollTo(0,0);return false">More → Import history</a>.</p>`:''}<p class="mut" style="font-size:12px">You’ll choose where the cards were pulled from (one “Pulled from” for the whole import) on the last screen, before anything is added.</p>
   <div class="row"><label class="btn pri">📄 Choose a file (CSV, text or Excel)<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls,text/*" hidden onchange="fxImpFile(this.files[0]);this.value=''"></label></div>
   <div class="f"><label>…or paste a list (one card per line)</label><textarea rows="5" placeholder="4 Lightning Bolt&#10;1 Sol Ring (C21) 263&#10;2x Llanowar Elves *F*" oninput="IMP.text=this.value">${esc(IMP.text)}</textarea></div><div class="row"><button onclick="fxImpText()">Read pasted list</button></div>
   <details class="g"><summary>📝 Template and guide for building your own file</summary><p class="mut">Download the template, fill in one card per row in Excel or Google Sheets, save it as CSV, then choose it above. Only the card name is required; set code + collector number pick the exact artwork.</p><div class="row"><button onclick="fxTemplate()">⬇ CSV template</button><button onclick="fxGuide()">⬇ Guide (text file)</button></div>
@@ -881,15 +882,17 @@ const fxPrintsUrl=n=>'https://api.scryfall.com/cards/search?order=released&uniqu
 function fxHistAdd(src,ok,ver){D.imports=D.imports||[];const id=Date.now().toString(36);
   D.imports.unshift({id,at:today(),src,kind:ver?'several':'bulk',items:ok.map(x=>({name:x.card.name,qty:x.qty,fin:x.fin||'',sid:x.card.id||''}))});return id}
 const fxHistLeft=h=>{const s=new Set();return (h?h.items:[]).filter(it=>{const e=findCard(it.name),k=norm(it.name);if(!e||e.custom||fxBasic(e)||e.verified||s.has(k))return false;s.add(k);return true})};
+/* More → History → Import history (owner request: its own page, separate from Bulk import). Shows a running artwork check from here, else the list. */
+function fxImpHistPage(){if(IMP.kind==='verify'&&IMP.vid&&IMP.stage==='pick')return fxQAPick();return fxHistView()||`<p class="mut">No imports yet. Cards added with More → Bulk import or “Add several cards at once” are listed here, so their artwork can be verified later.</p>`}
 function fxHistView(){const L=D.imports||[];if(!L.length)return '';const left=sum(L,h=>fxHistLeft(h).length);
-  return `<h3>Import history</h3><p class="mut">Every import is listed here. Cards whose artwork isn’t verified yet can be checked any time — stop whenever you like, the rest waits here.${left?` <b>${fxPl(left,'card')} still to verify.</b>`:''}</p>`+L.slice(0,30).map(h=>{const l=fxHistLeft(h),n=sum(h.items,x=>x.qty);
+  return `<p class="mut">Every import is listed here. Cards whose artwork isn’t verified yet can be checked any time — stop whenever you like, the rest waits here.${left?` <b>${fxPl(left,'card')} still to verify.</b>`:''}</p>`+L.slice(0,30).map(h=>{const l=fxHistLeft(h),n=sum(h.items,x=>x.qty);
     return `<div class="sec"><b>${esc(h.at)}</b> · ${esc(h.src)} <span class="mut">· ${fxPl(n,'card')} · ${h.kind==='several'?'several cards at once':'bulk import'}</span>
     <div class="row" style="align-items:center;margin-top:6px">${l.length?`<span style="flex:1">${l.length} not verified yet</span><button class="pri" style="flex:0 0 auto" onclick="fxHistVerify('${h.id}')">✓ Verify artwork</button>`:'<span style="flex:1;color:var(--gold)">✓ All artwork verified</span>'}<button style="flex:0 0 auto;padding:8px 12px" onclick="fxHistDel('${h.id}')" title="Remove from history">✕</button></div>
     <details><summary class="mut" style="font-size:13px">Cards in this import</summary><div style="font-size:13px;margin-top:4px">${h.items.map(x=>{const e=findCard(x.name);return `${x.qty}× ${e?cl(e.name):esc(x.name)+' <span class="mut">(no longer in your collection)</span>'}${e&&e.verified?' <span style="color:var(--gold)">✓</span>':''}`}).join('<br>')}</div></details></div>`}).join('')+(L.length>30?`<p class="mut">Showing the newest 30 of ${L.length}.</p>`:'')}
 async function fxHistDel(id){if(!(await ask('Remove this import from the history?\n\nYour cards stay in your collection — only this history entry goes.')))return;D.imports=(D.imports||[]).filter(h=>h.id!==id);save();render()}
 function fxHistVerify(id){const h=(D.imports||[]).find(x=>x.id===id),l=fxHistLeft(h);if(!l.length)return toast('All artwork in this import is already verified');
   Object.assign(IMP,{stage:'pick',kind:'verify',vid:id,qa:false,pi:0,vdone:0,items:l.map(it=>({name:findCard(it.name).name,qty:it.qty,sid:it.sid,stub:true,card:{name:it.name,id:it.sid,finishes:['nonfoil'],prints_search_uri:fxPrintsUrl(it.name)}}))});
-  go('more');V.sub='import';render();scrollTo(0,0)}
+  go('more');V.sub='imphist';render();scrollTo(0,0)}
 /* Search box above every artwork list (verify, several cards, artwork picker): matches set name, set code, collector number (“eld 123”, “#123”), year, finish (foil, etched), frame/border words (borderless, showcase, extended…). All words must match. */
 function fxPrintHay(p){return [p.set_name,p.set,p.collector_number,'#'+p.collector_number,p.set+' '+p.collector_number,p.set+p.collector_number,(p.released_at||'').slice(0,4),(p.finishes||[]).join(' ').replace('nonfoil','normal nonfoil'),(p.frame_effects||[]).join(' ').replace('extendedart','extended art'),p.border_color==='borderless'?'borderless':'',(p.promo_types||[]).join(' '),p.full_art?'full art':'',p.promo?'promo':'',p.lang&&p.lang!=='en'?p.lang:'',p.artist||''].join(' ').toLowerCase()}
 const fxPQ=(p,q)=>{q=String(q||'').toLowerCase().trim();if(!q)return true;const h=fxPrintHay(p);return q.replace(/#/g,' #').split(/\s+/).filter(Boolean).every(w=>h.includes(w))};
@@ -921,7 +924,7 @@ async function fxVerNext(saveIt){const x=IMP.items[IMP.pi];
 function fxVerStop(){const n=IMP.vdone||0,src=IMP.vsrc;
   if(src!=null){const l=(fxMissArt()[src]||[]).length;IMP.stage='idle';IMP.items=null;IMP.kind='';IMP.vsrc=null;go('more');V.sub='check';V.maOpen=true;render();scrollTo(0,0);
     return toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left in “${src}” for later`:` — “${src}” is done`}`:l?`${l} left in “${src}” — they wait in Data check`:'Done')}
-  const h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';render();scrollTo(0,0);
+  const h=(D.imports||[]).find(x=>x.id===IMP.vid),l=fxHistLeft(h).length;IMP.stage='idle';IMP.items=null;IMP.kind='';IMP.vid=null;go('more');V.sub='imphist';render();scrollTo(0,0);
   toast(n?`Artwork verified for ${fxPl(n,'card')}${l?` — ${l} left for later`:''}`:l?`${l} left to verify — they wait in Import history`:'Done')}
 /* ---------- Data check → cards that don't fit their “Pulled from” (owner request): a card listed under a WotC-set source (booster, bundle, precon…) whose name was never printed in that set (incl. its child sets, its parent and Special Guests) is probably the wrong card — e.g. a name typed for a card from another set. Uses each set's card list from Scryfall (saved lookups first). ---------- */
 let FXFIT=null;
