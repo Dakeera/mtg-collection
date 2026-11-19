@@ -1173,9 +1173,23 @@ const fxGrpHtml=G=>{const ks=Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:
 /* ---------- ✨ Optimize Deck: the Deck Generator’s tools pointed at an existing deck ---------- */
 let OPT={};
 function fxOptOpen(i){if(RO)return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your unsaved deck changes first');DRAFT=null;
-  if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:true,from:{},reply:'',res:null,step:'',err:''};
+  if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:false,from:{},reply:'',res:null,step:'',err:''};
   V.opt=i;render();scrollTo(0,0);const F=dfmt(D.decks[i].format);if(F&&F.leg)ensureLegal().then(()=>render())}
 function fxOptClose(){if(OPT.busy)aiCancel2();V.opt=null;OPT.step='';render();scrollTo(0,0)}
+/* Deck Generator / Optimize: which decks may cards be taken from (owner request) — “Include all decks” / “Include none” on top, then one checkbox per deck (Optimize leaves out the deck being optimized). Nothing ticked = only cards that aren’t in any deck. */
+const fxFromS=v=>v==='G'?G:OPT;
+function fxFromList(v){const S=fxFromS(v),skip=v==='OPT'?S.deck:-1;return D.decks.map((d,i)=>({d,i})).filter(x=>x.i!==skip)}
+function fxFromSet(v,i,on){const S=fxFromS(v),d=D.decks[i];if(!d)return;S.noDecks=false;if(on)S.from[d.name]=true;else delete S.from[d.name];if(v==='G')fxGenKeep();render()}
+function fxFromAll(v,on){const S=fxFromS(v);S.noDecks=false;S.from={};if(on)fxFromList(v).forEach(x=>S.from[x.d.name]=true);if(v==='G')fxGenKeep();render()}
+function fxFromUI(v,skip){const S=fxFromS(v),L=fxFromList(v);if(!L.length)return `<p class="mut">${v==='OPT'?'No other decks yet':'No decks yet'} — only cards that aren’t in a deck can be used.</p>`;
+  const on=L.filter(x=>S.from[x.d.name]).length;
+  return `<p class="mut" style="margin:2px 0 6px">Cards that aren’t in any deck can always be used. Which decks may cards also be taken from?</p>
+  <div style="border:1px solid var(--line,#333);border-radius:10px;padding:6px 10px">
+  <label style="margin:2px 0;font-weight:600"><input type="checkbox" ${on===L.length?'checked':''} onchange="fxFromAll('${v}',this.checked)"> Include all decks</label>
+  <label style="margin:2px 0;font-weight:600"><input type="checkbox" ${on===0?'checked':''} onchange="fxFromAll('${v}',!this.checked)"> Include none</label>
+  <div style="border-top:1px solid var(--line,#333);margin:6px 0 4px"></div>
+  ${L.map(({d,i})=>`<label style="margin:2px 0"><input type="checkbox" ${S.from[d.name]?'checked':''} onchange="fxFromSet('${v}',${i},this.checked)"> ${esc(d.name)} <span class="mut">· ${sum(d.cards)} cards</span></label>`).join('')}</div>
+  <p class="mut" style="margin:6px 0">${on?`${on} of ${fxPl(L.length,'deck')} included. Cards taken from a deck are recorded as a loan; that deck gets a red ★ until you return them or make it permanent.`:'No decks included — only cards that aren’t in any deck will be used.'}</p>`}
 const optAllowed=()=>OPT.noDecks?[]:D.decks.filter((d,k)=>k!==OPT.deck&&OPT.from[d.name]).map(d=>d.name);
 function optCols(d,F){const cmdC=F&&F.cmd&&d.commander&&findCard(d.commander);if(cmdC)return {cols:fxIdCols(cmdC),why:'the '+F.cmdLabel.toLowerCase()+'’s colors'};
   if(OPT.colors.length)return {cols:OPT.colors,why:'the colors you picked'};const s=new Set();d.cards.forEach(e=>{const c=findCard(e.name);if(c)fxCI(c).forEach(x=>s.add(x))});return {cols:CLR.filter(x=>s.has(x)),why:'the deck’s current colors',soft:true}}
@@ -1189,8 +1203,7 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=sum(L)
   ${F&&!F.leg?`<label>Card legality</label><select onchange="OPT.legal=this.value;render();if(OPT.legal)ensureLegal().then(()=>render())"><option value="">Any card — casual, no restrictions</option><optgroup label="Only cards that can be played in…">${FMTS.map(([k,n])=>`<option value="${k}" ${OPT.legal===k?'selected':''}>${n}</option>`).join('')}</optgroup></select>`:''}
   ${F&&F.cmd&&d.commander?`<p class="mut">Colors: only cards inside ${esc(d.commander)}’s color identity (${cc.cols.length?cc.cols.map(symImg).join(''):'colorless'}).</p>`:`<label>Colors <span class="mut">(none selected = keep the deck’s current colors)</span></label><div class="chips">${CLR.map(k=>`<button class="pipb ${OPT.colors.includes(k)?'on':''}" title="${CLRN[k]}" onclick="OPT.colors=OPT.colors.includes('${k}')?OPT.colors.filter(x=>x!=='${k}'):[...OPT.colors,'${k}'];render()">${symImg(k)}</button>`).join('')}</div>`}
   <label>Where may new cards come from?</label>
-  <label style="margin:2px 0"><input type="checkbox" ${OPT.noDecks?'checked':''} onchange="OPT.noDecks=this.checked;render()">Don't use cards already in other decks</label>
-  ${OPT.noDecks?'<p class="mut">Only cards that are not in any deck will be suggested.</p>':`<p class="mut">Cards not in any deck are always available. Also allow taking cards from:</p>${D.decks.map((x,k)=>k===i?'':`<label style="margin:2px 0"><input type="checkbox" ${OPT.from[x.name]?'checked':''} onchange="OPT.from[${JSON.stringify(x.name).replace(/"/g,'&quot;')}]=this.checked">${esc(x.name)} <span class="mut">· ${sum(x.cards)} cards</span></label>`).join('')||'<p class="mut">No other decks.</p>'}<p class="mut">Cards taken from a deck are recorded as a loan; that deck gets a red ★ until you return them or make it permanent.</p>`}
+  ${fxFromUI('OPT',i)}
   <label>Goal</label><textarea rows="3" oninput="OPT.goal=this.value" placeholder="How do you want to optimize?">${esc(OPT.goal)}</textarea>
   <p class="mut" style="font-size:12px;margin:4px 0 0">Describe a problem (“runs out of cards”, “too slow”), or a play style or ability to balance. Leave it blank and the AI looks for a more optimal build overall.</p>
   <label><input type="checkbox" ${OPT.own?'checked':''} onchange="OPT.own=this.checked">Only use cards I own</label></div>
@@ -1623,7 +1636,7 @@ function fxOverrideAuto(i){const d=D.decks[i];if(!d||!d.override||deckIssues(i).
 function aiCmdChoices(F){const al=aiAllowed(),cols=aiColors();
   return D.cards.filter(c=>isReal(c)&&cmdOK(c,F)&&okLegal(c)&&aiAvail(c,al)>0&&(!cols.length||okColor(c,cols)))}
 async function aiReset(){if(!(await ask('Start over?\n\nThis clears the deck type, colors, where cards may come from, theme, commander, the AI reply and the preview.\n\nYour saved API key and model stay as they are.\n\nOK = clear everything\nCancel = keep it')))return;
-  Object.assign(G,{fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},busy:false,res:null,reply:'',err:''});render();scrollTo(0,0);toast('Deck Generator cleared')}
+  Object.assign(G,{fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:false,from:{},busy:false,res:null,reply:'',err:''});render();scrollTo(0,0);toast('Deck Generator cleared')}
 
 /* ---------- Add card tab: create a custom card by hand ---------- */
 const fxCustomAddBtn=()=>`<div class="sec" style="margin-top:14px"><h4>Custom card</h4><p class="mut" style="font-size:12px;margin:4px 0 8px">For proxies, homebrew or playtest cards that aren’t on Scryfall. They go in your ★ Custom cards group.</p><div class="row"><button class="pri" onclick="fxCustomNew()">★ Add a custom card</button></div></div>`;

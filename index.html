@@ -790,9 +790,9 @@ async function commit(){
 }
 
 /* ---------- Deck Generator (no accounts, no stored keys) ---------- */
-let G={fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:true,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''};
+let G={fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:false,from:{},prov:'anthropic',model:'claude-sonnet-5-5',busy:false,res:null,reply:'',err:''};
 /* Deck Generator remembers your last choices on this device (deck type, legality, colors, where cards come from, theme, commander); ↺ Start over clears them */
-const GKEEP=['fmt','legal','theme','cmd','colors','rand','own','noDecks','from'];try{const g=JSON.parse(localStorage.getItem('mtg_gen_v1')||'null');if(g)GKEEP.forEach(k=>{if(g[k]!==undefined)G[k]=g[k]})}catch(e){}
+const GKEEP=['fmt','legal','theme','cmd','colors','rand','own','noDecks','from'];try{const g=JSON.parse(localStorage.getItem('mtg_gen_v1')||'null');if(g)GKEEP.forEach(k=>{if(g[k]!==undefined)G[k]=g[k]})}catch(e){}if(G.noDecks){G.from={};G.noDecks=false}
 const fxGenKeep=()=>{try{const o={};GKEEP.forEach(k=>o[k]=G[k]);localStorage.setItem('mtg_gen_v1',JSON.stringify(o))}catch(e){}};let AIKEY=fxKeyGet('anthropic');fxModelLoad();
 const MODELS={anthropic:'claude-sonnet-5-5',openai:'gpt-4o',gemini:'gemini-3.6-flash'};
 const CLR=['W','U','B','R','G'],CLRN={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},N2L={White:'W',Blue:'U',Black:'B',Red:'R',Green:'G'};
@@ -816,8 +816,7 @@ function vAI(m){
   <label>Colors <span class="mut">(none selected = any colors)</span></label><div class="chips">${CLR.map(k=>`<button class="pipb ${G.colors.includes(k)?'on':''}" title="${CLRN[k]}" onclick="aiColor('${k}')">${symImg(k)}</button>`).join('')}<button class="${G.rand?'on':''}" onclick="aiRand()">🎲 Random</button></div>
   ${G.rand?`<p class="mut">The app picks 1–3 colors at random each time you build${G.rc?' — this time: '+G.rc.map(symImg).join(''):''}.</p>`:''}
   <label>Where may cards come from?</label>
-  <label style="margin:2px 0"><input type="checkbox" ${G.noDecks?'checked':''} onchange="G.noDecks=this.checked;render()">Don't use cards already in decks</label>
-  ${G.noDecks?'<p class="mut">Only cards that are not in any deck will be used.</p>':`<p class="mut">Cards not in any deck are always available. Also allow taking cards from:</p>${D.decks.map((d,i)=>`<label style="margin:2px 0"><input type="checkbox" ${G.from[d.name]?'checked':''} onchange="aiFrom(${i},this.checked)">${esc(d.name)} <span class="mut">· ${sum(d.cards)} cards</span></label>`).join('')||'<p class="mut">No decks yet.</p>'}<p class="mut">Cards taken from a deck are recorded as a loan; that deck gets a red ★ until you return them or make it permanent.</p>`}
+  ${fxFromUI('G',-1)}
   <label>Theme / strategy</label><textarea rows="3" oninput="G.theme=this.value" placeholder="e.g. aggressive Goblins with burn, or lifegain built around my angels">${esc(G.theme)}</textarea>
   ${F&&F.cmd?`<label>${esc(F.cmdLabel)} (optional)</label><input value="${esc(G.cmd)}" oninput="G.cmd=this.value" list="gcl" placeholder="Leave blank to let the AI choose"><datalist id="gcl">${aiCmdChoices(F).map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist>`:''}
   <label><input type="checkbox" ${G.own?'checked':''} onchange="G.own=this.checked">Only use cards I own</label></div>
