@@ -1511,7 +1511,7 @@ function fxCardIssues(c,qty,F,cmdC){if(!F||!c)return [];const out=[],st=F.leg&&c
   if(qty>cap&&cap<999)out.push(st==='r'?{kind:'restricted',title:`Restricted in ${F.k}`,msg:`${c.name} is on the ${F.k} restricted list: a deck may include only 1 copy. This deck has ${qty}.`,cap}:{kind:'copies',title:`Too many copies (${qty})`,msg:`${F.single?F.k+' is a singleton format: only 1 copy of each card, except basic lands.':F.k+' allows up to '+cap+' copies of a card, except basic lands.'} This deck has ${qty}.`,cap});
   if(F.cmd&&cmdC&&norm(c.name)!==norm(cmdC.name)){const cc=fxIdCols(cmdC);if(!okColor(c,cc))out.push({kind:'color',title:'Outside the commander’s colors',msg:`${F.k} decks may only use cards inside the ${F.cmdLabel.toLowerCase()}’s color identity (${cc.length?cc.map(x=>CLRN[x]).join(', '):'colorless'}). ${c.name} is ${fxCI(c).map(x=>CLRN[x]).join('/')||'colorless'}.`})}
   return out}
-function deckIssues(i){const d=D.decks[i],F=d&&dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),ign=d.ok||[],out=[],cmdC=d.commander&&findCard(d.commander),
+function deckIssues(i,Fo){const d=D.decks[i],F=Fo||(d&&dfmt(d.format));if(!d||!F)return [];const L=fxDeckCards(i),tot=sum(L),ign=Fo&&Fo.k!==d.format?[]:(d.ok||[]),out=[],cmdC=d.commander&&findCard(d.commander),
   add=(card,x,fixes)=>out.push(Object.assign({card,fixes,ign:ign.includes(x.kind+'|'+norm(card||''))},x));
   if(tot>F.n)add('',{kind:'size',title:`${tot} cards — ${F.k} decks hold ${F.n}`,msg:`${F.single?F.k+' decks must have exactly '+F.n+' cards.':'This app keeps '+F.k+' decks at '+F.n+' cards.'} This deck has ${tot-F.n} too many.`},[{t:'Open the card picker',a:'pick'}]);
   if(F.cmd){if(!d.commander)add('',{kind:'nocmd',title:`No ${F.cmdLabel.toLowerCase()} chosen`,msg:`${F.k} decks are built around a ${F.cmdLabel.toLowerCase()} (${F.cmdRule}). Choose one so the color rules can be checked.`},[{t:'Choose one',a:'edit'}]);
@@ -1542,6 +1542,31 @@ async function fxLegalCheck(i,list,quiet){const d=D.decks[i];if(!d||RO)return tr
   const ok=await ensureLegal(need);
   if(ok){d.legPending=false;save();render();if(!quiet)toast(`${d.name}: rules checked`);return true}
   if(!d.legPending){d.legPending=true;save()}render();return false}
+/* ---------- Deck page → 🎮 Game modes (owner request): for every deck type, how many of the deck's cards are legal there and whether the whole deck fits its rules (size, copies, commander…); “Switch to …” changes the deck type after approval (card target, sleeve label, rule checks follow). ---------- */
+function fxModeStat(i,F){const d=D.decks[i],L=fxDeckCards(i),n=sum(L);let ok=0,unk=0;
+  L.forEach(e=>{const c=findCard(e.name);if(!F.leg||c&&(c.type==='Basic Land'||fxBasic(c))){ok+=e.qty;return}if(!c||c.custom)return;if(!c.leg){unk+=e.qty;return}const st=c.leg[F.leg];if(st==='l'||st==='r')ok+=e.qty});
+  const iss=deckIssues(i,F).filter(x=>!x.ign);return {n,ok,unk,iss,fits:!iss.length&&!unk&&ok===n&&n===F.n}}
+function fxModesBox(i){const d=D.decks[i];if(!d)return '';const cur=dfmt(d.format),R=DFMT.map(F=>({F,s:fxModeStat(i,F)})),fits=R.filter(r=>r.s.fits&&r.F.leg),unk=Math.max(0,...R.map(r=>r.s.unk));
+  const row=({F,s})=>{const me=cur&&F.k===cur.k,short=s.n<F.n?F.n-s.n:0;
+    const st=s.fits?'<span style="color:#2ecc71">✓ ready to play</span>':s.iss.length&&!s.unk?`<span style="color:#f39c12">⚠ ${fxPl(s.iss.length,'issue')}</span>`:s.unk?`<span class="mut">${s.unk} not checked yet</span>`:s.iss.length?`<span style="color:#f39c12">⚠ ${fxPl(s.iss.length,'issue')}</span>`:short?`<span class="mut">${short} cards short of ${F.n}</span>`:'';
+    return `<div class="kv" style="align-items:center;${me?'border-left:3px solid var(--gold);padding-left:8px':''}"><span><b>${esc(F.k)}</b>${me?' <span class="mut">(this deck)</span>':''}<br><span class="mut" style="font-size:12px;font-weight:400">${F.leg?`${s.ok} of ${s.n} cards legal`:'any cards'} · ${F.single?'exactly '+F.n:F.n} cards</span> ${st?`<span style="font-size:12px">${st}</span>`:''}</span>${me||RO?'':`<button style="padding:6px 10px;flex:0 0 auto" onclick="fxModeSet(${i},${esc(JSON.stringify(F.k))})">Switch</button>`}</div>`};
+  const gs=[...new Set(DFMT.map(f=>f.g))];
+  return `<details class="sec" ${V.modesOpen?'open':''} ontoggle="V.modesOpen=this.open"><summary><b>🎮 Game modes</b> <span class="mut" style="font-size:13px">· ${fits.length?`ready for ${fits.slice(0,3).map(r=>esc(r.F.k)).join(', ')}${fits.length>3?` +${fits.length-3} more`:''}`:'not yet ready for an official format'}</span></summary>
+  <p class="mut" style="margin:6px 0">How many of this deck’s cards are legal in each game mode, and whether the whole deck fits that mode’s rules. “Switch” changes this deck’s type.</p>
+  ${unk&&!RO?`<div class="row" style="align-items:center;margin-bottom:6px"><span class="mut" style="flex:1;font-size:13px">Some cards haven’t been checked yet (needs internet).</span><button style="flex:0 0 auto" onclick="fxModeCheck(${i})">Check now</button></div>`:''}
+  ${gs.map(g=>`<p class="mut" style="margin:10px 0 2px;font-size:12px;text-transform:uppercase">${esc(g)}</p>`+R.filter(r=>r.F.g===g).map(row).join('')).join('')}</details>`}
+async function fxModeCheck(i){const L=fxDeckCards(i).map(e=>findCard(e.name)).filter(c=>c&&isReal(c)&&!c.custom&&!c.leg&&!c.legMiss);if(!L.length)return render();toast('Checking legality…');await fxLegalCheck(i,L);render()}
+async function fxModeSet(i,k){const d=D.decks[i],F=dfmt(k),O=dfmt(d.format);if(!d||!F||RO)return;const s=fxModeStat(i,F),sl=sleeveOf(d);
+  const lines=[`Card target: ${O?O.n:'—'} → ${F.n}${F.single?' (exactly, 1 copy of each card except basic lands)':` (up to ${F.max||4} copies of a card)`}`];
+  if(F.leg)lines.push(`${s.ok} of ${s.n} cards are legal in ${F.k}${s.unk?` (${s.unk} not checked yet)`:''}`);
+  if(F.cmd)lines.push(d.commander?`${F.cmdLabel}: ${d.commander}${findCard(d.commander)&&!cmdOK(findCard(d.commander),F)?` — can’t be the ${F.cmdLabel.toLowerCase()} in ${F.k} (${F.cmdRule})`:''}`:`You’ll need to choose a ${F.cmdLabel.toLowerCase()} (${F.cmdRule})`);
+  if(sl)lines.push(`Sleeves label: ${sleeveLabel(d.name,F.k)}`);
+  if(s.iss.length)lines.push(`${fxPl(s.iss.length,'rule issue')} will be shown on the deck page to fix or ignore`);
+  if(!(await ask(`Switch ${d.name} to ${F.k}?\n\n${O?O.k:'No type'} → ${F.k}\n\n${lines.map(x=>'• '+x).join('\n')}\n\nNo cards are added or removed.\n\nOK = Switch\nCancel = Keep ${O?O.k:'as is'}`)))return;
+  const old=d.format;d.format=F.k;if(sl){sl.deck=sleeveLabel(d.name,F.k);sl.inUse=Math.min(F.n,sl.total)}d.legPending=false;
+  logEdit(d.name,'Deck type',old||'—',F.k);save();fxOverrideAuto(i);render();toast(`${d.name} is now a ${F.k} deck`);
+  if(F.leg&&fxDeckNeedsLeg(i).length)fxLegalCheck(i,null,true).then(()=>render())}
+
 function fxLegalBox(i){const d=D.decks[i],need=fxDeckNeedsLeg(i);
   if(need.length&&!RO&&!(V.legTry||{})[d.name]){V.legTry=V.legTry||{};V.legTry[d.name]=1;setTimeout(()=>fxLegalCheck(i,null,true),0)}
   if(!need.length&&d.legPending){d.legPending=false;save()}
