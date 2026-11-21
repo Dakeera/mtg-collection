@@ -87,9 +87,9 @@ function fxAllocDiff(d,before,inG,outG,gen){const after=d.srcs||{},keys=new Set(
   keys.forEach(k=>{const b=(before||{})[k]||{},a=after[k]||{},nm=(findCard(k)||{}).name||(d.cards.find(e=>norm(e.name)===k)||{}).name||k;
     new Set([...Object.keys(b),...Object.keys(a)]).forEach(s=>{const dq=(a[s]||0)-(b[s]||0);if(!dq)return;const G=dq>0?inG:outG;if(G){if(gen)fxGenPut(G,findCard(k),s,Math.abs(dq),nm);else fxGrpPut(G,fxStoreLabel(s),Math.abs(dq),nm,FXPULL(s))}})})}
 const FXPULL=s=>[`pulled from ${s}`];
-/* Deck Generator / deck page breakdown (owner request): every “Pulled from” is its own group — Bulk Box 1, Singles Orders, Trade… are NOT merged into “Bulk & singles” here; a WotC-set source stays under its set with the pack named on the line; basic lands are one “Basic lands” group (which source they come from is chosen automatically in the background) */
+/* Deck Generator / deck page breakdown (owner request): every “Pulled from” is its own group — Bulk Box 1, Singles Orders, Trade, a Lorwyn Eclipsed pack… each its own group, never merged by storage or by WotC set (owner rule); basic lands are one “Basic lands” group (which source they come from is chosen automatically in the background) */
 const FXBASICS='Basic lands';
-const fxGenKey=s=>{const st=fxStoreLabel(s);return st&&st!==FX_OTHER?[st,FXPULL(s)]:[s,[]]};
+const fxGenKey=s=>[s,[]];
 function fxGenPut(G,c,s,q,name){if(c&&fxBasic(c))return fxGrpPut(G,FXBASICS,q,c.name);const [k,alt]=fxGenKey(s);fxGrpPut(G,k,q,c?c.name:name||'?',alt)}
 function fxFreeBySrc(c){const U=fxSrcUse(c),o={};for(const s in U){const f=U[s].own-sum(U[s].decks,x=>x[1]);if(f>0)o[s]=f}return o}
 function fxPlanSrcs(c,n){const F=fxFreeBySrc(c),out=[];while(n>0){const s=Object.keys(F).sort((a,b)=>F[b]-F[a])[0];if(!s||F[s]<=0){out.push([cardSources(c)[0]||'Unknown',n]);break}const t=Math.min(n,F[s]);out.push([s,t]);F[s]-=t;n-=t}return out}
