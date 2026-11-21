@@ -1220,8 +1220,10 @@ const fxGrpPut=(G,k,q,name,alt)=>{if(q>0)(G[k]=G[k]||[]).push({q,name,alt:alt||[
 /* Grouped card lists (pull lists, generator check, deck “Where the cards come from”) drawn as a light spreadsheet-style table (owner request): one header row per place with its total, then Qty | Card rows with thin lines; the same card twice in a place is merged */
 const fxGrpOrd=G=>Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||(a===FXBASICS)-(b===FXBASICS)||(/^(🛒|📦|Not assigned)/.test(a))-(/^(🛒|📦|Not assigned)/.test(b))||a.localeCompare(b,undefined,{numeric:true}));
 function fxGrpRows(L){const m=new Map();L.forEach(x=>{const k=x.name+'|'+x.alt.join(',');if(m.has(k))m.get(k).q+=x.q;else m.set(k,{...x})});return [...m.values()].sort((a,b)=>a.name.localeCompare(b.name))}
+/* colors needed to cast a card, as mana symbols (owner request): each colored symbol in its cost, ◇ colorless symbol when the cost has none, nothing for lands */
+function fxPips(name){const c=findCard(name);if(!c||/\bLand\b/.test(c.type||''))return '';const ci=fxCI({cost:c.cost||'',text:''});return ci.length?ci.map(symImg).join(''):symImg('C')}
 const fxGrpHtml=G=>{const ks=fxGrpOrd(G);if(!ks.length)return '<p class="mut">None.</p>';
-  return `<table class="gtab">${ks.map(k=>`<tr class="gh"><th colspan="2">${esc(k)}</th><th class="gq">${sum(G[k],x=>x.q)}</th></tr>`+fxGrpRows(G[k]).map(x=>`<tr><td class="gq">${x.q}×</td><td colspan="2">${esc(x.name)}${x.alt.length?`<span class="gd">${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ').replace(/^pulled from /,'')):'or '+esc(x.alt.join(' / '))}</span>`:''}</td></tr>`).join('')).join('')}</table>`};
+  return `<table class="gtab">${ks.map(k=>`<tr class="gh"><th colspan="2">${esc(k)}</th><th class="gq">${sum(G[k],x=>x.q)}</th></tr>`+fxGrpRows(G[k]).map(x=>`<tr><td class="gq">${x.q}×</td><td colspan="2"><span class="gp">${fxPips(x.name)}</span>${esc(x.name)}${x.alt.length?`<span class="gd">${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ').replace(/^pulled from /,'')):'or '+esc(x.alt.join(' / '))}</span>`:''}</td></tr>`).join('')).join('')}</table>`};
 
 /* ---------- ✨ Optimize Deck: the Deck Generator’s tools pointed at an existing deck ---------- */
 let OPT={};
