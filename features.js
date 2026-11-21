@@ -83,10 +83,24 @@ function fxAllocAll(){if(!D||RO)return;const own=new Map();
     if(!Object.keys(m).length)delete d.srcs[k]});if(d.srcs&&!Object.keys(d.srcs).length)delete d.srcs})}
 const fxSrcSnap=d=>JSON.parse(JSON.stringify(d&&d.srcs||{}));
 /* pull list lines from what the allocation changed: added copies come FROM a source, removed ones go BACK to it */
-function fxAllocDiff(d,before,inG,outG){const after=d.srcs||{},keys=new Set([...Object.keys(before||{}),...Object.keys(after)]);
+function fxAllocDiff(d,before,inG,outG,gen){const after=d.srcs||{},keys=new Set([...Object.keys(before||{}),...Object.keys(after)]);
   keys.forEach(k=>{const b=(before||{})[k]||{},a=after[k]||{},nm=(findCard(k)||{}).name||(d.cards.find(e=>norm(e.name)===k)||{}).name||k;
-    new Set([...Object.keys(b),...Object.keys(a)]).forEach(s=>{const dq=(a[s]||0)-(b[s]||0);if(!dq)return;const G=dq>0?inG:outG;if(G)fxGrpPut(G,fxStoreLabel(s),Math.abs(dq),nm,FXPULL(s))})})}
+    new Set([...Object.keys(b),...Object.keys(a)]).forEach(s=>{const dq=(a[s]||0)-(b[s]||0);if(!dq)return;const G=dq>0?inG:outG;if(G){if(gen)fxGenPut(G,findCard(k),s,Math.abs(dq),nm);else fxGrpPut(G,fxStoreLabel(s),Math.abs(dq),nm,FXPULL(s))}})})}
 const FXPULL=s=>[`pulled from ${s}`];
+/* Deck Generator / deck page breakdown (owner request): every “Pulled from” is its own group — Bulk Box 1, Singles Orders, Trade… are NOT merged into “Bulk & singles” here; a WotC-set source stays under its set with the pack named on the line; basic lands are one “Basic lands” group (which source they come from is chosen automatically in the background) */
+const FXBASICS='Basic lands';
+const fxGenKey=s=>{const st=fxStoreLabel(s);return st&&st!==FX_OTHER?[st,FXPULL(s)]:[s,[]]};
+function fxGenPut(G,c,s,q,name){if(c&&fxBasic(c))return fxGrpPut(G,FXBASICS,q,c.name);const [k,alt]=fxGenKey(s);fxGrpPut(G,k,q,c?c.name:name||'?',alt)}
+function fxFreeBySrc(c){const U=fxSrcUse(c),o={};for(const s in U){const f=U[s].own-sum(U[s].decks,x=>x[1]);if(f>0)o[s]=f}return o}
+function fxPlanSrcs(c,n){const F=fxFreeBySrc(c),out=[];while(n>0){const s=Object.keys(F).sort((a,b)=>F[b]-F[a])[0];if(!s||F[s]<=0){out.push([cardSources(c)[0]||'Unknown',n]);break}const t=Math.min(n,F[s]);out.push([s,t]);F[s]-=t;n-=t}return out}
+function fxDeckSrcBox(i){const d=D.decks[i];if(!d||!d.cards.length)return '';const G={};
+  d.cards.forEach(e=>{const c=findCard(e.name),k=norm(e.name),a=(d.srcs||{})[k]||{};let used=0;
+    for(const s in a){if(a[s]>0){fxGenPut(G,c,s,a[s],e.name);used+=a[s]}}
+    (D.loans||[]).filter(l=>l.status==='active'&&l.to===d.name&&norm(l.card)===k).forEach(l=>{fxGrpPut(G,'From deck: '+l.from,l.qty,e.name);used+=l.qty});
+    (d.miss||[]).filter(m=>norm(m.name)===k).forEach(m=>{fxGrpPut(G,m.st==='ordered'?'📦 Ordered (not here yet)':'🛒 Missing (not owned)',m.qty,e.name);used+=m.qty});
+    const rest=e.qty-used;if(rest>0){if(c&&(fxBasic(c)||!RO&&cardSources(c).length))fxGenPut(G,c,cardSources(c)[0]||'Unknown',rest,e.name);else fxGrpPut(G,'Not assigned yet',rest,e.name)}});
+  const n=Object.keys(G).length;
+  return `<details class="sec" ${V.dsrcOpen===false?'':'open'} ontoggle="V.dsrcOpen=this.open"><summary><b>📦 Where the cards come from</b> <span class="mut" style="font-size:13px">· ${fxPl(n,'place')}</span></summary><p class="mut" style="margin:6px 0;font-size:13px">Each “Pulled from” separately · basic lands together (their box is picked automatically)${RO?'':' · change a card’s source on its card page'}.</p>${fxGrpHtml(G)}</details>`}
 /* card page: copies per “Pulled from”, and which deck uses them */
 function fxSrcUse(c){const k=norm(c.name),own=fxSrcOwned(c),rows={};for(const s in own)rows[s]={own:own[s],decks:[]};
   D.decks.forEach(d=>{const a=d.srcs&&d.srcs[k];if(a)for(const s in a){rows[s]=rows[s]||{own:0,decks:[]};rows[s].decks.push([d.name,a[s]])}});return rows}
@@ -182,8 +196,8 @@ function fxPullSplash(deck,inG,outG){
   const txt=(t,G)=>tot(G)?`${t}\n`+ord(G).map(k=>`  ${k}\n`+G[k].map(x=>`    ${x.q}x ${x.name}${x.alt.length&&/^pulled from /.test(x.alt[0])?` (${x.alt.join(', ')})`:''}`).join('\n')).join('\n')+'\n':'';
   window.FXPULL=`${deck} — pull list\n\n`+txt('CARDS ADDED',inG)+'\n'+txt('CARDS REMOVED',outG);
   openM(`<div class="pull"><h3>✓ ${esc(deck)} updated</h3><p class="mut">Your pull list, grouped by where each card is stored.</p>
-  <h4>Cards added (${tot(inG)}) — pull these from:</h4>${grp(inG)||'<p class="mut">None.</p>'}
-  <h4>Cards removed (${tot(outG)}) — put these back in:</h4>${grp(outG)||'<p class="mut">None.</p>'}
+  <h4>Cards added (${tot(inG)}) — pull these from:</h4>${fxGrpHtml(inG)}
+  <h4>Cards removed (${tot(outG)}) — put these back in:</h4>${fxGrpHtml(outG)}
   <div class="row"><button onclick="navigator.clipboard.writeText(window.FXPULL).then(()=>toast('Pull list copied'),()=>toast('Could not copy'))">📋 Copy list</button><button class="pri" onclick="closeM()">Done</button></div></div>`)}
 
 /* ---------- in-app camera with a card-shaped frame ---------- */
@@ -1203,7 +1217,11 @@ function fxLockCheck(){const on=!!document.querySelector('.modal.open,#cam,#apfu
 /* Returns why a card may not be added under the deck’s rules (banned, not legal, outside commander colors, custom card in an official format), or ''. */
 function fxRuleBlock(c,qty,F,cmdC){const x=fxCardIssues(c,qty,F,cmdC).find(i=>['banned','notlegal','color','custom'].includes(i.kind));return x?x.title.toLowerCase():''}
 const fxGrpPut=(G,k,q,name,alt)=>{if(q>0)(G[k]=G[k]||[]).push({q,name,alt:alt||[]})};
-const fxGrpHtml=G=>{const ks=Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b));return ks.length?ks.map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ')):'or '+esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join(''):'<p class="mut">None.</p>'};
+/* Grouped card lists (pull lists, generator check, deck “Where the cards come from”) drawn as a light spreadsheet-style table (owner request): one header row per place with its total, then Qty | Card rows with thin lines; the same card twice in a place is merged */
+const fxGrpOrd=G=>Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||(a===FXBASICS)-(b===FXBASICS)||(/^(🛒|📦|Not assigned)/.test(a))-(/^(🛒|📦|Not assigned)/.test(b))||a.localeCompare(b,undefined,{numeric:true}));
+function fxGrpRows(L){const m=new Map();L.forEach(x=>{const k=x.name+'|'+x.alt.join(',');if(m.has(k))m.get(k).q+=x.q;else m.set(k,{...x})});return [...m.values()].sort((a,b)=>a.name.localeCompare(b.name))}
+const fxGrpHtml=G=>{const ks=fxGrpOrd(G);if(!ks.length)return '<p class="mut">None.</p>';
+  return `<table class="gtab">${ks.map(k=>`<tr class="gh"><th colspan="2">${esc(k)}</th><th class="gq">${sum(G[k],x=>x.q)}</th></tr>`+fxGrpRows(G[k]).map(x=>`<tr><td class="gq">${x.q}×</td><td colspan="2">${esc(x.name)}${x.alt.length?`<span class="gd">${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ').replace(/^pulled from /,'')):'or '+esc(x.alt.join(' / '))}</span>`:''}</td></tr>`).join('')).join('')}</table>`};
 
 /* ---------- ✨ Optimize Deck: the Deck Generator’s tools pointed at an existing deck ---------- */
 let OPT={};
