@@ -1308,6 +1308,18 @@ function aiNameIdeas(r){const out=[],add=n=>{n=String(n||'').replace(/\s+/g,' ')
   else if(guild){add(`${guild} ${suf[0]}`);add(`${guild} ${suf[1]}`)}
   if(cmd&&!words.length)add(`${cmd}'s ${suf[2]}`);
   return out.slice(0,6).map(n=>{let x=n,k=2;while(D.decks.some(d=>d.name.toLowerCase()===x.toLowerCase()))x=`${n} ${k++}`;return x})}
+/* Synergy (owner request after a casual deck got Command Tower): commander-only cards never reach a deck without a commander, every card in the prompt lists carries a short rules-text summary so the AI can see what it does, and both prompts carry the same deck-quality rules */
+const fxCmdOnly=c=>/\bcommander\b|command zone/i.test(String(c&&c.text||'').replace(/\([^)]*\)/g,''))||/^Command Tower$/i.test(c&&c.name||'');
+const fxTxtShort=c=>{const t=String(c.text&&c.text!=='None'?c.text:'').replace(/\([^)]*\)/g,'').replace(/\s*\n\s*/g,'; ').replace(/\s+/g,' ').trim();return t.length>110?t.slice(0,107)+'…':t};
+const fxLandGoal=n=>n<=40?'16–17':n<=60?'22–25':n<=80?'30–32':'35–38';
+function fxQualityRules(F,n,cols){return `DECK QUALITY (important — every card must earn its place):
+- Every card must be useful in a ${F.k} game.${F.cmd?'':' This deck has NO commander, so never include cards that refer to a commander or the command zone (e.g. Command Tower, Arcane Signet, Commander’s Sphere) — they do nothing here.'}
+- Build a coherent deck: pick cards that work together toward one clear plan (the theme; shared creature types; a mechanic such as tokens, +1/+1 counters, lifegain, sacrifice, graveyard, spells or artifacts). Avoid unrelated filler and cards that need things the deck doesn’t have (e.g. a card that rewards Goblins in a deck with no Goblins).
+- Mana: about ${fxLandGoal(n)} lands${F.cmd?' plus a few mana rocks/ramp':''}. Only lands that make the deck’s colors${cols&&cols.length?' ('+cols.map(x=>CLRN[x]).join(', ')+')':''} or colorless utility lands that help the plan — never lands whose only colored mana is outside the deck’s colors. Keep the colored mana symbols castable with that land base.
+- Curve: mostly 1–3 mana spells, some 4s, only a few at 5+ unless the theme is ramp.
+- Include some interaction (removal) and card advantage when the collection allows it.
+- Use the rules text given for each card to judge what it really does; don’t guess from the name.
+- In the explanation after ---, name the main synergies.`}
 let OPT={};
 function fxOptOpen(i){if(RO)return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your unsaved deck changes first');DRAFT=null;
   if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:false,from:{},side:fxSideN(D.decks[i].cards)>0,reply:'',res:null,step:'',err:''};
@@ -1352,14 +1364,16 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=fxMain
   if(OPT.res)fxOptPrev()}
 function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=fxMainN(d.cards);
   d.cards.forEach(e=>{const k=norm(e.name);inDeck[k]=(inDeck[k]||0)+e.qty});
-  const desc=c=>`${c.type} | ${c.colors} | MV ${c.cmc}`;
-  const deckRows=d.cards.filter(e=>fxMainQ(e)>0).map(e=>{const c=findCard(e.name);return `${fxMainQ(e)} ${e.name}${c?' | '+desc(c):''}`}),sideRows=d.cards.filter(e=>e.side>0).map(e=>{const c=findCard(e.name);return `${e.side} ${e.name}${c?' | '+desc(c):''}`}),sok=fxSideOK(d)&&!!OPT.side;
-  const rows=D.cards.filter(c=>isReal(c)&&optLegal(c,F)&&!(F.leg&&c.custom)&&(!cc.cols.length||okColor(c,cc.cols)))
-    .map(c=>({c,a:Math.min(aiAvail(c,al),Math.max(0,copyCap(c,F)-(inDeck[norm(c.name)]||0)))})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${desc(c)} | available ${a}`);
+  const desc=c=>`${c.type} | ${c.colors} | MV ${c.cmc}`,txt=c=>{const t=fxTxtShort(c);return t?' | '+t:''};
+  const deckRows=d.cards.filter(e=>fxMainQ(e)>0).map(e=>{const c=findCard(e.name);return `${fxMainQ(e)} ${e.name}${c?' | '+desc(c)+txt(c):''}`}),sideRows=d.cards.filter(e=>e.side>0).map(e=>{const c=findCard(e.name);return `${e.side} ${e.name}${c?' | '+desc(c):''}`}),sok=fxSideOK(d)&&!!OPT.side;
+  const rows=D.cards.filter(c=>isReal(c)&&optLegal(c,F)&&!(F.leg&&c.custom)&&(F.cmd||!fxCmdOnly(c))&&(!cc.cols.length||okColor(c,cc.cols)))
+    .map(c=>({c,a:Math.min(aiAvail(c,al),Math.max(0,copyCap(c,F)-(inDeck[norm(c.name)]||0)))})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${desc(c)} | available ${a}${txt(c)}`);
   const legal=F.leg?F.k:OPT.legal?(FMTS.find(x=>x[0]===OPT.legal)||[])[1]:'';
   return `You are an expert Magic: The Gathering deck builder. Improve my existing ${F.k} deck. Follow the official ${F.k} deck-building rules exactly.
 Deck rules: ${fmtRuleText(F)}${F.prompt?' '+F.prompt:''}
 Deck: ${d.name}${d.commander?`\n${F.cmdLabel||'Commander'}: ${d.commander} (keep it — never remove it)`:''}
+${fxQualityRules(F,F.n||tot,cc.cols)}
+- Also look for cards already in the deck that don’t fit these rules (e.g. commander-only cards in a deck without a commander, off-color lands, cards with no synergy) and swap them out.
 Goal: ${OPT.goal.trim()||'Review the cards available in my collection and the cards already in my deck, and find a more optimal build: better synergy, a smoother mana curve, the right number of lands and better card quality. Only change what clearly improves the deck.'}
 Format legality: ${legal?'only cards legal in '+legal+' (the list below is already filtered; a card marked restricted may appear only once)':'none — any card is fine'}
 Colors: ${cc.cols.length?(cmdC?'only cards inside the '+(F.cmdLabel||'commander').toLowerCase()+'’s color identity: ':'stay within ')+cc.cols.map(x=>CLRN[x]).join(', ')+(cmdC?'':' (colorless cards and lands are fine)'):'any'}
@@ -1374,13 +1388,13 @@ SIDE IN <quantity> <card name>    (put a card into the side deck)
 The side deck (sideboard) holds 1 to ${FXSIDEMAX} cards for tough matchups and is not counted in the deck size; the copy limit counts deck + side deck together. To move a card between the deck and the side deck, use OUT + SIDE IN (or SIDE OUT + IN) for the same card.`:''}
 No headings or bullets. Then write a line containing only --- and explain the changes and why they help (under 200 words).
 
-CURRENT DECK (quantity name | type | colors | mana value):
+CURRENT DECK (quantity name | type | colors | mana value | rules text):
 ${deckRows.join('\n')}${sok?`
 
 CURRENT SIDE DECK (${fxSideN(d.cards)}/${FXSIDEMAX}; after your changes it should have 1 to ${FXSIDEMAX} cards):
 ${sideRows.join('\n')||'(empty)'}`:''}
 
-MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
+MY AVAILABLE CARDS (name | type | colors | mana value | copies available | rules text):
 ${rows.join('\n')||'(none)'}`}
 async function fxOptCopy(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');if((F.leg||OPT.legal)&&!(await ensureLegal()))return;const p=fxOptPrompt();
   try{await navigator.clipboard.writeText(p);toast('Prompt copied — paste it into your AI')}catch(e){openM(`<h3>Copy this prompt</h3><textarea rows="12" readonly style="width:100%" onfocus="this.select()">${esc(p)}</textarea>`)}}
@@ -1412,6 +1426,7 @@ function fxOptRead(noFill){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)
   const putIn=(e,isSide)=>{const c=e.c;if(!c||!isReal(c)){e.n=0;e.st=OPT.own?'✗ not in your collection (skipped)':'✗ you don’t own it — add it to your collection first (skipped)';return}e.name=c.name;const k=norm(c.name),both=(mA[k]||0)+(sA[k]||0);
     if(!optLegal(c,F)){e.n=0;e.st='✗ not legal'+(F.leg?' in '+F.k:'')+' (skipped)';return}
     if(!cmdC&&cc.cols.length&&!okColor(c,cc.cols)){e.n=0;e.st='✗ outside '+cc.why+' (skipped)';return}
+    if(!F.cmd&&fxCmdOnly(c)){e.n=0;e.st='✗ only works with a commander — this deck has none (skipped)';return}
     const bad=fxRuleBlock(c,both+e.want,F,cmdC);if(bad){e.n=0;e.st='✗ '+bad+' (skipped)';return}
     const cap=copyCap(c,F),room=Math.max(0,cap-both);let n=Math.min(e.want,room);const note=[];if(n<e.want)note.push(`${F.k} allows ${cap}${sok?' (deck + side deck)':''}`);
     const reuse=Math.min(n,freed[k]||0),pl=planCard(c,n-reuse,al);if(pl.got<n-reuse){note.push(`only ${pl.got+reuse} available`);n=pl.got+reuse}

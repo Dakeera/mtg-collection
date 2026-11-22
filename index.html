@@ -843,7 +843,7 @@ function aiKeyUI(){return `<div class="f"><label>Provider</label><select onchang
   <label>Model</label><div class="brow"><input value="${esc(G.model)}" list="gml" oninput="G.model=this.value;fxModelSave()" style="flex:2"><button onclick="fxLoadModels()" style="flex:1" ${G.mload?'disabled':''}>${G.mload?'Loading…':'↻ My models'}</button></div><datalist id="gml">${(G.models||[]).map(m=>`<option value="${esc(m)}">`).join('')}</datalist>${G.mmsg?`<p class="mut" style="font-size:12px;margin:4px 0 0">${esc(G.mmsg)}</p>`:'<p class="mut" style="font-size:12px;margin:4px 0 0">Tap “My models” to load the models your key can use and pick one.</p>'}<label>API key</label><input type="password" autocomplete="off" value="${esc(AIKEY)}" oninput="AIKEY=this.value;fxKeySave()"><label style="margin:6px 0 0;font-weight:400"><input type="checkbox" ${fxKeyRem()?'checked':''} onchange="fxKeyRemSet(this.checked)">Remember my API key on this device</label>${fxKeyAny()?`<p class="mut" style="font-size:12px;margin:4px 0 0">Saved on this device: ${esc(fxKeyList())}. <button style="padding:2px 8px" onclick="fxKeyForget()">Forget saved keys</button></p>`:''}</div>`}
 function buildPrompt(){
   const F=dfmt(G.fmt),n=F.n,al=aiAllowed();if(G.rand)G.rc=randColors();const cols=aiColors(),cmdC=F.cmd&&G.cmd&&findCard(G.cmd),cid=cmdC?fxIdCols(cmdC):null;
-  const rows=D.cards.filter(c=>isReal(c)&&okLegal(c)&&!(F.leg&&c.custom)&&(!cols.length||okColor(c,cols))&&(!cid||norm(c.name)===norm(cmdC.name)||okColor(c,cid))).map(c=>({c,a:Math.min(aiAvail(c,al),copyCap(c,F))})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${c.type} | ${c.colors} | MV ${c.cmc} | available ${a}`);
+  const rows=D.cards.filter(c=>isReal(c)&&okLegal(c)&&!(F.leg&&c.custom)&&(F.cmd||!fxCmdOnly(c))&&(!cols.length||okColor(c,cols))&&(!cid||norm(c.name)===norm(cmdC.name)||okColor(c,cid))).map(c=>({c,a:Math.min(aiAvail(c,al),copyCap(c,F))})).filter(x=>x.a>0).map(({c,a})=>{const t=fxTxtShort(c);return `${c.name} | ${c.type} | ${c.colors} | MV ${c.cmc} | available ${a}${t?' | '+t:''}`});
   return `You are an expert Magic: The Gathering deck builder. Build a ${F.k} deck that follows the official ${F.k} deck-building rules exactly.
 Deck rules: ${fmtRuleText(F)}${F.prompt?' '+F.prompt:''}
 Theme / strategy: ${G.theme||'your choice — make it fun and coherent'}
@@ -852,11 +852,12 @@ Colors: ${cols.length?cols.map(x=>CLRN[x]).join(', ')+' only (colorless cards an
 ${F.cmd?(G.cmd?F.cmdLabel+': '+G.cmd:'Choose the '+F.cmdLabel.toLowerCase()+' from my collection ('+F.cmdRule+').'):''}
 ${G.own?'Use ONLY cards from my collection list below, spelled exactly as listed, and never more copies than "available".':'Prefer cards from my collection, but you may add a few cards I do not own — put * at the end of those lines.'}
 The list below already excludes cards I can't use for this deck.
+${fxQualityRules(F,n,cols.length?cols:cid||[])}
 DECK SIZE: the main deck must have EXACTLY ${n} cards${F.cmd?' (the '+F.cmdLabel.toLowerCase()+' counts as one of them)':''}${aiSideOn(F)?' — side deck cards are listed separately and do NOT count toward it':''}. Add up your quantities before answering: ${n-1} or ${n+1} cards is wrong.
 DECK NAMES: start your answer with 3 short, catchy deck name ideas that fit the theme and the cards, each on its own line as "NAME: <deck name>" (2–4 words, no quotes).
 OUTPUT FORMAT: after the names, one card per line as "<quantity> <card name>"${F.cmd?", "+F.cmdLabel.toLowerCase()+" first":""}${F.k==='Oathbreaker'?", signature spell second":""}. No headings or bullets.${F.single?'':aiSideOn(F)?` Then suggest a side deck (sideboard) of 1 to ${FXSIDEMAX} cards for tough matchups: a line containing only SIDEBOARD, then its cards in the same "<quantity> <card name>" format. The copy limit counts the deck and side deck together, and the side deck also uses only available copies.`:' Do NOT include a side deck (sideboard).'} After the list${aiSideOn(F)?'s':''}, write a line containing only --- and then a short explanation (under 120 words).
 
-MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
+MY AVAILABLE CARDS (name | type | colors | mana value | copies available | rules text):
 ${rows.join('\n')}`}
 async function copyPrompt(){if(!aiNeedFmt())return;if(G.legal&&!(await ensureLegal()))return;const p=buildPrompt();try{await navigator.clipboard.writeText(p);toast('Prompt copied — paste it into your AI')}catch(e){openM(`<h3>Copy this prompt</h3><textarea rows="12" readonly style="width:100%" onfocus="this.select()">${esc(p)}</textarea>`)}}
 async function aiGenerate(){
@@ -882,6 +883,7 @@ function readReply(noFill){
   ents.forEach(e=>{e.sadd=0;const sw=e.swant||0;if(!e.want&&sw){e.sideOnly=true}
     if(!e.c||!isReal(e.c)){e.add=0;e.st='✗ not in collection (skipped)';return}
     if(!okLegal(e.c)){e.add=0;e.st=`✗ not legal in ${(FMTS.find(x=>x[0]===G.legal)||[])[1]} (skipped)`;return}
+    if(!F.cmd&&fxCmdOnly(e.c)){e.add=0;e.st='✗ only works with a commander — this deck has none (skipped)';return}
     const bad=fxRuleBlock(e.c,e.want+sw,F,cmdC);if(bad){e.add=0;e.st='✗ '+bad+' (skipped)';return}
     const cap=copyCap(e.c,F),capped=e.want+sw>cap;if(capped){const mw=Math.min(e.want,cap);e.swant=Math.min(sw,cap-mw);e.want=mw}
     const pl=planCard(e.c,e.want+(e.swant||0),al);e.add=Math.min(pl.got,e.want);e.sadd=Math.min(pl.got-e.add,e.swant||0,Math.max(0,FXSIDEMAX-srun));srun+=e.sadd;if(e.sideOnly){e.st=e.sadd<(e.swant||0)?`⚠ side deck: using ${e.sadd} of ${sw}`:'✓ side deck';return}
