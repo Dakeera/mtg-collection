@@ -782,7 +782,18 @@ async function fxSaveFriend(j,status,opt){await ocLoad();const ex=opt.separate?n
 let FXGV=null;
 function fxGivePlan(i){const d=D.decks[i],out=[];d.cards.forEach(e=>{const c=findCard(e.name),inn=loanedIn(d.name,e.name),lo=loanedOut(d.name,e.name),ms=fxMissQ(d,e.name),g=Math.max(0,e.qty-inn-lo-ms);
   out.push({e,c,g,inn,lo,ms,side:Math.min(e.side||0,g)})});return out}
-async function fxGiveOpen(i){if(RO||!D.decks[i])return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your deck changes first');await ocLoad();
+/* owner rule: a deck that borrows cards from another deck or has missing/ordered cards can't be given away (button greyed out; tapping explains) */
+function fxGiveBlock(i){const d=D.decks[i];if(!d)return null;const inn=actLoans().filter(l=>l.to===d.name),ms=(d.miss||[]).filter(m=>m.qty>0);if(!inn.length&&!ms.length)return null;
+  const by={};inn.forEach(l=>{(by[l.from]=by[l.from]||[]).push(`${l.qty}× ${l.card}`)});return {inn:by,ms}}
+const fxGiveBtn=i=>{const b=fxGiveBlock(i);return `<button ${b?'class="gvoff" aria-disabled="true" title="Can’t give this deck away yet — tap to see why"':''} onclick="fxGiveOpen(${i})">🎁 Give away</button>`};
+async function fxGiveOpen(i){if(RO||!D.decks[i])return;const blk=fxGiveBlock(i);
+  if(blk){const d=D.decks[i],ib=Object.keys(blk.inn),mi=blk.ms.filter(m=>m.st!=='ordered'),od=blk.ms.filter(m=>m.st==='ordered');
+    return openM(`<h3>🎁 Can’t give “${esc(d.name)}” away yet</h3><p class="mut">A deck can only be given away when every card in it is yours and in the deck.</p>
+    ${ib.length?`<div class="rvg"><b>Borrowed from other decks</b>${ib.map(f=>`<div class="rvl"><span>From <b>${esc(f)}</b>: ${esc(blk.inn[f].join(', '))}</span></div>`).join('')}<p class="mut" style="font-size:13px">Return them to ${ib.length>1?'those decks':esc(ib[0])} or make the loan permanent (in the deck’s loan box), then try again.</p></div>`:''}
+    ${mi.length?`<div class="rvg"><b>🛒 Missing cards</b>${mi.map(m=>`<div class="rvl"><span>${m.qty}× ${esc(m.name)}</span></div>`).join('')}</div>`:''}
+    ${od.length?`<div class="rvg"><b>📦 Ordered, not received yet</b>${od.map(m=>`<div class="rvl"><span>${m.qty}× ${esc(m.name)}${m.note?` <span class="mut">(${esc(m.note)})</span>`:''}</span></div>`).join('')}</div>`:''}
+    ${mi.length||od.length?'<p class="mut" style="font-size:13px">Get those cards (mark them received) or take them out of the deck, then try again.</p>':''}
+    <div class="row"><button class="pri" onclick="closeM()">OK</button></div>`)}if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your deck changes first');await ocLoad();
   FXGV={i,who:'',isNew:false};fxGiveDraw()}
 function fxGiveDraw(){if(!FXGV)return;const d=D.decks[FXGV.i],P=fxGivePlan(FXGV.i),n=sum(P,x=>x.g),people=(OC||[]).filter(r=>!r.sep);
   openM(`<h3>🎁 Give away “${esc(d.name)}”</h3><p class="mut">The deck and its ${fxPl(n,'card')} leave your collection and go to the person you pick, under <b>Other collections</b>, as a deck with the same name.</p>
