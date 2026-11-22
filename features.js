@@ -137,14 +137,14 @@ function fxDSrcDraw(){const {c,d,cap,need}=fxDSrcCaps(),m=FXDS.m,tot=sum(Object.
   KEEPSCROLL=true;openM(`<h3>${esc(d.name)}: where do its ${need===1?'copy':need+' copies'} of ${esc(c.name)} come from?</h3><p class="mut">Pick how many copies this deck takes from each “Pulled from”. You can only use copies that aren’t already in another deck.</p>
     ${Object.keys(cap).map(s=>{const v=m[s]||0;return `<div class="kv" style="align-items:center"><span>${esc(s)}<br><span class="mut" style="font-size:12px;font-weight:400">stored in: ${esc(fxStoreLabel(s))} · ${cap[s]} available for this deck</span></span><span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxDSrcSet(${esc(JSON.stringify(s))},-1)" ${v>0?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${v}</b><button style="padding:6px 12px" onclick="fxDSrcSet(${esc(JSON.stringify(s))},1)" ${v<cap[s]&&tot<need?'':'disabled'}>+</button></span></div>`}).join('')}
     <p style="margin:10px 0;${ok?'':'color:#f39c12'}">${tot} of ${need} chosen${ok?' ✓':tot<need?` — choose ${need-tot} more`:''}</p>
-    <div class="row"><button data-card="${esc(c.name)}">Cancel</button><button class="pri" onclick="fxDSrcSave()" ${ok?'':'disabled'}>Save</button></div>`)}
+    <div class="row">${FXDS.back?'<button onclick="FXDS.back()">Cancel</button>':`<button data-card="${esc(c.name)}">Cancel</button>`}<button class="pri" onclick="fxDSrcSave()" ${ok?'':'disabled'}>Save</button></div>`)}
 function fxDSrcSet(s,dl){const {cap,need}=fxDSrcCaps(),m=FXDS.m,tot=sum(Object.values(m),v=>v),v=(m[s]||0)+dl;if(v<0||v>cap[s]||dl>0&&tot>=need)return;if(v)m[s]=v;else delete m[s];fxDSrcDraw()}
 async function fxDSrcSave(){const {c,d,need}=fxDSrcCaps(),k=norm(c.name),old=(d.srcs&&d.srcs[k])||{},m=FXDS.m;if(sum(Object.values(m),v=>v)!==need)return;
   const out=[],inn=[];new Set([...Object.keys(old),...Object.keys(m)]).forEach(s=>{const dq=(m[s]||0)-(old[s]||0);if(dq>0)inn.push(`• Take ${dq} from ${s} (stored in ${fxStoreLabel(s)})`);if(dq<0)out.push(`• Put ${-dq} back in ${s} (stored in ${fxStoreLabel(s)})`)});
-  if(!out.length&&!inn.length){toast('Nothing changed');return showCard(c.name,true)}
+  if(!out.length&&!inn.length){toast('Nothing changed');return FXDS.back?FXDS.back():showCard(c.name,true)}
   const str=x=>Object.keys(x).map(s=>`${x[s]}× ${s}`).join(', ')||'—';
   if(!(await ask(`Save where ${d.name} gets ${c.name} from?\n\n${out.length?'Swap the cards:\n'+out.join('\n')+'\n':''}${inn.join('\n')}`)))return;
-  d.srcs=d.srcs||{};d.srcs[k]=Object.assign({},m);logEdit(c.name,`Pulled from (deck ${d.name})`,str(old),str(m));FXDS=null;save();showCard(c.name,true);toast('Deck source updated')}
+  d.srcs=d.srcs||{};d.srcs[k]=Object.assign({},m);logEdit(c.name,`Pulled from (deck ${d.name})`,str(old),str(m));const bk=FXDS.back;FXDS=null;save();if(bk)bk();else showCard(c.name,true);toast('Deck source updated')}
 
 
 /* ---------- collection list: load more cards as you scroll ---------- */
@@ -156,35 +156,32 @@ addEventListener('scroll',()=>{try{if(V.view!=='collection')return;const m=docum
 const FXSIDEMAX=15;
 const fxSideOK=d=>{const F=d&&dfmt(d.format);return !!F&&!F.single};
 const fxMainQ=e=>Math.max(0,(e.qty||0)-(e.side||0)),fxMainN=L=>sum(L,fxMainQ),fxSideN=L=>sum(L,e=>e.side||0);
-function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEach(e=>{const k=norm(e.name);m[k]=m[k]||{name:e.name,base:0,qty:0,side:0,sbase:0};m[k].base+=e.qty;m[k].qty+=e.qty;m[k].side+=e.side||0;m[k].sbase+=e.side||0});DRAFT={deck:i,m}}return DRAFT}
+function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEach(e=>{const k=norm(e.name);m[k]=m[k]||{name:e.name,base:0,qty:0,side:0,sbase:0};m[k].base+=e.qty;m[k].qty+=e.qty;m[k].side+=e.side||0;m[k].sbase+=e.side||0});DRAFT={deck:i,m};if(!RO)V.dedit=i}return DRAFT}
 const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base||(x.side||0)!==(x.sbase||0));
 function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,side:x.side||0,d:(x.qty-(x.side||0))-(x.base-(x.sbase||0)),sd:(x.side||0)-(x.sbase||0)}))}
 /* move one copy between main and side (no cards are pulled or put back — it just gets sleeved / unsleeved) */
-async function fxDraftSwap(i,name,toSide){if(RO||!D.decks[i])return;const dd=D.decks[i],F=dfmt(dd.format);if(!fxSideOK(dd))return toast('This deck type has no side deck');
-  const d=fxDraft(i),x=d.m[norm(name)];if(!x)return;const L=fxDeckCards(i);
-  if(toSide){if(x.qty-(x.side||0)<=0)return;if(fxSideN(L)+1>FXSIDEMAX)return toast(`The side deck is full (${FXSIDEMAX} cards)`);x.side=(x.side||0)+1}
-  else{if(!(x.side>0))return;if(fxMainN(L)+1>F.n&&!dd.override){const pr=[`The deck would have ${fxMainN(L)+1} cards — ${F.k} decks hold ${F.n}`];if(!(await fxOverrideAsk(i,name,pr)))return}x.side--}
+async function fxDraftSwap(i,name,toSide){if(RO||!D.decks[i])return;const dd=D.decks[i];if(!fxSideOK(dd))return toast('This deck type has no side deck');
+  const d=fxDraft(i),x=d.m[norm(name)];if(!x)return;
+  if(toSide){if(x.qty-(x.side||0)<=0)return;x.side=(x.side||0)+1}else{if(!(x.side>0))return;x.side--}
   render()}
 async function fxDraftChg(i,name,dl,fromSearch,toSide){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
   if(toSide&&!fxSideOK(D.decks[i]))return toast('This deck type has no side deck');
-  if(toSide&&dl>0&&fxSideN(fxDeckCards(i))+dl>FXSIDEMAX)return toast(`The side deck is full (${FXSIDEMAX} cards)`);
-  if(dl>0&&F&&!D.decks[i].override){const pr=fxAddProblems(i,name,dl,toSide);if(pr.length&&!(await fxOverrideAsk(i,name,pr)))return}
   const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0,side:0,sbase:0});
   if(dl<0){if(toSide){if(!(x.side>0))return;x.side--;x.qty--}else{if(x.qty-(x.side||0)<=0)return;x.qty+=dl}}
   else{x.qty+=dl;if(toSide)x.side=(x.side||0)+dl}
   if(!x.qty&&!x.base)delete d.m[k];render();
   if(fromSearch)fxBuilder()}
-async function fxCanLeave(){if(fxDraftDirty()){if(!(await ask('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing')))return false}DRAFT=null;return true}
+async function fxCanLeave(){if(fxDraftDirty()){if(!(await ask('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing')))return false}DRAFT=null;V.dedit=null;return true}
 async function fxLeaveDeck(){if(!(await fxCanLeave()))return;V.deck=null;render();scrollTo(0,0)}
-const fxDraftNote=i=>RO?'':'<p class="mut" data-rw>Use + / − or “Add card” to make as many changes as you like. Nothing changes until you tap <b>Save changes</b>.</p>';
-function fxDraftBar(i){if(!DRAFT||DRAFT.deck!==i||!fxDraftDirty())return '';const ch=Object.values(DRAFT.m),a=sum(ch,x=>Math.max(0,x.qty-x.base)),r=sum(ch,x=>Math.max(0,x.base-x.qty)),mv=fxDraftMoves();
-  return `<div style="height:76px"></div><div id="dbar"><span><b>Not saved:</b> ${a?'+'+a:''}${a&&r?' / ':''}${r?'−'+r:''}${a+r?` card${a+r===1?'':'s'}`:''}${mv?`${a+r?' · ':''}side deck ${mv>0?'changed':''}`:''}</span><button onclick="fxDraftDiscard()">Discard</button><button class="pri" onclick="fxDraftSave()">Save changes</button></div>`}
+const fxDraftNote=i=>'';
+function fxDraftBar(i){if(!fxEditOn(i))return '';const n=fxDraftLines().length;
+  return `<div style="height:76px"></div><div id="dbar"><span>${n?`<b>${fxPl(n,'change')}</b> · not saved yet`:'No changes yet'}</span><button onclick="fxEditCancel()">${n?'Cancel':'Close'}</button><button class="pri" onclick="fxReview()" ${n?'':'disabled'}>Done · review</button></div>`}
 /* side-deck moves in the draft: copies that changed between main and side without being added/removed */
 function fxDraftMoves(){return sum(Object.values(DRAFT?DRAFT.m:{}),x=>Math.abs((x.side||0)-(x.sbase||0)))}
 async function fxDraftDiscard(){if(!(await ask('Discard all the changes you made to this deck?\n\nOK = discard\nCancel = keep editing')))return;DRAFT=null;render();toast('Changes discarded')}
 async function fxDraftSave(opt){opt=opt||{};
   if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],all=Object.values(DRAFT.m),ch=all.filter(x=>x.qty!==x.base),adds=ch.filter(x=>x.qty>x.base),rems=ch.filter(x=>x.qty<x.base);
-  const na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty),sNow=sum(all,x=>x.side||0),sWas=sum(all,x=>x.sbase||0),sCh=all.filter(x=>(x.side||0)!==(x.sbase||0));
+  const lines=fxDraftLines(),na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty),sNow=sum(all,x=>x.side||0),sWas=sum(all,x=>x.sbase||0),sCh=all.filter(x=>(x.side||0)!==(x.sbase||0));
   if(!opt.yes&&!(await ask(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.${sCh.length?`\nSide deck: ${sWas} → ${sNow} cards (${sCh.map(x=>`${x.name} ${x.sbase||0}→${x.side||0}`).join(', ')}) — side cards get no sleeves.`:''}\n\nOK = save\nCancel = keep editing`)))return;
   const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=opt.allowed||D.decks.filter(x=>x!==d).map(x=>x.name),before=fxSrcSnap(d);
   // 1) removals: decide where each physical copy goes, then take it off the list
@@ -206,7 +203,72 @@ async function fxDraftSave(opt){opt=opt||{};
     const e=d.cards.find(e=>norm(e.name)===norm(x.name));e?e.qty+=n:d.cards.push({name:c?c.name:x.name,qty:n,finish:c?.finish||'Normal'})});
   all.forEach(x=>{const es=d.cards.filter(e=>norm(e.name)===norm(x.name));let s=Math.max(0,x.side||0);es.forEach(e=>{const k=Math.min(s,e.qty);if(k)e.side=k;else delete e.side;s-=k})});
   if(d.miss){d.miss.forEach(m=>{const have=sum(d.cards.filter(e=>norm(e.name)===norm(m.name)));m.qty=Math.min(m.qty,have)});d.miss=d.miss.filter(m=>m.qty>0);if(!d.miss.length)delete d.miss}
-  DRAFT=null;save();fxAllocDiff(d,before,inG,outG);fxOverrideAuto(i);render();fxPullSplash(d.name,inG,outG)}
+  DRAFT=null;V.dedit=null;save();fxOverrideAuto(i);render();fxInvShow(i,before,inG,outG,lines)}
+/* ---------- deck edit mode (owner request): edit freely, nothing is asked or saved while editing → “Done · review” shows every change at once
+   (undo per line, rule problems listed) → Confirm applies it → an inventory screen shows what to take out of / put back in each “Pulled from”. ---------- */
+function fxEditOn(i){return !RO&&V.dedit===i&&D.decks[i]}
+function fxEditStart(i){if(RO||!D.decks[i])return;fxDraft(i);V.dedit=i;V.edq='';render();scrollTo(0,0)}
+async function fxEditCancel(){if(fxDraftDirty()&&!(await ask('Stop editing and throw away your changes?\n\nOK = discard changes\nCancel = keep editing')))return;DRAFT=null;V.dedit=null;render();scrollTo(0,0)}
+/* every change in the draft, split into what happened: added / removed (deck or side) and moves between deck and side */
+function fxDraftLines(){const out=[];if(!DRAFT)return out;Object.values(DRAFT.m).forEach(x=>{const dm=(x.qty-(x.side||0))-(x.base-(x.sbase||0)),ds=(x.side||0)-(x.sbase||0);
+  const toS=dm<0&&ds>0?Math.min(-dm,ds):0,toD=dm>0&&ds<0?Math.min(dm,-ds):0,m=dm+toS-toD,s=ds-toS+toD;
+  if(m>0)out.push({k:'add',name:x.name,n:m});if(s>0)out.push({k:'sadd',name:x.name,n:s});if(m<0)out.push({k:'rem',name:x.name,n:-m});if(s<0)out.push({k:'srem',name:x.name,n:-s});
+  if(toS)out.push({k:'toS',name:x.name,n:toS});if(toD)out.push({k:'toD',name:x.name,n:toD})});return out}
+const FXLK={add:'Added to the deck',sadd:'Added to the side deck',rem:'Removed from the deck',srem:'Removed from the side deck',toS:'Moved deck → side deck',toD:'Moved side deck → deck'};
+function fxEditRow(x,side,sok){const c=findCard(x.name)||{},q=side?(x.side||0):x.qty-(x.side||0),b=side?(x.sbase||0):x.base-(x.sbase||0),dq=q-b,nm=esc(x.name),gone=!q&&b>0,ch=x.qty!==x.base||(x.side||0)!==(x.sbase||0);
+  return `<div class="edr${gone?' gone':''}"><span class="edn" data-card="${nm}">${nm}<small>${esc(c.type||'')}${c.cost&&c.cost!=='None'?' · '+costHtml(c.cost):''}</small></span>${dq?`<i class="edt ${dq>0?'p':'m'}">${dq>0?'+':'−'}${Math.abs(dq)}</i>`:''}
+  ${gone?'':`<span class="eds"><button data-${side?'sdec':'dec'}="${nm}" aria-label="One less">−</button><b>${q}</b><button data-${side?'sinc':'inc'}="${nm}" aria-label="One more">+</button></span>${sok?(side?`<button class="edm" data-tom="${nm}" title="Move one copy into the deck">← Deck</button>`:`<button class="edm" data-tos="${nm}" title="Move one copy to the side deck">→ Side</button>`):''}`}
+  ${ch?`<button class="edu" onclick="fxEditUndo(${esc(JSON.stringify(x.name))})" title="Undo the changes to this card">↺${gone?' Undo':''}</button>`:''}</div>`}
+function fxEditUndo(name){if(!DRAFT)return;const x=DRAFT.m[norm(name)];if(!x)return;x.qty=x.base;x.side=x.sbase||0;if(!x.base)delete DRAFT.m[norm(name)];render()}
+function fxEditView(i){const d=D.decks[i],dr=fxDraft(i),sok=fxSideOK(d),L=fxDeckCards(i),t=target(d),n=fxMainN(L),sn=fxSideN(L),q=(V.edq||'').trim().toLowerCase();
+  const all=Object.values(dr.m).filter(x=>!q||x.name.toLowerCase().includes(q)),land=x=>/Land/.test((findCard(x.name)||{}).type||'')?1:0,srt=(a,b)=>land(a)-land(b)||a.name.localeCompare(b.name);
+  const main=all.filter(x=>x.qty-(x.side||0)>0||x.base-(x.sbase||0)>0).sort(srt),side=all.filter(x=>(x.side||0)>0||(x.sbase||0)>0).sort(srt);
+  return `<div class="edhead"><b>✎ Editing</b><span class="${t&&n>t?'over':''}">Deck ${n}${t?'/'+t:''}</span>${sok||sn?`<span class="${sn>FXSIDEMAX||(!sok&&sn)?'over':''}">Side ${sn}/${sok?FXSIDEMAX:0}</span>`:''}</div>
+  <p class="mut" style="margin:4px 0 8px;font-size:13px">Change as much as you like — nothing is saved until you tap <b>Done · review</b>. ${sok?'“→ Side” / “← Deck” move a copy without pulling anything. ':''}Tap a name to see the card.</p>
+  <div class="row"><button class="pri" onclick="fxBuilder(true)">＋ Add cards${sok?' (deck or side)':''}</button></div>
+  ${Object.keys(dr.m).length>12?`<div class="bar" style="margin:8px 0"><span class="qw"><input id="edq" type="search" placeholder="Find a card in this deck…" value="${esc(V.edq||'')}"><button type="button" class="qx2" id="edqx" aria-label="Clear search">✕</button></span></div>`:''}
+  <h3>Deck <span class="mut" style="font-size:13px">${n}${t?' of '+t:''} cards</span></h3>${main.map(x=>fxEditRow(x,false,sok)).join('')||'<p class="mut">No cards'+(q?' match':' yet')+'.</p>'}
+  ${sok||sn?`<h3>Side deck <span class="mut" style="font-size:13px">${sn}/${sok?FXSIDEMAX:0} · not sleeved</span></h3>${side.map(x=>fxEditRow(x,true,sok)).join('')||`<p class="mut">${q?'No side cards match.':'No side cards. Use “＋ Add cards” and pick “Side deck”, or “→ Side” on a card above.'}</p>`}`:''}`}
+function fxEditWire(){const e=$('#edq');if(!e)return;e.oninput=ev=>{V.edq=ev.target.value;const p=ev.target.selectionStart;render();const x=$('#edq');if(x){x.focus();x.setSelectionRange(p,p)}};$('#edqx').onclick=()=>{V.edq='';render()}}
+/* rule problems the changes would add (compared with the deck as it is now; ignored ones don't count) */
+function fxDraftNewIssues(i){const key=x=>x.kind+'|'+norm(x.card||''),after=deckIssues(i).filter(x=>!x.ign),sv=DRAFT;DRAFT=null;let before=[];try{before=deckIssues(i).filter(x=>!x.ign)}finally{DRAFT=sv}
+  const had=new Set(before.map(key));return after.filter(x=>!had.has(key(x))||x.kind==='size'&&!before.some(b=>b.kind==='size'&&b.title===x.title)&&fxMainN(fxDeckCards(i))>fxMainN(D.decks[i].cards))}
+function fxReview(){if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],L=fxDraftLines();if(!L.length){DRAFT=null;V.dedit=null;render();return toast('No changes — nothing to save')}
+  const was=D.decks[i].cards,now=fxDeckCards(i),t=target(d),iss=fxDraftNewIssues(i),G={};L.forEach((x,j)=>(G[x.k]=G[x.k]||[]).push([x,j]));
+  openM(`<h3>Review changes to ${esc(d.name)}</h3><p class="mut">Nothing has changed yet. Undo anything you don’t want, then tap <b>Confirm</b>.</p>
+  <div class="tags" style="text-align:left"><span>Deck ${fxMainN(was)} → <b>${fxMainN(now)}</b>${t?' / '+t:''}</span>${fxSideOK(d)||fxSideN(now)||fxSideN(was)?`<span>Side ${fxSideN(was)} → <b>${fxSideN(now)}</b> / ${FXSIDEMAX}</span>`:''}</div>
+  ${Object.keys(FXLK).filter(k=>G[k]).map(k=>`<div class="rvg"><b>${FXLK[k]} <span class="mut">· ${G[k].reduce((t,[x])=>t+x.n,0)}</span></b>${G[k].map(([x,j])=>`<div class="rvl"><span>${x.n}× ${esc(x.name)}${k==='toS'?' <span class="mut">(unsleeve)</span>':k==='toD'?' <span class="mut">(sleeve)</span>':''}</span><button onclick="fxReviewUndo(${j})">↺ Undo</button></div>`).join('')}</div>`).join('')}
+  ${iss.length?`<div class="warn" style="text-align:left"><b>⚠ These changes break the ${esc(d.format)} rules:</b><br>${iss.map(x=>'• '+esc(x.title)+(x.card&&!x.title.includes(x.card)?' — '+esc(x.card):'')).join('<br>')}${d.override?'<br><span class="mut">Override is on for this deck, so they’re allowed.</span>':'<br><span class="mut">Confirming will ask you twice to turn on the rule override for this deck.</span>'}</div>`:''}
+  <div class="row"><button onclick="closeM()">← Back to editing</button><button class="pri" onclick="fxReviewConfirm()">Confirm</button></div>`)}
+function fxReviewUndo(j){const x=fxDraftLines()[j];if(!x||!DRAFT)return;const m=DRAFT.m[norm(x.name)];if(!m)return;
+  if(x.k==='add')m.qty-=x.n;else if(x.k==='sadd'){m.qty-=x.n;m.side-=x.n}else if(x.k==='rem')m.qty+=x.n;else if(x.k==='srem'){m.qty+=x.n;m.side=(m.side||0)+x.n}else if(x.k==='toS')m.side-=x.n;else if(x.k==='toD')m.side=(m.side||0)+x.n;
+  if(!m.qty&&!m.base)delete DRAFT.m[norm(x.name)];render();if(!fxDraftLines().length){closeM();return toast('Every change undone')}fxReview()}
+async function fxReviewConfirm(){if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],iss=fxDraftNewIssues(i);
+  if(iss.length&&!d.override&&!(await fxOverrideAsk(i,null,iss.map(x=>x.title+(x.card&&!x.title.includes(x.card)?' ('+x.card+')':'')))))return;
+  fxDraftSave({yes:true})}
+/* inventory screen after saving: take out / put back per “Pulled from”, sleeve changes for side moves, ⇄ to pick another “Pulled from” for an added card */
+let FXINV=null;
+function fxInvDraw(){if(!FXINV)return;const {i,before,inG0,outG0,lines}=FXINV,d=D.decks[i];if(!d)return;const inG=JSON.parse(JSON.stringify(inG0)),outG=JSON.parse(JSON.stringify(outG0));fxAllocDiff(d,before,inG,outG);
+  const tot=G=>sum(Object.values(G).flat(),x=>x.q),toS=lines.filter(x=>x.k==='toS'),toD=lines.filter(x=>x.k==='toD');
+  const added=[...new Set(lines.filter(x=>x.k==='add'||x.k==='sadd').map(x=>x.name))].map(findCard).filter(c=>c&&!fxBasic(c)&&Object.keys(fxSrcOwned(c)).length>1);
+  const txt=(t,G)=>tot(G)?`${t}\n`+Object.keys(G).map(k=>`  ${k}\n`+G[k].map(x=>`    ${x.q}x ${x.name}${x.alt&&x.alt.length&&/^pulled from /.test(x.alt[0])?` (${x.alt.join(', ')})`:''}`).join('\n')).join('\n')+'\n':'';
+  window.FXPULL=`${d.name} — inventory\n\n`+txt('TAKE OUT',inG)+'\n'+txt('PUT BACK',outG)+(toS.length?'\nUNSLEEVE (deck → side)\n'+toS.map(x=>`    ${x.n}x ${x.name}`).join('\n')+'\n':'')+(toD.length?'\nSLEEVE (side → deck)\n'+toD.map(x=>`    ${x.n}x ${x.name}`).join('\n')+'\n':'');
+  const a=(d.srcs||{});
+  openM(`<div class="pull"><h3>✓ ${esc(d.name)} updated</h3><p class="mut">Where the cards come from and go back to, grouped by where they’re stored.</p>
+  <h4>Take out (${tot(inG)})</h4>${tot(inG)?fxGrpHtml(inG):'<p class="mut">Nothing to take out.</p>'}
+  <h4>Put back (${tot(outG)})</h4>${tot(outG)?fxGrpHtml(outG):'<p class="mut">Nothing to put back.</p>'}
+  ${toS.length?`<h4>Unsleeve — moved to the side deck (${toS.reduce((t,x)=>t+x.n,0)})</h4><p class="mut" style="margin:0 0 4px;font-size:13px">These stay with the deck, just without sleeves.</p>${toS.map(x=>`<div class="rvl"><span>${x.n}× ${esc(x.name)}</span></div>`).join('')}`:''}
+  ${toD.length?`<h4>Sleeve — moved into the deck (${toD.reduce((t,x)=>t+x.n,0)})</h4>${toD.map(x=>`<div class="rvl"><span>${x.n}× ${esc(x.name)}</span></div>`).join('')}`:''}
+  ${added.length?`<h4>Want a card from a different “Pulled from”?</h4>${added.map(c=>{const m=a[norm(c.name)]||{};return `<div class="rvl"><span>${esc(c.name)}<br><span class="mut" style="font-size:12px">${Object.keys(m).map(s=>`${m[s]} from ${esc(s)}`).join(' · ')||'not assigned'}</span></span><button onclick="fxInvSrc(${esc(JSON.stringify(c.name))})">⇄ Change</button></div>`}).join('')}`:''}
+  <div class="row"><button onclick="navigator.clipboard.writeText(window.FXPULL).then(()=>toast('List copied'),()=>toast('Could not copy'))">📋 Copy list</button><button class="pri" onclick="FXINV=null;closeM()">Done</button></div></div>`)}
+function fxInvSrc(name){if(!FXINV)return;fxDSrc(name,FXINV.i);if(FXDS)FXDS.back=fxInvDraw}
+function fxInvShow(i,before,inG,outG,lines){FXINV={i,before,inG0:JSON.parse(JSON.stringify(inG)),outG0:JSON.parse(JSON.stringify(outG)),lines};fxInvDraw()}
+/* card page “Put in deck” (owner choice): adds to that deck's edit list and opens it in edit mode */
+async function fxPutInDeck(i,name,side){const d=D.decks[i];if(!d||RO)return;
+  if(DRAFT&&DRAFT.deck!==i&&fxDraftDirty()){if(!(await ask(`You have unsaved changes to ${D.decks[DRAFT.deck].name}.\n\nOK = discard them and edit ${d.name}\nCancel = keep them`)))return;DRAFT=null}
+  if(side&&!fxSideOK(d))return toast(`${d.format} decks have no side deck`);
+  fxDraft(i);await fxDraftChg(i,name,1,false,!!side);closeM();if(V.view!=='decks')showTab('decks');V.deck=i;V.dedit=i;render();scrollTo(0,0);
+  toast(`${name} added to ${side?'the side deck of ':''}${d.name}'s edit list — tap “Done · review” to save`)}
 function fxPullSplash(deck,inG,outG){
   const ord=G=>Object.keys(G).sort((a,b)=>(/deck:/i.test(b)-/deck:/i.test(a))||a.localeCompare(b)),tot=G=>sum(Object.values(G).flat(),x=>x.q);
   const grp=G=>ord(G).map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ')):'or '+esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join('');
@@ -804,7 +866,7 @@ function fxNativeLinks(){try{if(!isNative())return;const A=window.Capacitor.Plug
 /* ---------- building a deck by hand ---------- */
 let FXB=[];
 async function fxBuilder(first,mode){const i=V.deck,d=D.decks[i];if(RO||!d)return;
-  if(first){V.bside=mode==='side'&&fxSideOK(d);const F=dfmt(d.format);if(F&&F.leg){const need=D.cards.filter(c=>isReal(c)&&!c.leg&&!c.legMiss);if(need.length&&!(await ensureLegal(need))){d.legPending=true;save();render();toast('Offline — rule warnings are incomplete until the cards are checked')}}V.bq='';V.bt='';V.bc='';V.bfree=false;V.bown=true;V.bsrc=V.bsrc||'';const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
+  if(first){fxDraft(i);V.dedit=i;V.bside=mode==='side'&&fxSideOK(d);const F=dfmt(d.format);if(F&&F.leg){const need=D.cards.filter(c=>isReal(c)&&!c.leg&&!c.legMiss);if(need.length&&!(await ensureLegal(need))){d.legPending=true;save();render();toast('Offline — rule warnings are incomplete until the cards are checked')}}V.bq='';V.bt='';V.bc='';V.bfree=false;V.bown=true;V.bsrc=V.bsrc||'';const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
     openM(`<h3>Add cards to ${esc(d.name)}</h3><div id="bhead" class="sec" style="position:sticky;top:0;z-index:2"></div>${fxSideOK(d)?`<div class="chips" id="bmode" style="margin:0 0 8px"></div>`:''}
     <input id="bq" type="search" placeholder="Search name or rules text…" style="width:100%" oninput="V.bq=this.value;fxBuilder()">
     <div class="brow" style="margin:8px 0"><select onchange="V.bt=this.value;fxBuilder()"><option value="">All types</option>${types.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select onchange="V.bc=this.value;fxBuilder()"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>`<option>${x}</option>`).join('')}</select></div>
@@ -813,7 +875,7 @@ async function fxBuilder(first,mode){const i=V.deck,d=D.decks[i];if(RO||!d)retur
     <div id="bnew" class="sec" hidden><p class="mut" style="margin:0 0 6px">Cards you don’t own yet (e.g. you bought the whole deck) are searched on Scryfall. Adding one puts it in your collection <b>and</b> in this deck.</p><label style="margin:0">New cards are pulled from</label><input id="bsrc" list="bsrcl" placeholder="e.g. Singles Orders or the deck you bought" value="${esc(V.bsrc)}" oninput="V.bsrc=this.value"><datalist id="bsrcl">${allSources().filter(s=>!isCustomSrc(s)).map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div><div id="bres"></div><div id="bscry"></div><div class="row"><button class="pri" onclick="closeM()">Done</button></div>`)}
   const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),inPart=n=>sum(dl.filter(e=>norm(e.name)===norm(n)),e=>V.bside?(e.side||0):fxMainQ(e)),t=target(d),n=fxMainN(dl),sn=fxSideN(dl),F=dfmt(d.format),cmdC=d.commander&&findCard(d.commander);
   {const bm=document.getElementById('bmode');if(bm)bm.innerHTML=`<span class="mut" style="font-size:13px;margin-right:4px">Adding to:</span><button class="${V.bside?'':'on'}" onclick="V.bside=false;fxBuilder()">Deck (sleeved)</button><button class="${V.bside?'on':''}" onclick="V.bside=true;fxBuilder()">Side deck</button>`}
-  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxSideOK(d)||sn?` · <b>${sn}/${FXSIDEMAX}</b> side`:''}${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?` <span style="color:#f39c12">· ${n>t?'over the limit':'full'}</span>`:''}${d.override?' <span style="color:#ff6b6b">· ⛔ override on</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
+  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxSideOK(d)||sn?` · <b>${sn}/${FXSIDEMAX}</b> side`:''}${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?` <span style="color:#f39c12">· ${n>t?'over the limit':'full'}</span>`:''}${d.override?' <span style="color:#ff6b6b">· ⛔ override on</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like. Nothing is saved until you tap “Done · review” on the deck.</span>`;
   const list=D.cards.filter(c=>isReal(c)&&(!q||c.name.toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q))&&(!V.bt||c.type===V.bt)&&(!V.bc||String(c.colors).includes(V.bc))&&(!V.bfree||freeCopies(c)>0||inDeck(c.name)>0)).sort((a,b)=>(inDeck(b.name)>0)-(inDeck(a.name)>0)||a.name.localeCompare(b.name));
   FXB=list.slice(0,60).map(c=>c.name);
   {const bn=document.getElementById('bnew');if(bn)bn.hidden=!!V.bown;fxBScry(q)}
@@ -821,7 +883,7 @@ async function fxBuilder(first,mode){const i=V.deck,d=D.decks[i];if(RO||!d)retur
     const iss=fxCardIssues(c,inDeck(c.name),F,cmdC);
     return `<div class="res" style="cursor:default;flex-wrap:wrap"><span style="flex:1;min-width:0">${esc(c.name)} ${costHtml(c.cost)}${iss.length?` <button class="isb" onclick="this.closest('.res').querySelector('.isd').hidden^=1">⚠ ${esc(iss[0].title)}${iss.length>1?' +'+(iss.length-1):''}</button>`:''}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
     <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span>${iss.length?`<div class="isd" hidden>${iss.map(x=>`<p><b>${esc(x.title)}.</b> ${esc(x.msg)}</p>`).join('')}<p class="mut">You can still add it — this is just so you know.</p></div>`:''}</div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||`<p class="mut">${V.bown?'No cards match.':'None of your cards match.'}</p>`}
-async function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const d=D.decks[V.deck];if(dl>0&&!(await ask(`Pull 1× ${n} from your collection into ${V.bside?'the side deck of ':''}${d.name}?${V.bside?'\n\nSide cards get no sleeves.':''}\n\n(It’s staged — tap Save changes on the deck to apply.)`)))return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true,!!V.bside);document.getElementById('modal').scrollTop=y}
+async function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true,!!V.bside);document.getElementById('modal').scrollTop=y}
 /* Builder with “Only add cards that are in my collection” switched off: search Scryfall for cards you don't own and add them to the collection + this deck */
 let BSC={q:'',list:null,t:0,busy:false};
 function fxBScry(q){const el=document.getElementById('bscry');if(V.bown||!el){clearTimeout(BSC.t);if(el)el.innerHTML='';return}
@@ -835,7 +897,7 @@ function fxBScryDraw(){const el=document.getElementById('bscry');if(!el)return;c
 async function fxBNew(k){const c=(BSC.list||[])[k],d=D.decks[V.deck];if(!c||!d)return;const q=Math.max(1,parseInt(document.getElementById('bnq'+k)?.value,10)||1);
   let src=canonSrc(String(V.bsrc||'').trim());if(!src){toast('Say where the new cards come from first (the box above)');document.getElementById('bsrc')?.focus();return}
   if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — pick another “Pulled from”');if(!allSources().some(s=>s.toLowerCase()===src.toLowerCase()))src=autoNumber(src);
-  if(!(await ask(`Add ${q}× ${c.name} to your collection AND put it in ${d.name}?\n\nPulled from: ${src}\n(The deck change is staged — tap Save changes on the deck to apply.)`)))return;
+  if(!(await ask(`Add ${q}× ${c.name} to your collection AND put it in ${d.name}?\n\nPulled from: ${src}\n(Adding it to your collection happens now; the deck change waits for “Done · review”.)`)))return;
   fxAddCard(c,q,'Normal',src,'','Added while building '+d.name);V.bsrc=src;{const bi=document.getElementById('bsrc');if(bi)bi.value=src}IDX=null;saveArt();save();BSC.list=BSC.list.filter(x=>x!==c);
   const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,c.name,q,true,!!V.bside);document.getElementById('modal').scrollTop=y;toast(`${q}× ${c.name} added to your collection`)}
 function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef">${fmtOptions(dfmt(d.format)?d.format:'Casual')}</select>
@@ -1555,7 +1617,7 @@ function fxIssues(i){const d=D.decks[i],L=deckIssues(i).sort((a,b)=>a.ign-b.ign)
 async function fxFix(i,k,j){const x=(window.FXISS||[])[k],d=D.decks[i];if(!x)return;
   if(j<0){if(!(await ask(x.ign?`Stop ignoring “${x.title}”?`:`Ignore “${x.title}”${x.card?' for '+x.card:''}?\n\nIt stays listed (muted) and the deck stops showing ⚠ for it.`)))return;const key=x.kind+'|'+norm(x.card||'');d.ok=(d.ok||[]).filter(k=>k!==key);if(!x.ign)d.ok.push(key);save();render();return fxIssues(i)}
   const f=x.fixes[j];if(f.a==='match')return fxMatchUnknown(x.card,()=>{render();fxIssues(i)});if(f.a==='sug')return fxUseSug(x.card,()=>{render();fxIssues(i)});if(f.a==='custom'){fxSetCustom(x.card,true);return fxIssues(i)}if(f.a==='edit')return fxDeckEdit(i);if(f.a==='pick'){closeM();return fxBuilder(true)}
-  if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`Staged: −${f.n} ${x.card} — tap Save changes to apply`);return fxIssues(i)}}
+  if(f.a==='cut'){fxDraftChg(i,x.card,-f.n);toast(`−${f.n} ${x.card} added to the edit list — tap “Done · review” to save`);return fxIssues(i)}}
 
 const fxDeckNeedsLeg=i=>{const d=D.decks[i],F=d&&dfmt(d.format);if(!F||!F.leg)return [];return fxDeckCards(i).map(e=>findCard(e.name)).filter(c=>c&&isReal(c)&&!c.custom&&(!c.leg||F.cmd&&!c.ci)&&!c.legMiss)};
 async function fxLegalCheck(i,list,quiet){const d=D.decks[i];if(!d||RO)return true;const need=list||fxDeckNeedsLeg(i);
@@ -1655,8 +1717,8 @@ function fxAddProblems(i,name,dl,side){const d=D.decks[i],F=dfmt(d.format);if(!F
   if(c){const have=sum(L.filter(e=>norm(e.name)===norm(c.name)));fxCardIssues(c,have+dl,F,cmdC).filter(x=>x.kind!=='unknown').forEach(x=>out.push(`${x.title}${x.title.includes(c.name)?'':' ('+c.name+')'}`))}
   return [...new Set(out)]}
 async function fxOverrideAsk(i,name,pr){const d=D.decks[i],F=dfmt(d.format);
-  if(!(await ask(`Adding ${name} breaks the ${F.k} rules:\n\n• ${pr.join('\n• ')}\n\nOverride the rules for “${d.name}”?\n\nOK = override\nCancel = don’t add it`)))return false;
-  if(!(await ask(`Are you really sure?\n\n“${d.name}” will be marked as NOT legal for ${F.k}. Rule-breaking cards (banned, extra copies, custom cards, too many cards…) can then be added to it.\n\nThe deck will always show an “Override on” warning, and you can tap it to see every card that breaks the rules.\n\nOK = yes, override this deck\nCancel = don’t add it`)))return false;
+  if(!(await ask(`${name?'Adding '+name:'These changes'} break${name?'s':''} the ${F.k} rules:\n\n• ${pr.join('\n• ')}\n\nOverride the rules for “${d.name}”?\n\nOK = override\nCancel = ${name?'don’t add it':'go back'}`)))return false;
+  if(!(await ask(`Are you really sure?\n\n“${d.name}” will be marked as NOT legal for ${F.k}. Rule-breaking cards (banned, extra copies, custom cards, too many cards…) can then be added to it.\n\nThe deck will always show an “Override on” warning, and you can tap it to see every card that breaks the rules.\n\nOK = yes, override this deck\nCancel = ${name?'don’t add it':'go back'}`)))return false;
   d.override=true;d.overrideAt=today();save();toast(`Override on for ${d.name}`);return true}
 async function fxOverrideOff(i,inModal){const d=D.decks[i],n=deckIssues(i).length;
   if(!(await ask(`Turn the rule override off for “${d.name}”?\n\n${n?`The ${fxPl(n,'card or rule issue')} already in the deck stay, and stay flagged. `:''}New rule-breaking cards will need two approvals again.`)))return;
