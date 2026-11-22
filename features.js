@@ -315,7 +315,7 @@ function fxOthersView(){return `<p class="mut">Open a backup file someone shared
   <div class="f"><label>…or paste a deck link someone sent you</label><input id="oclink" placeholder="https://tinyurl.com/… or another deck link"></div><div class="row"><button onclick="fxOpenLink(document.getElementById('oclink').value)">Open deck link</button></div>
   <p class="mut" style="font-size:12px">Tap a collection to open it. Slide a row to the left to delete it.</p><div id="oclist"><p class="mut">Loading…</p></div>`}
 async function ocDraw(){await ocLoad();const el=document.getElementById('oclist');if(!el)return;
-  el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)} ${r.status==='signed'?'<span title="Signed by its owner" style="color:#2ecc71">✓</span>':'<span class="mut" style="font-weight:400;font-size:11px">unverified</span>'}<br><span>${r.partial?fxPl(r.data.decks.length,'deck')+' only':r.data.cards.length+' titles · '+fxPl(r.data.decks.length,'deck')}${r.uid&&!/^(old|link)-/.test(r.uid)?' · ID '+esc(fxCode(r.uid)):''}</span>${r.data.decks.length?`<br><span style="font-weight:400;font-size:12px">${r.data.decks.slice(0,8).map(d=>'🃏 '+esc(d.name)).join(' · ')}${r.data.decks.length>8?' …':''}</span>`:''}</b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
+  el.innerHTML=OC.length?OC.map(r=>`<div class="ocrow" data-oc="${esc(r.id)}"><button class="ocdel" onclick="ocDelete('${esc(r.id)}')">Delete</button><div class="ocin"><b>${esc(r.name)} ${r.status==='signed'?'<span title="Signed by its owner" style="color:#2ecc71">✓</span>':r.status==='gift'?'<span class="mut" style="font-weight:400;font-size:11px">🎁 added by you</span>':'<span class="mut" style="font-weight:400;font-size:11px">unverified</span>'}<br><span>${r.partial?fxPl(r.data.decks.length,'deck')+' only':r.data.cards.length+' titles · '+fxPl(r.data.decks.length,'deck')}${r.uid&&!/^(old|link)-/.test(r.uid)?' · ID '+esc(fxCode(r.uid)):''}</span>${r.data.decks.length?`<br><span style="font-weight:400;font-size:12px">${r.data.decks.slice(0,8).map(d=>'🃏 '+esc(d.name)).join(' · ')}${r.data.decks.length>8?' …':''}</span>`:''}</b><span>${esc(fxDate(r.updated))}</span></div></div>`).join(''):'<p class="mut">No other collections saved yet.</p>';
   el.querySelectorAll('.ocrow').forEach(row=>{const inn=row.querySelector('.ocin');let x0=null,dx=0,open=false;
     const set=o=>{open=o;inn.style.transform=o?'translateX(-92px)':''};
     inn.addEventListener('pointerdown',e=>{x0=e.clientX;dx=0;inn.style.transition='none';try{inn.setPointerCapture(e.pointerId)}catch(_){}});
@@ -773,6 +773,62 @@ async function fxSaveFriend(j,status,opt){await ocLoad();const ex=opt.separate?n
     pub:opt.trust||!ex||!ex.pub?(j.pub||null):ex.pub,status:j.scope==='deck'&&ex?ex.status:status,partial:j.scope==='deck'?(ex?!!ex.partial:true):false,sep:!!opt.separate,link:!!opt.link,data};
   try{await fxTx('readwrite',st=>st.put(rec))}catch(e){toast('Could not save that collection (storage full?)');return null}
   fxFriendIndex(rec);toast(msg||`${rec.name} added to Other collections${status==='signed'?' ✓ verified':''}`);if(!opt.quiet){V.view='more';V.sub='others';render()}return rec}
+
+/* ---------- give a deck away (owner request) ----------
+   Removes the deck and the copies it physically holds from your collection, and puts the deck (same name) into a person's entry in
+   Other collections — someone already there, or a new “friend” typed by name. Two approvals; the second needs “YES” typed in capitals.
+   Borrowed copies (loans INTO the deck) go back to the deck they came from, copies this deck lent to other decks stay there (the loan
+   becomes permanent), and missing/ordered copies (d.miss) were never owned — none of those are given away. */
+let FXGV=null;
+function fxGivePlan(i){const d=D.decks[i],out=[];d.cards.forEach(e=>{const c=findCard(e.name),inn=loanedIn(d.name,e.name),lo=loanedOut(d.name,e.name),ms=fxMissQ(d,e.name),g=Math.max(0,e.qty-inn-lo-ms);
+  out.push({e,c,g,inn,lo,ms,side:Math.min(e.side||0,g)})});return out}
+async function fxGiveOpen(i){if(RO||!D.decks[i])return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your deck changes first');await ocLoad();
+  FXGV={i,who:'',isNew:false};fxGiveDraw()}
+function fxGiveDraw(){if(!FXGV)return;const d=D.decks[FXGV.i],P=fxGivePlan(FXGV.i),n=sum(P,x=>x.g),people=(OC||[]).filter(r=>!r.sep);
+  openM(`<h3>🎁 Give away “${esc(d.name)}”</h3><p class="mut">The deck and its ${fxPl(n,'card')} leave your collection and go to the person you pick, under <b>Other collections</b>, as a deck with the same name.</p>
+  <label style="font-weight:600">Give it to</label>
+  ${people.length?people.map(r=>`<label class="rvl" style="cursor:pointer"><span><input type="radio" name="gvw" ${!FXGV.isNew&&FXGV.who===r.id?'checked':''} onchange="FXGV.who='${esc(r.id)}';FXGV.isNew=false;fxGiveDraw()"> ${esc(r.name)} <span class="mut" style="font-size:12px">· ${fxPl(r.data.decks.length,'deck')}</span></span></label>`).join(''):'<p class="mut">No one in Other collections yet.</p>'}
+  <label class="rvl" style="cursor:pointer"><span><input type="radio" name="gvw" ${FXGV.isNew?'checked':''} onchange="FXGV.isNew=true;FXGV.who='';fxGiveDraw()"> ＋ A new friend</span></label>
+  ${FXGV.isNew?`<input id="gvname" placeholder="Friend’s name" value="${esc(FXGV.name||'')}" oninput="FXGV.name=this.value">`:''}
+  <div class="row" style="margin-top:12px"><button onclick="FXGV=null;closeM()">Cancel</button><button class="danger" onclick="fxGiveGo()">Next ›</button></div>`);
+  const nm=$('#gvname');if(nm)nm.focus()}
+async function fxGiveGo(){if(!FXGV)return;const i=FXGV.i,d=D.decks[i];if(!d)return;
+  let rec=null,who='';if(FXGV.isNew){who=String(FXGV.name||'').trim();if(!who)return toast('Type your friend’s name');rec=(OC||[]).find(r=>!r.sep&&r.name.toLowerCase()===who.toLowerCase())||null;if(rec)who=rec.name}
+  else{rec=(OC||[]).find(r=>r.id===FXGV.who);if(!rec)return toast('Pick who gets the deck');who=rec.name}
+  const P=fxGivePlan(i),n=sum(P,x=>x.g),inn=P.filter(x=>x.inn),lo=P.filter(x=>x.lo),ms=P.filter(x=>x.ms);let nm=d.name;
+  if(rec){let k=2;while(rec.data.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${d.name} ${k++}`}
+  const lines=[`${n} card${n===1?'':'s'} (${fxMainN(P.map(x=>({qty:x.g,side:x.side})))} in the deck${sum(P,x=>x.side)?` + ${sum(P,x=>x.side)} side`:''}) are removed from your collection, and the deck “${d.name}” is deleted.`,
+    `${who} gets it under Other collections as “${nm}”${rec?'':' (a new friend)'}.`];
+  if(nm!==d.name)lines.push(`${who} already has a deck called “${d.name}”, so it’s named “${nm}”.`);
+  if(inn.length)lines.push(`Borrowed cards go back to the deck they came from and aren’t given: ${inn.map(x=>`${x.inn}× ${x.e.name}`).join(', ')}.`);
+  if(lo.length)lines.push(`Cards this deck lent out stay where they are (the loan becomes permanent): ${lo.map(x=>`${x.lo}× ${x.e.name}`).join(', ')}.`);
+  if(ms.length)lines.push(`Missing / ordered cards aren’t yours yet, so they aren’t given: ${ms.map(x=>`${x.ms}× ${x.e.name}`).join(', ')}.`);
+  if(!(await ask(`Give “${d.name}” away to ${who}?\n\n${lines.join('\n\n')}\n\nOK = continue\nCancel = keep the deck`)))return;
+  const t=await askText(`Last check — this can’t be undone (only by restoring a backup).\n\nType YES in capital letters to give “${d.name}” and its ${fxPl(n,'card')} to ${who}.`,'');
+  if(t!=='YES'){toast(t==null?'Nothing was given away':'You didn’t type YES — nothing was given away');return}
+  await fxGiveApply(i,P,rec,who,nm)}
+async function fxGiveApply(i,P,rec,who,nm){const d=D.decks[i],keep=['name','colors','cost','cmc','type','subtype','power','toughness','text','keywords','finish','set','setName','cn','scryId','art','art2','leg','legAt','price','priceAt','verified','custom','ci'];
+  const cards=[],imgs={},deck={name:nm,format:d.format||'Casual',commander:d.commander||'',cards:[],tokens:d.tokens||[],info:`Given by ${D.owner||'me'} on ${today()}`};
+  P.filter(x=>x.g>0).forEach(x=>{const nmc=x.c?x.c.name:x.e.name;deck.cards.push({name:nmc,qty:x.g,finish:x.e.finish||'Normal',...(x.side?{side:x.side}:{})});
+    const o={};if(x.c)keep.forEach(k=>{if(x.c[k]!=null)o[k]=x.c[k]});o.name=nmc;o.qty=x.g;const ex=cards.find(y=>norm(y.name)===norm(nmc));if(ex)ex.qty+=x.g;else cards.push(o);if(x.c&&x.c.custom&&CIMG[x.c.name])imgs[x.c.name]=CIMG[x.c.name]});
+  /* the friend's side first, so nothing is lost if storage fails */
+  const j={uid:rec?rec.uid:'gift-'+fxUuid(),name:rec?(rec.given||rec.name):who,updated:Date.now(),pub:null,scope:'deck',cards,decks:[deck],customImgs:imgs};
+  const saved=await fxSaveFriend(j,rec?rec.status:'gift',rec?{quiet:true,link:!!rec.link,nick:rec.name}:{quiet:true,nick:who});if(!saved)return;
+  /* loans: borrowed copies go back, lent copies become permanent */
+  actLoans().forEach(l=>{if(l.to===d.name){l.status='returned';l.done=today();setSwapStatus(l.id,`Returned ${today()} (${d.name} was given away)`)}else if(l.from===d.name){l.status='permanent';l.done=today();setSwapStatus(l.id,`Permanent ${today()} (${d.name} was given away)`)}});
+  /* remove the given copies from the collection: from the deck's own “Pulled from” assignment, keeping the copies it lent out */
+  const A=d.srcs||{};P.filter(x=>x.g>0&&x.c).forEach(x=>{const c=x.c,k=norm(c.name),own=fxSrcOwned(c),want=Object.assign({},own);let left=x.g;
+    for(const [s,q] of Object.entries(A[k]||{}).reverse()){if(left<=0)break;const t=Math.min(left,q,want[s]||0);want[s]-=t;left-=t}
+    for(const s of Object.keys(want)){if(left<=0)break;const t=Math.min(left,want[s]);want[s]-=t;left-=t}
+    const old=c.qty;for(const s of Object.keys(want)){const rs=D.acq.filter(a=>norm(a.name)===k&&canonSrc(a.source||'')===s);let have=sum(rs,a=>+a.qty||0),over=have-want[s];
+      if(over>0)for(const a of rs.slice().reverse()){if(!over)break;const t2=Math.min(over,+a.qty||0);a.qty=(+a.qty||0)-t2;over-=t2;if(a.qty<=0)D.acq.splice(D.acq.indexOf(a),1)}
+      else if(over<0&&want[s]>0)D.acq.push({date:today(),name:c.name,set:c.set||'',cn:c.cn||'',finish:'',qty:-over,source:s,price:'',notes:'Corrected count',shared:have>0})}
+    const fm=finMapOf(c),order=[x.e.finish||'Normal',...Object.keys(fm)];let fl=x.g;for(const f of order){if(fl<=0)break;const t=Math.min(fl,fm[f]||0);fm[f]=(fm[f]||0)-t;fl-=t}
+    c.qty=Math.max(0,old-x.g);c.finish=finStr(fm);logEdit(c.name,`Given away (deck “${d.name}” → ${who})`,old,c.qty);
+    if(c.qty<=0){if(CIMG[c.name]){delete CIMG[c.name];fxImgDel(c.name)}D.acq=D.acq.filter(a=>norm(a.name)!==k);D.cards.splice(D.cards.indexOf(c),1)}
+    else{const keepS=Object.keys(want).filter(s=>want[s]>0);if(keepS.length)c.source=cardSources(c).filter(s=>keepS.includes(s)).join(', ')||c.source;if(Array.isArray(c.cps))c.cps=c.cps.slice(0,Math.max(0,c.qty-1))}});
+  const s=sleeveOf(d);if(s){s.deck='';s.inUse=0}D.decks.splice(i,1);IDX=null;V.deck=null;V.dedit=null;DRAFT=null;FXGV=null;save();closeM();render();scrollTo(0,0);
+  toast(`🎁 “${d.name}” given to ${who} — find it under More → Other collections`)}
 
 /* ---------- sharing: signed share files and deck links ---------- */
 async function fxShareData(scope,i){const keep=['name','colors','cost','cmc','type','subtype','power','toughness','text','keywords','qty','finish','set','setName','cn','scryId','art','art2','leg','legAt','price','priceAt','verified','custom'];
