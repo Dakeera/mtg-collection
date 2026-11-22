@@ -97,6 +97,7 @@ body.ro .bar{top:calc(var(--st) + 50px)}
 #cam .cb{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:#000}#cam .cb button{padding:10px 12px;font-size:13px}#cam .shut{width:68px;height:68px;border-radius:50%;background:#fff;border:5px solid #2ecc71;padding:0;flex:0 0 auto}
 .ocrow{position:relative;overflow:hidden;border-radius:12px;margin:8px 0;background:#c0392b}.ocdel{position:absolute;right:0;top:0;bottom:0;width:92px;background:#c0392b;color:#fff;border:0;border-radius:0;font-weight:700}
 .ocin{user-select:none;-webkit-user-select:none;position:relative;background:var(--card);padding:14px;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:pointer;transition:transform .18s;touch-action:pan-y}.ocin span{color:var(--mut);font-size:12px;white-space:nowrap}
+.simv{font-size:11px;padding:1px 6px;border-radius:6px;background:var(--card2);margin-left:4px;white-space:nowrap}.simv.old{opacity:.6}.simlog{font-size:13px;line-height:1.45;max-height:70vh;overflow:auto;background:var(--card2);border-radius:10px;padding:8px 10px}.simlog .slt{font-weight:700;color:var(--ac);margin-top:8px}.simlog .sli{padding-left:14px;opacity:.85}
 .pbar{height:12px;background:var(--card2);border-radius:8px;overflow:hidden;margin:8px 0}.pbar i{display:block;height:100%;background:var(--ac);transition:width .2s}
 details.g{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px 0}details.g summary{cursor:pointer;font-weight:600}
 .fmt dt{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:10px}.fmt dd{margin:2px 0 0}
@@ -129,6 +130,7 @@ details.g{background:var(--card);border-radius:10px;padding:10px 12px;margin:8px
 </style></head><body>
 <div id="prog"></div><div id="stcover"></div><button id="totop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button><div id="main">Loading…</div><nav id="nav"></nav>
 <div id="modal" class="modal"><div class="sheet"><button class="x" onclick="tryClose()">✕</button><div id="mbody"></div></div></div><div id="toast"></div>
+<script src="sim.js"></script>
 <script src="features.js"></script>
 <script>
 /* ---------- In-app confirmation / question window (replaces the phone's plain OK/Cancel boxes; same on web and Android) ----------

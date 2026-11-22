@@ -453,156 +453,118 @@ function fxImportView(){
   <h3>Export</h3><p class="mut">Save your collection as a CSV file that other sites, or a friend using this app, can import.</p><div class="row"><button onclick="fxExportCSV()">⬇ Export my collection as CSV</button></div>`}
 function fxAfterMore(){if(V.sub==='others')ocDraw();if(V.sub==='matchups')simFill()}
 
-/* ---------- battle simulator ----------
-   A simplified model, not a full rules engine: it plays lands, casts spells on curve, attacks and blocks with real
-   power/toughness and combat keywords, and understands removal, burn, board wipes, card draw, ramp, tokens, counterspells,
-   lifegain and commanders from each card's rules text. Triggered abilities and combos are not modelled. */
-const SIMW={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,x:3};
-const simNum=s=>s==null?0:(/^\d+$/.test(s)?+s:(SIMW[String(s).toLowerCase()]||1));
-function simCard(c,name){
-  if(!c)return {n:name,cmc:3,k:'spell',unk:true};
-  const t=String(c.text||'').toLowerCase(),ty=String(c.type||''),kf=String(c.keywords||''),kwl=(kf&&kf!=='None'?kf:t.split('\n').filter(l=>!/[.:]/.test(l)).join(', ')).toLowerCase(),has=w=>new RegExp('\\b'+w+'\\b').test(kwl);
-  const o={n:c.name,cmc:Math.max(0,Math.round(parseFloat(c.cmc)||0))};
-  if(/land/i.test(ty)){o.k='land';return o}
-  const m1=t.match(/deals? (\d+|x) damage to (any target|target player|each opponent|target opponent|target creature or player|any other target|target player or planeswalker)/);if(m1)o.burn=simNum(m1[1]);
-  const m2=t.match(/deals? (\d+|x) damage to (?:another )?target (?:creature|attacking|blocking)/);
-  if(/destroy target (creature|permanent|nonland|attacking|tapped)|exile target (creature|permanent|nonland)|target creature gets -\d+\/-\d+|target (opponent|player) sacrifices a creature|fights? (another |up to one )?target creature/.test(t))o.kill=99;else if(m2)o.kill=simNum(m2[1]);else if(o.burn)o.kill=o.burn;
-  if(/destroy all creatures|exile all creatures|all creatures get -\d|damage to each creature|each player sacrifices all creatures/.test(t))o.wrath=1;
-  const m3=t.match(/draws? (a|an|one|two|three|four|five|x|\d+) cards?/);if(m3)o.draw=simNum(m3[1]);
-  const m4=t.match(/gains? (\d+|x) life/);if(m4)o.gain=simNum(m4[1]);
-  if(/counter target (\w+ )?spell/.test(t))o.counter=1;
-  if(/add \{|add (one|two|three) mana|search your library for (a|an|up to \w+) (basic )?(land|forest|plains|island|swamp|mountain)/.test(t))o.ramp=1;
-  const m5=t.match(/creates? (a|an|one|two|three|four|five|x|\d+) (?:tapped )?(\d+)\/(\d+)/);if(m5)o.tok={n:simNum(m5[1]),p:+m5[2],t:Math.max(1,+m5[3]),fly:/flying/.test(t.slice(m5.index,m5.index+110))};
-  const m6=t.match(/creatures you control get \+(\d+)\/\+(\d+)/);if(m6)o.anthem=[+m6[1],+m6[2]];
-  const m7=t.match(/(?:enchanted|equipped) creature gets \+(\d+)\/\+(\d+)/);if(m7)o.aura=[+m7[1],+m7[2]];
-  if(/creature/i.test(ty)){o.k='creature';const pi=parseInt(c.power),ti=parseInt(c.toughness);o.p=isNaN(pi)?Math.max(1,o.cmc-1):Math.max(0,pi);o.t=isNaN(ti)?Math.max(1,o.cmc-1):Math.max(1,ti);
-    o.fly=has('flying');o.reach=has('reach');o.trample=has('trample');o.haste=has('haste');o.dt=has('deathtouch');o.ll=has('lifelink');o.ds=has('double strike');o.fs=o.ds||has('first strike');o.vig=has('vigilance');o.menace=has('menace');o.def=has('defender');o.ind=has('indestructible');o.hex=has('hexproof')||has('shroud')||has('ward');return o}
-  o.k=/planeswalker/i.test(ty)?'pw':'spell';return o}
-function simDeck(deck,cards,label){const idx=new Map(cards.map(c=>[norm(front(c.name)),c])),lib=[],unk=new Set();let cmdr=null;const cn=deck.commander?norm(front(deck.commander)):'';
-  deck.cards.forEach(e=>{const c=idx.get(norm(front(e.name)));for(let i=0;i<fxMainQ(e);i++){const s=simCard(c,e.name);if(s.unk)unk.add(e.name);if(cn&&norm(front(e.name))===cn&&!cmdr&&s.k!=='land'){cmdr=s;continue}lib.push(s)}});
-  return {fmt:deck.format||'',name:label||deck.name,lib,cmdr,unk:[...unk],n:lib.length+(cmdr?1:0),cmdFmt:isCmdFmt(deck.format),life:(dfmt(deck.format)||{}).life||20,list:deck.cards.map(e=>`${e.qty} ${e.name}`).join('\n'),commander:deck.commander||''}}
-const simShuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
-const simDraw=(p,n)=>{while(n-->0&&p.lib.length)p.hand.push(p.lib.pop())};
-const simP=x=>x.p+x.o.anth[0],simT=x=>x.t+x.o.anth[1];
-function simDie(x){const o=x.o,i=o.bf.indexOf(x);if(i>=0)o.bf.splice(i,1);if(x.cz){o.cz=x.c;o.tax+=2}}
-function simEnter(me,c,cz){if(c.k==='creature')me.bf.push({c,p:c.p,t:c.t,tap:false,sick:!c.haste,o:me,cz:!!cz})}
-function simResolve(c,me,op){
-  if(c.k==='creature')simEnter(me,c,c===me.cmdCard);
-  if(c.k==='pw')me.pw++;
-  if(c.tok)for(let i=0;i<c.tok.n;i++)me.bf.push({c:{n:'token',k:'creature',cmc:0,p:c.tok.p,t:c.tok.t,fly:c.tok.fly},p:c.tok.p,t:c.tok.t,tap:false,sick:true,o:me});
-  if(c.wrath&&c.k!=='creature')[...me.bf,...op.bf].forEach(x=>{if(!x.c.ind)simDie(x)});
-  if(c.kill||c.burn){const tg=op.bf.filter(x=>!x.c.hex&&(c.kill>=99?!x.c.ind:simT(x)<=c.kill)).sort((a,b)=>(simP(b)+simT(b)+(b.c.fly?2:0))-(simP(a)+simT(a)+(a.c.fly?2:0)))[0];
-    if(c.burn&&(op.life<=c.burn||!tg||simP(tg)+simT(tg)<4)){op.life-=c.burn}else if(tg)simDie(tg)}
-  if(c.draw)simDraw(me,c.draw);if(c.gain)me.life+=c.gain;if(c.ramp&&c.k!=='creature')me.rocks++;
-  if(c.anthem&&c.k!=='creature'){me.anth[0]+=c.anthem[0];me.anth[1]+=c.anthem[1]}
-  if(c.aura){const b=[...me.bf].sort((a,b)=>simP(b)-simP(a))[0];if(b){b.p+=c.aura[0];b.t+=c.aura[1]}}}
-function simMain(me,op){
-  const li=me.hand.findIndex(c=>c.k==='land');if(li>=0){me.hand.splice(li,1);me.lands++}
-  let mana=me.lands+me.rocks+me.bf.filter(x=>x.c.ramp&&!x.sick).length;
-  const myPow=sum(me.bf,simP),opPow=sum(op.bf,simP);
-  const pri=c=>{if(c.counter&&!c.kill&&c.k!=='creature')return -1;if(c.wrath&&c.k!=='creature')return opPow-myPow>=4&&op.bf.length>=2?95:-1;
-    if(c.ramp&&c.k!=='creature')return me.lands<6?90:20;
-    if(c.k==='creature')return (c.ramp&&me.lands<5?85:60)+c.cmc;
-    if(c.kill||c.burn){const tg=op.bf.some(x=>!x.c.hex&&(c.kill>=99||simT(x)<=c.kill));return tg?80:c.burn?(op.life<=c.burn*2||!me.bf.length?45:25):-1}
-    if(c.k==='pw')return 62;if(c.tok)return 58;if(c.anthem||c.aura)return me.bf.length?55:-1;if(c.draw)return 50;if(c.gain)return 20;return 15};
-  for(let guard=0;guard<30;guard++){
-    const opts=me.hand.map(c=>({c,cost:c.cmc,cz:false}));if(me.cz)opts.push({c:me.cz,cost:me.cz.cmc+me.tax,cz:true});
-    const pick=opts.filter(o=>o.cost<=mana).map(o=>({o,p:pri(o.c)})).filter(x=>x.p>=0).sort((a,b)=>b.p-a.p||b.o.cost-a.o.cost)[0];if(!pick)break;
-    const {c,cost,cz}=pick.o;mana-=cost;if(cz){me.cz=null;me.cmdCard=c}else me.hand.splice(me.hand.indexOf(c),1);
-    const ci=op.hand.findIndex(h=>h.counter&&h.k!=='creature'&&h.cmc<=op.open);
-    if(ci>=0&&cost>=2&&Math.random()<0.7){op.open-=op.hand[ci].cmc;op.hand.splice(ci,1);if(cz){me.cz=c;me.tax+=2}continue}
-    simResolve(c,me,op);if(op.life<=0)break}
-  me.open=mana}
-function simCombat(me,op){
-  let atk=me.bf.filter(x=>!x.tap&&!x.sick&&!x.c.def&&simP(x)>0);if(!atk.length)return;
-  const blk=op.bf.filter(x=>!x.tap),canB=(b,a)=>!a.c.fly||b.c.fly||b.c.reach,evas=a=>{const n=blk.filter(b=>canB(b,a)).length;return n===0||(a.c.menace&&n<2)};
-  let nb=blk.length,pot=0;[...atk].sort((a,b)=>simP(b)-simP(a)).forEach(a=>{if(evas(a))pot+=simP(a)*(a.c.ds?2:1);else if(nb>0)nb--;else pot+=simP(a)});
-  const allIn=pot>=op.life,needDef=!allIn&&sum(op.bf,simP)>=me.life;
-  if(!allIn)atk=atk.filter(a=>{if(evas(a))return true;if(needDef&&!a.c.vig)return false;
-    const th=blk.filter(b=>canB(b,a)&&(simP(b)>=simT(a)||b.c.dt)&&!a.c.ind);if(!th.length)return true;
-    return me.bf.length>op.bf.length&&th.every(b=>simP(a)>=simT(b)&&!b.c.ind&&a.c.cmc<=b.c.cmc)});
-  if(!atk.length)return;atk.forEach(a=>{if(!a.c.vig)a.tap=true});
-  const free=[...blk],blocks=new Map(),must=sum(atk,a=>simP(a)*(a.c.ds?2:1))>=op.life;
-  [...atk].sort((a,b)=>simP(b)-simP(a)).forEach(a=>{const c=free.filter(b=>canB(b,a));if(!c.length||(a.c.menace&&c.length<2))return;
-    const surv=b=>b.c.ind||!(simP(a)>=simT(b)||a.c.dt),kills=b=>!a.c.ind&&(simP(b)>=simT(a)||b.c.dt)&&(surv(b)||!(a.c.fs&&!b.c.fs));
-    let pick=c.find(b=>surv(b)&&kills(b))||c.find(surv)||c.find(b=>kills(b)&&b.c.cmc<=a.c.cmc+1);
-    if(!pick&&must)pick=[...c].sort((x,y)=>(simP(x)+simT(x))-(simP(y)+simT(y)))[0];if(!pick)return;
-    const bs=[pick];free.splice(free.indexOf(pick),1);
-    if(a.c.menace){const s2=free.filter(b=>canB(b,a)).sort((x,y)=>(simP(x)+simT(x))-(simP(y)+simT(y)))[0];if(!s2){free.push(pick);return}bs.push(s2);free.splice(free.indexOf(s2),1)}
-    blocks.set(a,bs)});
-  const dead=new Set();
-  atk.forEach(a=>{const bs=blocks.get(a),pa=simP(a);
-    if(!bs){const d=pa*(a.c.ds?2:1);op.life-=d;if(a.c.ll)me.life+=d;return}
-    const bFirst=bs.filter(b=>b.c.fs),fsDmg=sum(bFirst,simP),aDiesFirst=!a.c.fs&&!a.c.ind&&bFirst.length&&(fsDmg>=simT(a)||bFirst.some(b=>b.c.dt));
-    if(aDiesFirst){dead.add(a);return}
-    let rem=pa;const hit=new Set();bs.forEach(b=>{const need=a.c.dt?1:simT(b),g=Math.min(rem,need);rem-=g;if(g>0&&(g>=simT(b)||a.c.dt)&&!b.c.ind)hit.add(b)});
-    if(a.c.trample&&rem>0)op.life-=rem;if(a.c.ll)me.life+=pa;
-    const back=a.c.fs?bs.filter(b=>!hit.has(b)||b.c.fs):bs,bd=sum(back,simP);
-    if(!a.c.ind&&(bd>=simT(a)||(bd>0&&back.some(b=>b.c.dt))))dead.add(a);hit.forEach(b=>dead.add(b))});
-  dead.forEach(simDie)}
-function simGame(A,B,first,life){
-  const mk=d=>({lib:simShuffle(d.lib.slice()),hand:[],bf:[],lands:0,rocks:0,life,cz:d.cmdr,cmdCard:null,tax:0,open:0,anth:[0,0],pw:0});
-  const P=[mk(A),mk(B)];P.forEach(p=>{simDraw(p,7);const l=p.hand.filter(c=>c.k==='land').length;if(l<2||l>5){p.lib=simShuffle(p.lib.concat(p.hand));p.hand=[];simDraw(p,6)}});
-  let t=first;
-  for(let turn=1;turn<=120;turn++){const me=P[t],op=P[1-t],rnd=Math.ceil(turn/2);
-    me.bf.forEach(x=>{x.tap=false;x.sick=false});
-    if(turn>1){if(!me.lib.length)return {w:1-t,turns:rnd};simDraw(me,1)}
-    if(me.pw&&Math.random()<Math.min(0.9,0.5*me.pw))simDraw(me,1);
-    simMain(me,op);if(op.life<=0)return {w:t,turns:rnd};
-    simCombat(me,op);if(op.life<=0)return {w:t,turns:rnd};if(me.life<=0)return {w:1-t,turns:rnd};
-    t=1-t}
-  return {w:-1,turns:60}}
-async function simRun(A,B,n,onProg){const life=A.life===B.life?A.life:20,r={n,aw:0,bw:0,dr:0,turns:0,ap:[0,0],ad:[0,0]};
-  for(let g=0;g<n;g++){const first=g%2,res=simGame(A,B,first,life),k=first===0?r.ap:r.ad;k[1]++;
-    if(res.w===0){r.aw++;k[0]++}else if(res.w===1)r.bw++;else r.dr++;r.turns+=res.turns;
-    if(g%50===49){onProg&&onProg(g+1,n);await new Promise(x=>setTimeout(x,0))}}
-  r.avg=Math.round(r.turns/n*10)/10;return r}
+/* ---------- battle simulator (page side) ----------
+   The game engine lives in sim.js (engine v2, shared by the website and the Android app). This part gathers each deck's
+   cards — Scryfall's current rules text when it can get it (offline card database first, then Scryfall), else the text
+   saved on the card — and runs the engine in a Web Worker so the screen stays responsive (on the page if a worker can't start). */
+const SIMTXT=new Map();
+const simKw=k=>String(k||'').split(/\n|;/).map(x=>x.split(':')[0].trim()).filter(x=>x&&x!=='None'&&x.length<30);
+function simCatalog(c,name){if(!c)return null;const nn=v=>v==null||v==='None'?'':String(v);
+  return {name:c.name||name,type_line:nn(c.type)+(c.subtype&&!/land/i.test(c.subtype)&&!nn(c.type).includes(c.subtype)?' — '+c.subtype:''),mana_cost:nn(c.cost),cmc:c.cmc,oracle_text:nn(c.text),power:nn(c.power),toughness:nn(c.toughness),keywords:simKw(c.keywords),loyalty:nn(c.loyalty)}}
+const simFace=x=>{if(!x)return null;const f=(x.card_faces||[])[0]||{};return {name:x.name,type_line:x.type_line||f.type_line,mana_cost:x.mana_cost!=null?x.mana_cost:f.mana_cost,cmc:x.cmc,oracle_text:x.oracle_text!=null?x.oracle_text:f.oracle_text,power:x.power!=null?x.power:f.power,toughness:x.toughness!=null?x.toughness:f.toughness,keywords:x.keywords||[],produced_mana:x.produced_mana,loyalty:x.loyalty!=null?x.loyalty:f.loyalty}};
+function simDeck(deck,cards,label){const idx=new Map(cards.map(c=>[norm(front(c.name)),c]));
+  const L=deck.cards.map(e=>({name:e.name,main:fxMainQ(e),side:fxSideOK(deck)?Math.min(e.side||0,e.qty):0,card:simCatalog(idx.get(norm(front(e.name))),e.name)}));
+  return {fmt:deck.format||'',name:label||deck.name,cmdFmt:isCmdFmt(deck.format),life:(dfmt(deck.format)||{}).life||20,n:L.reduce((a,e)=>a+e.main,0),sideN:L.reduce((a,e)=>a+e.side,0),
+    list:deck.cards.map(e=>`${fxMainQ(e)} ${e.name}`).filter(x=>!/^0 /.test(x)).join('\n')+(fxSideN(deck.cards)?'\n\nSideboard:\n'+deck.cards.filter(e=>e.side).map(e=>`${e.side} ${e.name}`).join('\n'):''),
+    commander:deck.commander||'',raw:{name:label||deck.name,commander:deck.commander||'',life:(dfmt(deck.format)||{}).life||20,cards:L}}}
+/* swap in Scryfall's current card data (offline database first). Returns how many cards use it. */
+async function simEnrich(decks,onProg){const all=[...new Set(decks.flatMap(d=>d.raw.cards.map(e=>front(e.name))))],need=all.filter(n=>!SIMTXT.has(norm(n)));
+  for(let i=0;i<need.length;i+=75){onProg&&onProg(i,need.length);try{const r=await scryFetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({identifiers:need.slice(i,i+75).map(name=>({name}))})});
+    if(!r||!r.ok)break;((await r.json()).data||[]).forEach(x=>SIMTXT.set(norm(front(x.name)),simFace(x)))}catch(e){break}}
+  let k=0;decks.forEach(d=>d.raw.cards.forEach(e=>{const x=SIMTXT.get(norm(front(e.name)));if(x){e.card=x;k++}}));return k}
+/* run the engine: Web Worker when possible, otherwise on the page */
+function simEngine(A,B,o,onProg){return new Promise((ok,bad)=>{let w=null;
+  try{if(window.Worker&&/^(https?|capacitor):/.test(location.protocol))w=new Worker('sim.js')}catch(e){w=null}
+  const local=()=>{if(!window.SIM2)return bad(new Error('The simulator file didn’t load — reload the app and try again.'));SIM2.run(A,B,o,onProg).then(ok,bad)};
+  if(!w)return local();let started=false;
+  w.onmessage=ev=>{const d=ev.data||{};started=true;if(d.type==='prog')onProg&&onProg(d.k,d.t);else if(d.type==='done'){w.terminate();ok(d.r)}else if(d.type==='err'){w.terminate();bad(new Error(d.msg))}};
+  w.onerror=e=>{e.preventDefault&&e.preventDefault();w.terminate();if(!started)local();else bad(new Error('The simulation stopped unexpectedly.'))};
+  w.postMessage({type:'run',A,B,o})})}
+/* ± margin of error (95%) for a win rate */
+const simMoe=(w,n)=>{if(!n)return 0;const p=w/n;return Math.round(1.96*Math.sqrt(p*(1-p)/n)*1000)/10};
 
 /* ---------- Matchups page ---------- */
 const simMaster=()=>{let s=D.matchups.find(x=>/MASTER MATCHUP/i.test(x.title||''));if(!s){s={title:'1. MASTER MATCHUP SIMULATION SUMMARY LOG',rows:[['Matchup ID','Match Date','Deck A','Deck B','Format','Simulated Matches','Deck A Wins (%)','Deck B Wins (%)','Avg Match Length','Matchup Status']]};D.matchups.unshift(s)}return s};
-function fxMatchups(){const ms=D.matchups.find(x=>/MASTER MATCHUP/i.test(x.title||'')),rows=ms?ms.rows.slice(1):[],rest=D.matchups.filter(x=>x!==ms),sims=[...(D.sims||[])].reverse(),pc=(a,b)=>b?Math.round(a/b*1000)/10+'%':'—';
+const simVer=s=>s.v>=2?`engine v${s.v}`:'engine v1 (older)';
+/* per-card report for one deck: win rate in games where the card was drawn, and games it was stuck in hand */
+function simCardTbl(s,k){const L=(s.cards||[])[k]||[];if(!L.length)return '<p class="mut">No card data.</p>';const pc=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+  return tbl(['Card','Drawn in','Wins when drawn','Stuck in hand'],L.map(x=>[x.n,String(x.s),pc(x.w,x.s),x.k?`${x.k} (${pc(x.k,x.s)})`:'—']))}
+function fxSimLog(id){const s=simGet(id);if(!s||!s.log)return;
+  openM(`<h3>👁 Sample game</h3><p class="mut">${esc(simName(s,'a'))} vs ${esc(simName(s,'b'))} — one game played turn by turn, exactly as the simulator saw it (${esc(simVer(s))}). Every game is different; this is just the first one.</p>
+  <div class="simlog">${s.log.map(l=>/^— Turn/.test(l)?`<div class="slt">${esc(l.replace(/^— /,''))}</div>`:`<div class="${/^\s/.test(l)?'sli':'sl'}">${esc(l.trim())}</div>`).join('')}</div>`)}
+function fxMatchups(){const ms=D.matchups.find(x=>/MASTER MATCHUP/i.test(x.title||'')),rows=ms?ms.rows.slice(1):[],rest=D.matchups.filter(x=>x!==ms),sims=[...(D.sims||[])].reverse(),pc=(a,b)=>b?Math.round(a/b*1000)/10+'%':'—',moe=(a,b)=>b?` ±${simMoe(a,b)}%`:'';
   return `<h3>⚔ Simulate a battle</h3><p class="mut">Pick any two decks — yours or ones from collections other people shared with you. The app plays the games itself and adds the result to the log below.</p>
   <div class="f"><label>Deck A</label><select id="simA" onchange="V.simA=this.value"></select><label>Deck B</label><select id="simB" onchange="V.simB=this.value"></select>
-  <label>Number of games</label><select id="simN" onchange="V.simN=+this.value">${[100,500,1000,5000].map(n=>`<option ${(V.simN||1000)===n?'selected':''}>${n}</option>`).join('')}</select></div>
+  <label>Number of ${V.simBo3?'matches':'games'}</label><select id="simN" onchange="V.simN=+this.value">${[100,500,1000,5000].map(n=>`<option ${(V.simN||1000)===n?'selected':''}>${n}</option>`).join('')}</select>
+  <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:6px"><input type="checkbox" ${V.simBo3?'checked':''} onchange="V.simBo3=this.checked;render()"> Best of three (games 2 and 3 use the side deck)</label></div>
   <div class="row"><button class="pri" onclick="fxSimRun()">⚔ Run simulation</button></div><div id="simout"></div>
-  <details class="g"><summary>How accurate is this?</summary><p class="mut">It is a simplified model, not a full rules engine. It plays lands and casts spells on curve, attacks and blocks using real power, toughness and keywords (flying, trample, deathtouch, first strike, lifelink, menace…), and understands removal, burn, board wipes, card draw, ramp, tokens, counterspells, lifegain and commanders from each card’s rules text. Triggered abilities, combos and tricky cards are not modelled, so treat the numbers as a guide to how the decks’ speed and board presence compare. Use “Ask an AI” on a result for a second opinion that understands synergies.</p></details>
+  <details class="g"><summary>How accurate is this?</summary><p class="mut">It is a simplified model (${esc(simVer({v:(window.SIM2&&SIM2.SIMV)||2}))}), not a full rules engine. It uses each card’s current rules text from Scryfall (or the saved card database), then:</p>
+  <ul class="mut"><li><b>Mana:</b> lands only make their real colors and spells need the right colors; tapped lands, fetch lands, mana rocks and mana creatures count.</li>
+  <li><b>Mulligans:</b> London mulligan — draw 7, mulligan bad hands, put cards on the bottom.</li>
+  <li><b>Cards:</b> creatures with their keywords, removal, burn, board wipes, card draw, ramp, tokens, counterspells, discard, lifegain, anthems, auras and equipment, artifact/enchantment removal, planeswalkers, commanders (with tax).</li>
+  <li><b>Abilities:</b> “enters”, “dies”, “attacks” and upkeep triggers, and activated abilities such as pingers, card draw and mana.</li>
+  <li><b>Instant speed:</b> holds up counterspells and removal, uses combat tricks, flashes creatures and draws at the end of the opponent’s turn.</li>
+  <li><b>Combat:</b> attacks when it’s safe or lethal and keeps blockers back so it can’t be killed on the swing back.</li>
+  <li><b>Best of three:</b> game 1 with the main deck; then the strongest side-deck cards for that opponent replace the weakest main-deck cards.</li></ul>
+  <p class="mut">Combos, unusual cards and clever play aren’t modelled, so treat the numbers as a guide. The “±” is the margin of error: run more games to make it smaller. Results marked “engine v1 (older)” came from the earlier, simpler simulator and can’t be compared directly with new ones. Use “Ask an AI” on a result for a second opinion that understands synergies.</p></details>
   <h3>Simulation log</h3>${rows.length?tbl(['ID','Date','Deck A','Deck B','Format','Games','A wins','B wins','Avg length','Status',''],[...rows].reverse().map(r=>[...r.slice(0,10).map(noEmoji),{h:`<button class="danger" data-rw style="padding:4px 8px" onclick="fxSimDel('${esc(r[0])}')">✕</button>`}])):'<p class="mut">No matchups have been run yet.</p>'}
-  ${sims.map(s=>`<details class="g" ${V.simOpen===s.id?'open':''}><summary>${esc(s.id)} · ${esc(simName(s,'a'))} vs ${esc(simName(s,'b'))} · ${pc(s.aw,s.n)} / ${pc(s.bw,s.n)}</summary>
-    ${tbl(['',s.a,s.b],[['Overall wins',`${s.aw} (${pc(s.aw,s.n)})`,`${s.bw} (${pc(s.bw,s.n)})`],['Win rate when '+s.a+' goes first',pc(s.ap[0],s.ap[1]),''],['Win rate when '+s.b+' goes first',pc(s.ad[0],s.ad[1]),''],['Draws / stalled games',s.dr,''],['Average game length',s.avg+' turns','']])}
+  ${sims.map(s=>{const A=esc(simName(s,'a')),B=esc(simName(s,'b')),apl=Array.isArray(s.ap)?s.ap:null,adr=Array.isArray(s.apd)?s.apd:Array.isArray(s.ad)?s.ad:null,G=s.games||s.n;
+    return `<details class="g" ${V.simOpen===s.id?'open':''}><summary>${esc(s.id)} · ${A} vs ${B} · ${s.bo3?`${pc(s.m.a,s.n)} / ${pc(s.m.b,s.n)} of matches`:`${pc(s.aw,G)} / ${pc(s.bw,G)}`} <span class="simv${s.v>=2?'':' old'}">${esc(simVer(s))}</span></summary>
+    ${tbl(['',A,B],[
+      ...(s.bo3?[['Matches won (best of three)',`${s.m.a} (${pc(s.m.a,s.n)}${moe(s.m.a,s.n)})`,`${s.m.b} (${pc(s.m.b,s.n)}${moe(s.m.b,s.n)})`]]:[]),
+      [s.bo3?'Games won (all games)':'Overall wins',`${s.aw} (${pc(s.aw,G)}${s.v>=2?moe(s.aw,G):''})`,`${s.bw} (${pc(s.bw,G)}${s.v>=2?moe(s.bw,G):''})`],
+      ...(s.bo3&&s.g1?[['Game 1 (main decks)',pc(s.g1[0],s.g1[0]+s.g1[1]+s.g1[2]),pc(s.g1[1],s.g1[0]+s.g1[1]+s.g1[2])],['Games 2–3 (after side deck)',pc(s.post[0],s.post[0]+s.post[1]+s.post[2]),pc(s.post[1],s.post[0]+s.post[1]+s.post[2])]]:[]),
+      ...(s.v>=2&&apl&&adr?[[`${A}’s win rate going first`,pc(apl[0],apl[1]),''],[`${A}’s win rate going second`,pc(adr[0],adr[1]),'']]:apl&&adr?[['Win rate when '+s.a+' goes first',pc(apl[0],apl[1]),''],['Win rate when '+s.b+' goes first',pc(adr[0],adr[1]),'']]:[]),
+      ['Draws / stalled games',String(s.dr),''],['Average game length',s.avg+' turns','']])}
+    ${s.bo3?`<div class="sec"><h4>Side deck swaps for games 2–3</h4>${[['a',s.planA],['b',s.planB]].map(([k,P])=>`<p class="mut" style="margin:4px 0"><b>${k==='a'?A:B}:</b> ${P&&P.length?esc(Object.entries(P.reduce((o,[i,x])=>{const key=`${x} → ${i}`;o[key]=(o[key]||0)+1;return o},{})).map(([t,n])=>`${n}× ${t}`).join(', ')):'no swaps (no side deck, or nothing better for this matchup)'}</p>`).join('')}</div>`:''}
     ${(s.unkA||[]).length||(s.unkB||[]).length?`<p class="mut" style="font-size:12px">Cards the simulator had no data for (treated as plain 3-mana spells): ${esc([...(s.unkA||[]),...(s.unkB||[])].slice(0,30).join(', '))}</p>`:''}
+    ${s.v>=2&&s.txt!=null?`<p class="mut" style="font-size:12px">${s.txt?`Card text: ${s.txt} of ${s.tot} cards used Scryfall’s current rules text; the rest used the text saved on the card.`:'Card text: Scryfall couldn’t be reached, so the text saved on each card was used.'}</p>`:''}
+    ${s.cards?`<details class="g"><summary>📊 Card report</summary><p class="mut">“Wins when drawn” is the deck’s win rate in games where that card was drawn. “Stuck in hand” counts games where it stayed in hand although there were enough lands — usually because the right colors were missing.</p><h4>${A}</h4>${simCardTbl(s,0)}<h4>${B}</h4>${simCardTbl(s,1)}</details>`:''}
     ${s.note?`<div class="sec"><h4>AI commentary</h4><pre style="white-space:pre-wrap">${esc(s.note)}</pre></div>`:''}
-    <div class="row" data-rw><button onclick="fxSimCopy('${s.id}')">📋 Copy AI prompt</button><button onclick="fxSimAsk('${s.id}')">✨ Ask an AI (uses your key)</button></div>
-    <div class="f" data-rw><label>Paste the AI’s answer here to keep it with this result</label><textarea rows="3" id="sn-${s.id}">${esc(s.note||'')}</textarea></div><div class="row" data-rw><button onclick="fxSimNote('${s.id}')">Save commentary</button></div></details>`).join('')}
+    <div class="row">${s.log?`<button onclick="fxSimLog('${s.id}')">👁 Watch a sample game</button>`:''}<button data-rw onclick="fxSimCopy('${s.id}')">📋 Copy AI prompt</button><button data-rw onclick="fxSimAsk('${s.id}')">✨ Ask an AI (uses your key)</button></div>
+    <div class="f" data-rw><label>Paste the AI’s answer here to keep it with this result</label><textarea rows="3" id="sn-${s.id}">${esc(s.note||'')}</textarea></div><div class="row" data-rw><button onclick="fxSimNote('${s.id}')">Save commentary</button></div></details>`}).join('')}
   ${rest.length?`<details class="g"><summary>Earlier analysis from your spreadsheet</summary>${rest.map(s=>`<h3>${esc(s.title)}</h3>${tbl(s.rows[0].map(noEmoji),s.rows.slice(1).map(r=>r.map(noEmoji)))}`).join('')}</details>`:''}`}
 async function simFill(){await ocLoad();const a=document.getElementById('simA'),b=document.getElementById('simB');if(!a||!b)return;
   const opts=[...D.decks.map((d,i)=>[`m:${i}`,d.name]),...OC.flatMap(r=>r.data.decks.map((d,i)=>[`o:${r.id}:${i}`,fxDeckTitle(d,r.given||r.data.owner||r.name)+(r.status==='signed'?' ✓':'')]))];
   const h=sel=>opts.map(([v,l])=>`<option value="${esc(v)}" ${sel===v?'selected':''}>${esc(l)}</option>`).join('')||'<option value="">No decks yet</option>';
   if(!V.simA||!opts.some(o=>o[0]===V.simA))V.simA=opts[0]?.[0]||'';if(!V.simB||!opts.some(o=>o[0]===V.simB))V.simB=(opts[1]||opts[0]||[''])[0];a.innerHTML=h(V.simA);b.innerHTML=h(V.simB)}
 function simPick(v){const p=String(v).split(':');if(p[0]==='m'){const d=D.decks[+p[1]];return d&&Object.assign(simDeck(d,D.cards),{owner:D.uid||'',deck:d.name})}const r=(OC||[]).find(x=>x.id===p[1]),d=r&&r.data.decks[+p[2]];return d&&Object.assign(simDeck(d,r.data.cards,`${d.name} (${r.name})`),{owner:r.uid||'',deck:d.name})}
-const simName=(s,k)=>{const o=s[k+'o'],r=o&&o!==D.uid&&(OC||[]).find(x=>x.uid===o&&!x.sep);return r&&s[k+'d']?`${s[k+'d']} (${r.name})`:s[k]};
-async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||1000,out=document.getElementById('simout');if(!A||!B)return toast('Pick two decks first');
-  if(V.simA===V.simB&&!(await ask('Both sides are the same deck (a mirror match). Run it anyway?')))return;
-  if(V.simA!==V.simB&&!(await ask(`Run ${n} games of ${A.name} vs ${B.name}?\n\nThe result is added to the Simulation log.`)))return;
+/* deck names: new results keep them in adn/bdn; older ones in ad/bd (ad was also used for the first-player numbers) */
+const simName=(s,k)=>{const dn=s[k+'dn']||(typeof s[k+'d']==='string'?s[k+'d']:''),o=s[k+'o'],r=o&&o!==D.uid&&(OC||[]).find(x=>x.uid===o&&!x.sep);return r&&dn?`${dn} (${r.name})`:s[k]};
+async function fxSimRun(){const A=simPick(V.simA),B=simPick(V.simB),n=V.simN||1000,bo3=!!V.simBo3,out=document.getElementById('simout');if(!A||!B)return toast('Pick two decks first');
   for(const d of [A,B])if(d.n<20)return toast(`${d.name} has only ${d.n} cards — add more before simulating`);
-  out.innerHTML=`<p class="mut" id="simt">Playing games…</p><div class="pbar"><i id="simb" style="width:2%"></i></div>`;
-  const r=await simRun(A,B,n,(d,t)=>{const b=document.getElementById('simb'),x=document.getElementById('simt');if(b)b.style.width=Math.round(d/t*100)+'%';if(x)x.textContent=`Playing games… ${d} of ${t}`});
-  const ms=simMaster(),num=Math.max(0,...ms.rows.slice(1).map(x=>parseInt(String(x[0]).replace(/\D/g,''))||0))+1,id='MATCH-'+String(num).padStart(3,'0'),pct=v=>(Math.round(v/n*1000)/10).toFixed(1);
-  const fmt=A.fmt&&A.fmt===B.fmt?`${A.fmt} (${fmtSize(A.fmt)} Cards)`:'Mixed formats';
-  ms.rows.push([id,today(),A.name,B.name,fmt,String(n),`${r.aw} (${pct(r.aw)}%)`,`${r.bw} (${pct(r.bw)}%)`,`${r.avg} Turns`,'Simulated in app']);
-  D.sims.push({id,date:today(),a:A.name,b:B.name,fmt,n,aw:r.aw,bw:r.bw,dr:r.dr,avg:r.avg,ap:r.ap,ad:r.ad,unkA:A.unk,unkB:B.unk,la:A.list,lb:B.list,ca:A.commander,cb:B.commander,ao:A.owner,bo:B.owner,ad:A.deck,bd:B.deck,note:''});
-  V.simOpen=id;save();render();toast(`${A.name} ${pct(r.aw)}% — ${B.name} ${pct(r.bw)}%`)}
+  const what=bo3?`${n} best-of-three matches`:`${n} games`,noSide=bo3?[A,B].filter(d=>!d.sideN).map(d=>d.name):[];
+  if(V.simA===V.simB&&!(await ask(`Both sides are the same deck (a mirror match). Run ${what} anyway?`)))return;
+  if(V.simA!==V.simB&&!(await ask(`Run ${what} of ${A.name} vs ${B.name}?${noSide.length?`\n\n${noSide.join(' and ')} ${noSide.length>1?'have':'has'} no side deck, so games 2 and 3 use the same cards.`:''}\n\nThe result is added to the Simulation log.`)))return;
+  out.innerHTML=`<p class="mut" id="simt">Getting card rules text…</p><div class="pbar"><i id="simb" style="width:2%"></i></div>`;
+  const bar=(d,t,msg)=>{const b=document.getElementById('simb'),x=document.getElementById('simt');if(b)b.style.width=Math.max(2,Math.round(d/t*100))+'%';if(x)x.textContent=msg};
+  const txt=await simEnrich([A,B],(d,t)=>bar(d,t,`Getting card rules text… ${d} of ${t}`)),tot=A.raw.cards.length+B.raw.cards.length;
+  let r;try{r=await simEngine(A.raw,B.raw,{n,bo3},(d,t)=>bar(d,t,`Playing ${bo3?'matches':'games'}… ${d} of ${t}`))}catch(e){out.innerHTML='';return toast(String(e&&e.message||e).slice(0,160))}
+  const G=r.games,ms=simMaster(),num=Math.max(0,...ms.rows.slice(1).map(x=>parseInt(String(x[0]).replace(/\D/g,''))||0))+1,id='MATCH-'+String(num).padStart(3,'0'),pct=(v,t)=>(Math.round(v/t*1000)/10).toFixed(1);
+  const fmt=A.fmt&&A.fmt===B.fmt?`${A.fmt} (${fmtSize(A.fmt)} Cards)`:'Mixed formats',wa=bo3?r.m.a:r.aw,wb=bo3?r.m.b:r.bw;
+  ms.rows.push([id,today(),A.name,B.name,fmt,bo3?`${n} (best of 3)`:String(n),`${wa} (${pct(wa,n)}% ±${simMoe(wa,n)})`,`${wb} (${pct(wb,n)}% ±${simMoe(wb,n)})`,`${r.avg} Turns`,`Simulated in app (engine v${r.v})`]);
+  D.sims.push({id,v:r.v,date:today(),a:A.name,b:B.name,fmt,n,bo3,games:G,aw:r.aw,bw:r.bw,dr:r.dr,avg:r.avg,ap:r.ap,apd:r.ad,m:r.m,g1:r.g1,post:r.post,planA:r.planA,planB:r.planB,cards:r.cards,log:(r.log||[]).slice(0,400),txt,tot,
+    unkA:r.unkA,unkB:r.unkB,la:A.list,lb:B.list,ca:A.commander,cb:B.commander,ao:A.owner,bo:B.owner,adn:A.deck,bdn:B.deck,note:''});
+  V.simOpen=id;save();render();toast(`${A.name} ${pct(wa,n)}% — ${B.name} ${pct(wb,n)}%${bo3?' of matches':''}`)}
 async function fxSimDel(id){if(!(await ask(`Remove ${id} from the matchup log?`)))return;const ms=simMaster();ms.rows=ms.rows.filter((r,i)=>i===0||r[0]!==id);D.sims=(D.sims||[]).filter(s=>s.id!==id);save();render()}
-function fxSimPrompt(s){return `You are an expert Magic: The Gathering analyst. Two decks were played against each other in a simplified simulator (it models mana, creatures, combat keywords, removal, burn, card draw and ramp, but not triggered abilities or combos).
+function fxSimPrompt(s){const v2=s.v>=2,pc=(a,b)=>b?Math.round(a/b*1000)/10+'%':'—',G=s.games||s.n,cr=k=>((s.cards||[])[k]||[]).slice(0,40).map(x=>`${x.n}: drawn in ${x.s} games, ${pc(x.w,x.s)} wins when drawn${x.k?`, stuck in hand ${x.k}×`:''}`).join('\n');
+  return `You are an expert Magic: The Gathering analyst. Two decks were played against each other in a simplified simulator (${v2?'engine v2: it models colored mana, London mulligans, creatures and combat keywords, removal, burn, wipes, card draw, ramp, tokens, counterspells, discard, enters/dies/attacks/upkeep triggers, simple activated abilities, instant-speed removal/counters/combat tricks'+(s.bo3?', and best-of-three matches with side-deck swaps':'')+', but not combos or complex cards':'an older, simpler engine: mana, creatures, combat keywords, removal, burn, card draw and ramp, but not triggered abilities or combos'}).
 
-Simulator result over ${s.n} games (${s.fmt}): ${s.a} won ${s.aw}, ${s.b} won ${s.bw}, ${s.dr} drawn or stalled. Average game length ${s.avg} turns.
+Simulator result (${s.fmt}): ${s.bo3?`${s.n} best-of-three matches — ${s.a} won ${s.m.a}, ${s.b} won ${s.m.b}. Over all ${G} games: `:`${s.n} games: `}${s.a} won ${s.aw}, ${s.b} won ${s.bw}, ${s.dr} drawn or stalled. Average game length ${s.avg} turns.${s.bo3&&(s.planA||[]).length?`\nSide deck swaps for ${s.a}: ${s.planA.map(([i,o])=>`${o} → ${i}`).join(', ')}.`:''}${s.bo3&&(s.planB||[]).length?`\nSide deck swaps for ${s.b}: ${s.planB.map(([i,o])=>`${o} → ${i}`).join(', ')}.`:''}
 
-Please give: (1) your own estimate of the real win rate and whether the simulator is likely over- or under-rating either deck, and why; (2) the key cards and synergies in each deck for this matchup; (3) how each deck should play the matchup; (4) two or three card changes that would improve each deck against the other. Keep it under 350 words.
+Please give: (1) your own estimate of the real win rate and whether the simulator is likely over- or under-rating either deck, and why; (2) the key cards and synergies in each deck for this matchup; (3) how each deck should play the matchup; (4) two or three card changes that would improve each deck against the other${s.bo3?', including side deck choices':''}. Keep it under 350 words.
 
 DECK A — ${s.a}${s.ca?' (commander: '+s.ca+')':''}:
 ${s.la||'(list not saved)'}
 
 DECK B — ${s.b}${s.cb?' (commander: '+s.cb+')':''}:
-${s.lb||'(list not saved)'}`}
+${s.lb||'(list not saved)'}${s.cards?`
+
+Simulator card report for ${s.a}:
+${cr(0)}
+
+Simulator card report for ${s.b}:
+${cr(1)}`:''}`}
 const simGet=id=>(D.sims||[]).find(s=>s.id===id);
 function fxSimCopy(id){const s=simGet(id);if(!s)return;navigator.clipboard.writeText(fxSimPrompt(s)).then(()=>toast('Prompt copied — paste it into your AI app, then paste its answer back here'),()=>toast('Could not copy'))}
 async function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;if(!(await ask('Save this note on the matchup?')))return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
@@ -1092,7 +1054,7 @@ const fxCdbSetMeta=m=>{try{m?localStorage.setItem(CDB_KEY,JSON.stringify(m)):loc
 let cdbP=null;const fxCdbOpen=()=>cdbP||(cdbP=new Promise(ok=>{try{const r=indexedDB.open('mtg_cardsdb',2);r.onupgradeneeded=()=>{const db=r.result,s=db.objectStoreNames.contains('c')?r.transaction.objectStore('c'):db.createObjectStore('c',{keyPath:'k'});if(!s.indexNames.contains('fk'))s.createIndex('fk','fk')};r.onsuccess=()=>ok(r.result);r.onerror=()=>ok(null)}catch(e){ok(null)}}));
 const cdbKey=n=>String(n||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[’']/g,"'").trim();
 function fxCdbSlim(c){const f=(c.card_faces||[])[0]||{},img=c.image_uris||f.image_uris||{};
-  return {k:cdbKey(c.name),fk:cdbKey(c.name.split(' // ')[0]),object:'card',_offline:true,id:c.id,oracle_id:c.oracle_id,name:c.name,mana_cost:c.mana_cost,cmc:c.cmc,type_line:c.type_line,oracle_text:c.oracle_text,power:c.power,toughness:c.toughness,colors:c.colors??f.colors,color_identity:c.color_identity,keywords:c.keywords,legalities:c.legalities,set:c.set,set_name:c.set_name,collector_number:c.collector_number,rarity:c.rarity,finishes:c.finishes,prices:c.prices,released_at:c.released_at,prints_search_uri:c.prints_search_uri,image_uris:img.small?{small:img.small,normal:img.normal}:undefined,card_faces:c.card_faces?c.card_faces.map(x=>({name:x.name,mana_cost:x.mana_cost,type_line:x.type_line,oracle_text:x.oracle_text,power:x.power,toughness:x.toughness,image_uris:x.image_uris?{small:x.image_uris.small,normal:x.image_uris.normal}:undefined})):undefined}}
+  return {k:cdbKey(c.name),fk:cdbKey(c.name.split(' // ')[0]),object:'card',_offline:true,id:c.id,oracle_id:c.oracle_id,name:c.name,mana_cost:c.mana_cost,cmc:c.cmc,type_line:c.type_line,oracle_text:c.oracle_text,power:c.power,toughness:c.toughness,loyalty:c.loyalty,produced_mana:c.produced_mana,colors:c.colors??f.colors,color_identity:c.color_identity,keywords:c.keywords,legalities:c.legalities,set:c.set,set_name:c.set_name,collector_number:c.collector_number,rarity:c.rarity,finishes:c.finishes,prices:c.prices,released_at:c.released_at,prints_search_uri:c.prints_search_uri,image_uris:img.small?{small:img.small,normal:img.normal}:undefined,card_faces:c.card_faces?c.card_faces.map(x=>({name:x.name,mana_cost:x.mana_cost,type_line:x.type_line,oracle_text:x.oracle_text,power:x.power,toughness:x.toughness,image_uris:x.image_uris?{small:x.image_uris.small,normal:x.image_uris.normal}:undefined})):undefined}}
 /* Wi-Fi or not: Android app asks the phone (@capacitor/network); browsers only say it where they support navigator.connection.type (Android Chrome) — iPhone/desktop browsers can't tell */
 async function fxConnType(){try{const N=isNative()&&window.Capacitor.Plugins.Network;if(N){const s=await N.getStatus();if(s&&s.connectionType)return s.connectionType}}catch(e){}const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;return c&&c.type?c.type:'unknown'}
 async function fxCdbWifiOk(){const t=await fxConnType();if(t==='wifi'||t==='ethernet')return true;
@@ -1743,7 +1705,7 @@ function fxUpdView(){const c=UPDST.cur;if(!c)fxUpdCur().then(()=>{if(V.sub==='up
   <div class="row"><button class="pri" onclick="fxUpdCheck(true)" ${UPDST.busy?'disabled':''}>${UPDST.busy?'Checking…':'🔄 Check for updates'}</button>${UPD?`<button class="pri" onclick="fxUpdRun()">⬆ Update to 1.${UPD.n}</button>`:''}</div>
   ${UPD?`<p class="mut" style="font-size:12px">Released ${esc(UPD.date)} · ${UPD.size?(UPD.size/1048576).toFixed(1)+' MB':''}. <button style="padding:3px 9px" onclick="fxUpdBackup()">💾 Back up first</button></p>`:''}
   <details class="g"><summary>How updating works</summary><p class="mut">The app downloads the new version from this project’s GitHub page and opens Android’s install screen — Android always asks you to tap Install; no app can update itself silently. The first time, Android also asks you to allow “Install unknown apps” for MtG DeckMaster. Updates are signed with the same key as your current app, so your collection stays where it is.</p></details>`}
-async function fxWebHash(){const h=[];for(const f of ['index.html','features.js']){const r=await fetch(f,{cache:'no-store'});if(!r.ok)throw 0;h.push(await r.text())}const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(h.join('\u0000')));return fxB64(d)}
+async function fxWebHash(){const h=[];for(const f of ['index.html','features.js','sim.js']){const r=await fetch(f,{cache:'no-store'});if(!r.ok)throw 0;h.push(await r.text())}const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(h.join('\u0000')));return fxB64(d)}
 async function fxWebCheck(){if(isNative()||WEBUPD||!/^https?:/.test(location.protocol))return;try{const h=await fxWebHash();if(WEBH==null){WEBH=h;return}if(h!==WEBH){WEBUPD=true;render()}}catch(e){}}
 function fxUpdStart(){if(isNative()){const last=+(localStorage.getItem(FX_UPDK)||0);if(Date.now()-last>20*3600e3)setTimeout(()=>fxUpdCheck(false),4000);return}
   fxWebCheck();setInterval(fxWebCheck,30*60e3);document.addEventListener('visibilitychange',()=>{if(!document.hidden)fxWebCheck()})}
