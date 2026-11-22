@@ -248,13 +248,13 @@ async function fxReviewConfirm(){if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i
   fxDraftSave({yes:true})}
 /* inventory screen after saving: take out / put back per “Pulled from”, sleeve changes for side moves, ⇄ to pick another “Pulled from” for an added card */
 let FXINV=null;
-function fxInvDraw(){if(!FXINV)return;const {i,before,inG0,outG0,lines}=FXINV,d=D.decks[i];if(!d)return;const inG=JSON.parse(JSON.stringify(inG0)),outG=JSON.parse(JSON.stringify(outG0));fxAllocDiff(d,before,inG,outG);
+function fxInvDraw(){if(!FXINV)return;const {i,before,inG0,outG0,lines}=FXINV,d=D.decks[i];if(!d)return;const inG=JSON.parse(JSON.stringify(inG0)),outG=JSON.parse(JSON.stringify(outG0));fxAllocDiff(d,before,inG,outG,true);
   const tot=G=>sum(Object.values(G).flat(),x=>x.q),toS=lines.filter(x=>x.k==='toS'),toD=lines.filter(x=>x.k==='toD');
   const added=[...new Set(lines.filter(x=>x.k==='add'||x.k==='sadd').map(x=>x.name))].map(findCard).filter(c=>c&&!fxBasic(c)&&Object.keys(fxSrcOwned(c)).length>1);
   const txt=(t,G)=>tot(G)?`${t}\n`+Object.keys(G).map(k=>`  ${k}\n`+G[k].map(x=>`    ${x.q}x ${x.name}${x.alt&&x.alt.length&&/^pulled from /.test(x.alt[0])?` (${x.alt.join(', ')})`:''}`).join('\n')).join('\n')+'\n':'';
   window.FXPULL=`${d.name} — inventory\n\n`+txt('TAKE OUT',inG)+'\n'+txt('PUT BACK',outG)+(toS.length?'\nUNSLEEVE (deck → side)\n'+toS.map(x=>`    ${x.n}x ${x.name}`).join('\n')+'\n':'')+(toD.length?'\nSLEEVE (side → deck)\n'+toD.map(x=>`    ${x.n}x ${x.name}`).join('\n')+'\n':'');
   const a=(d.srcs||{});
-  openM(`<div class="pull"><h3>✓ ${esc(d.name)} updated</h3><p class="mut">Where the cards come from and go back to, grouped by where they’re stored.</p>
+  openM(`<div class="pull"><h3>✓ ${esc(d.name)} updated</h3><p class="mut">Where the cards come from and go back to — every “Pulled from” separately (each bulk box, singles, each pack…), basic lands together.</p>
   <h4>Take out (${tot(inG)})</h4>${tot(inG)?fxGrpHtml(inG):'<p class="mut">Nothing to take out.</p>'}
   <h4>Put back (${tot(outG)})</h4>${tot(outG)?fxGrpHtml(outG):'<p class="mut">Nothing to put back.</p>'}
   ${toS.length?`<h4>Unsleeve — moved to the side deck (${toS.reduce((t,x)=>t+x.n,0)})</h4><p class="mut" style="margin:0 0 4px;font-size:13px">These stay with the deck, just without sleeves.</p>${toS.map(x=>`<div class="rvl"><span>${x.n}× ${esc(x.name)}</span></div>`).join('')}`:''}
@@ -274,7 +274,7 @@ function fxPullSplash(deck,inG,outG){
   const grp=G=>ord(G).map(k=>`<div class="grp"><b>${esc(k)} <span class="mut">· ${sum(G[k],x=>x.q)}</span></b>${G[k].sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div>${x.q}× ${esc(x.name)}${x.alt.length?` <span class="mut">(${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ')):'or '+esc(x.alt.join(' / '))})</span>`:''}</div>`).join('')}</div>`).join('');
   const txt=(t,G)=>tot(G)?`${t}\n`+ord(G).map(k=>`  ${k}\n`+G[k].map(x=>`    ${x.q}x ${x.name}${x.alt.length&&/^pulled from /.test(x.alt[0])?` (${x.alt.join(', ')})`:''}`).join('\n')).join('\n')+'\n':'';
   window.FXPULL=`${deck} — pull list\n\n`+txt('CARDS ADDED',inG)+'\n'+txt('CARDS REMOVED',outG);
-  openM(`<div class="pull"><h3>✓ ${esc(deck)} updated</h3><p class="mut">Your pull list, grouped by where each card is stored.</p>
+  openM(`<div class="pull"><h3>✓ ${esc(deck)} updated</h3><p class="mut">Your pull list — every “Pulled from” separately (each bulk box, singles, each pack…), basic lands together.</p>
   <h4>Cards added (${tot(inG)}) — pull these from:</h4>${fxGrpHtml(inG)}
   <h4>Cards removed (${tot(outG)}) — put these back in:</h4>${fxGrpHtml(outG)}
   <div class="row"><button onclick="navigator.clipboard.writeText(window.FXPULL).then(()=>toast('Pull list copied'),()=>toast('Could not copy'))">📋 Copy list</button><button class="pri" onclick="closeM()">Done</button></div></div>`)}
@@ -1406,7 +1406,7 @@ function fxOptRead(noFill){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)
   const takeOut=(e,H,A,isSide)=>{const k=norm(e.name),have=H[k]||0;if(e.c)e.name=e.c.name;
     if(!have){e.n=0;e.st=`✗ not in this ${isSide?'side deck':'deck'} (skipped)`;return}
     if(!isSide&&cmdC&&k===norm(cmdC.name)){e.n=0;e.st='✗ the '+(F.cmdLabel||'commander').toLowerCase()+' stays (skipped)';return}
-    e.n=Math.min(e.want,have);A[k]-=e.n;freed[k]=(freed[k]||0)+e.n;const src=e.c?(loanedIn(d.name,e.c.name)?'↩ back to the deck it was borrowed from':'↩ back to '+fxCardLabel(e.c).k):'';e.st=(e.n<e.want?`⚠ only ${have} there (removing ${e.n}) · `:'')+(src||'✓ removed')};
+    e.n=Math.min(e.want,have);A[k]-=e.n;freed[k]=(freed[k]||0)+e.n;const src=e.c?(loanedIn(d.name,e.c.name)?'↩ back to the deck it was borrowed from':'↩ back to '+fxOptBack(d,e.c,e.n).map(([s2,q])=>fxBasic(e.c)?'basic lands':s2).filter((x,j,a)=>a.indexOf(x)===j).join(', ')):'';e.st=(e.n<e.want?`⚠ only ${have} there (removing ${e.n}) · `:'')+(src||'✓ removed')};
   L.out.forEach(e=>takeOut(e,mainH,mA,false));L.sout.forEach(e=>takeOut(e,sideH,sA,true));
   let total=sum(Object.values(mA),x=>x),stotal=sum(Object.values(sA),x=>x);
   const putIn=(e,isSide)=>{const c=e.c;if(!c||!isReal(c)){e.n=0;e.st=OPT.own?'✗ not in your collection (skipped)':'✗ you don’t own it — add it to your collection first (skipped)';return}e.name=c.name;const k=norm(c.name),both=(mA[k]||0)+(sA[k]||0);
@@ -1426,7 +1426,7 @@ function fxOptRead(noFill){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)
   if(!noFill&&F.n&&total<F.n){const used={},W={};Object.keys(mA).forEach(k=>{used[k]=(mA[k]||0)+(sA[k]||0);const c=findCard(k);if(c&&mA[k]>0&&!/Land/.test(c.type))fxCI(c).forEach(x=>W[x]=(W[x]||0)+mA[k])});if(!Object.keys(W).length)cc.cols.forEach(x=>W[x]=1);
     Object.keys(used).forEach(k=>{const c=findCard(k);if(c&&fxBasic(c))used[k]=Math.max(0,used[k]-(mainH[k]||0)-(sideH[k]||0))});
     fxBasicFill(F.n-total,W,used).forEach(([nm,n,off])=>{const c=findCard(nm),k=norm(c.name);let e=L.in.find(x=>x.c&&norm(x.c.name)===k);if(e){e.n+=n;e.want=Math.max(e.want,e.n);e.st+=` · +${n} added by the app`}else L.in.push({name:c.name,c,want:n,n,reuse:0,st:off?`⚠ added by the app — off-color: you don’t have enough basic lands in the deck’s colors`:`➕ added by the app so the deck has exactly ${F.n} cards`,fill:true});mA[k]=(mA[k]||0)+n;total+=n;filled+=n})}
-  if(!noFill&&F.n&&total>F.n){Object.keys(mA).map(k=>[k,findCard(k)]).filter(([k,c])=>c&&fxBasic(c)&&mA[k]>0).sort((a,b)=>mA[b[0]]-mA[a[0]]).forEach(([k,c])=>{if(total<=F.n)return;const n=Math.min(mA[k],total-F.n);let e=L.out.find(x=>norm(x.name)===k);if(e){e.n+=n;e.want=Math.max(e.want,e.n);e.st+=` · −${n} more by the app`}else L.out.push({name:c.name,c,want:n,n,st:`➖ taken out by the app so the deck has exactly ${F.n} cards · ↩ back to ${fxCardLabel(c).k}`,fill:true});mA[k]-=n;total-=n;trimmed+=n})}
+  if(!noFill&&F.n&&total>F.n){Object.keys(mA).map(k=>[k,findCard(k)]).filter(([k,c])=>c&&fxBasic(c)&&mA[k]>0).sort((a,b)=>mA[b[0]]-mA[a[0]]).forEach(([k,c])=>{if(total<=F.n)return;const n=Math.min(mA[k],total-F.n);let e=L.out.find(x=>norm(x.name)===k);if(e){e.n+=n;e.want=Math.max(e.want,e.n);e.st+=` · −${n} more by the app`}else L.out.push({name:c.name,c,want:n,n,st:`➖ taken out by the app so the deck has exactly ${F.n} cards · ↩ back to basic lands`,fill:true});mA[k]-=n;total-=n;trimmed+=n})}
   OPT.res={outs:L.out,ins:L.in,souts:L.sout,sins:L.sin,why,total,stotal,sok,filled,trimmed};if(!noFill)fxOptPrev()}
 function fxOptPrev(){const r=OPT.res,el=$('#oprev'),d=D.decks[OPT.deck],F=dfmt(d.format);if(!el)return;const so=r.souts||[],si=r.sins||[],no=sum(r.outs,e=>e.n)+sum(so,e=>e.n),ni=sum(r.ins,e=>e.n)+sum(si,e=>e.n);
   if(!r.outs.length&&!r.ins.length&&!so.length&&!si.length){el.innerHTML='<div class="warn">I couldn’t find any “OUT 1 Card” / “IN 1 Card” lines in that reply.</div>';return}
@@ -1438,10 +1438,12 @@ function fxOptPrev(){const r=OPT.res,el=$('#oprev'),d=D.decks[OPT.deck],F=dfmt(d
   ${no+ni?'<button class="pri big" onclick="OPT.step=\'confirm\';render();scrollTo(0,0)">Accept these changes ›</button>':'<div class="warn">None of the suggested changes can be made (see the reasons above).</div>'}`}
 function fxOptGroups(){const r=OPT.res,d=D.decks[OPT.deck],al=optAllowed(),outG={},inG={};
   r.outs.filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name);let n=e.n-Math.min(e.n,sum((r.sins||[]).filter(x=>x.reuse&&norm(x.name)===norm(e.name)),x=>x.reuse));[...actLoans()].reverse().filter(l=>l.to===d.name&&norm(l.card)===norm(e.name)).forEach(l=>{if(n<=0)return;const k=Math.min(n,l.qty);n-=k;fxGrpPut(outG,'Return to deck: '+l.from,k,e.name)});
-    if(n>0){const L=c?fxCardLabel(c):{k:'Not in your collection',alt:[]};fxGrpPut(outG,L.k,n,e.name,L.alt)}});
-  (r.souts||[]).filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name),mv=sum((r.ins||[]).filter(x=>x.reuse&&norm(x.name)===norm(e.name)),x=>x.reuse),n=e.n-Math.min(e.n,mv);if(n>0){const L=c?fxCardLabel(c):{k:'Not in your collection',alt:[]};fxGrpPut(outG,L.k,n,e.name+' (side deck)',L.alt)}});
-  [...r.ins,...(r.sins||[])].filter(e=>e.n>0).forEach(e=>{const sd=(r.sins||[]).includes(e),n=e.n-(e.reuse||0);if(e.reuse)fxGrpPut(inG,sd?'⇄ Moved from the deck to the side deck':'⇄ Moved from the side deck to the deck',e.reuse,e.c.name);if(n<=0)return;const pl=planCard(e.c,n,al),L=fxCardLabel(e.c),nm=e.c.name+(sd?' (side deck)':'');fxGrpPut(inG,L.k,e.c.type==='Basic Land'?n:pl.free,nm,L.alt);if(e.c.type!=='Basic Land')pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,nm))});
+    if(n>0){if(!c)return fxGrpPut(outG,'Not in your collection',n,e.name);fxOptBack(d,c,n).forEach(([s2,q])=>fxGenPut(outG,c,s2,q))}});
+  (r.souts||[]).filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name),mv=sum((r.ins||[]).filter(x=>x.reuse&&norm(x.name)===norm(e.name)),x=>x.reuse),n=e.n-Math.min(e.n,mv);if(n>0){if(!c)return fxGrpPut(outG,'Not in your collection',n,e.name+' (side deck)');fxOptBack(d,c,n).forEach(([s2,q])=>fxBasic(c)?fxGrpPut(outG,FXBASICS,q,e.name+' (side deck)'):fxGrpPut(outG,s2,q,e.name+' (side deck)'))}});
+  [...r.ins,...(r.sins||[])].filter(e=>e.n>0).forEach(e=>{const sd=(r.sins||[]).includes(e),n=e.n-(e.reuse||0);if(e.reuse)fxGrpPut(inG,sd?'⇄ Moved from the deck to the side deck':'⇄ Moved from the side deck to the deck',e.reuse,e.c.name);if(n<=0)return;const pl=planCard(e.c,n,al),nm=e.c.name+(sd?' (side deck)':'');if(fxBasic(e.c))return fxGrpPut(inG,FXBASICS,n,nm);if(pl.free>0)fxPlanSrcs(e.c,pl.free).forEach(([s2,q])=>fxGrpPut(inG,s2,q,nm));pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,nm))});
   return {outG,inG}}
+/* which “Pulled from” removed copies go back to: the deck's own assignment (d.srcs), last-assigned source first, like the allocator trims */
+function fxOptBack(d,c,n){const a=Object.entries((d.srcs||{})[norm(c.name)]||{}).reverse(),out=[];for(const [s,q] of a){if(n<=0)break;const t=Math.min(n,q);out.push([s,t]);n-=t}if(n>0)out.push([cardSources(c)[0]||'Unknown',n]);return out}
 function fxOptConfirm(m,i){const d=D.decks[i],F=dfmt(d.format),{outG,inG}=fxOptGroups(),no=sum(Object.values(outG).flat(),x=>x.q),ni=sum(Object.values(inG).flat(),x=>x.q);
   m.innerHTML=`<button onclick="OPT.step='';render();scrollTo(0,0)">‹ Back to the suggestions</button><h2 style="margin:10px 0 4px">Confirm changes to ${esc(d.name)}</h2>
   <p class="mut">Check every card. Nothing changes until you tap <b>Update deck</b>.</p>
