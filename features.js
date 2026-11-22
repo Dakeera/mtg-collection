@@ -1295,6 +1295,19 @@ ${prev}
 
 PROBLEM WITH IT: ${msg}
 Reply again with the COMPLETE corrected answer in exactly the same format (not just the changes).`;
+/* Deck Generator name ideas (owner request): the AI's “NAME:” lines first, then ideas made from the theme, colors and commander; names already used by a deck get a number */
+const FXGUILD={W:'Mono-White',U:'Mono-Blue',B:'Mono-Black',R:'Mono-Red',G:'Mono-Green',WU:'Azorius',UB:'Dimir',BR:'Rakdos',RG:'Gruul',WG:'Selesnya',WB:'Orzhov',UR:'Izzet',BG:'Golgari',WR:'Boros',UG:'Simic',WUG:'Bant',WUB:'Esper',UBR:'Grixis',BRG:'Jund',WRG:'Naya',WBG:'Abzan',WUR:'Jeskai',UBG:'Sultai',WBR:'Mardu',URG:'Temur',WUBRG:'Five-Color'};
+function aiNameIdeas(r){const out=[],add=n=>{n=String(n||'').replace(/\s+/g,' ').trim();if(!n||n.length>40||out.some(x=>x.toLowerCase()===n.toLowerCase()))return;out.push(n)};
+  ((r&&r.names)||[]).forEach(add);
+  const F=dfmt(G.fmt),cols=new Set(aiColors());(r&&r.ents||[]).forEach(e=>{if(e.c&&e.add&&!/Land/.test(e.c.type))fxCI(e.c).forEach(x=>cols.add(x))});
+  const key=CLR.filter(x=>cols.has(x)).join(''),guild=FXGUILD[key]||'',stop=new Set('a an the and with of my in on for to deck build built around based using some lots lot that this very more most aggressive aggro control fun my'.split(' ')),
+    T=x=>x.charAt(0).toUpperCase()+x.slice(1),words=String(G.theme||'').toLowerCase().replace(/[^a-z' -]/g,' ').split(/\s+/).filter(w=>w.length>2&&!stop.has(w)).map(T).slice(0,3),
+    cmd=(G.cmd||(F&&F.cmd&&r&&r.ents&&r.ents[0]&&r.ents[0].name)||'').split(/[ ,]/)[0],agg=/aggr|aggro|fast|rush|burn/i.test(G.theme||''),ctl=/control|counter|slow|lock/i.test(G.theme||'');
+  const suf=agg?['Rush','Blitz','Onslaught']:ctl?['Control','Lockdown','Fortress']:['Engine','Assembly','Uprising'];
+  if(words.length){add(`${guild?guild+' ':''}${words[0]}${words[1]?' '+words[1]:''}`);add(`${words[0]} ${suf[0]}`);if(cmd)add(`${cmd}'s ${words[0]}`)}
+  else if(guild){add(`${guild} ${suf[0]}`);add(`${guild} ${suf[1]}`)}
+  if(cmd&&!words.length)add(`${cmd}'s ${suf[2]}`);
+  return out.slice(0,6).map(n=>{let x=n,k=2;while(D.decks.some(d=>d.name.toLowerCase()===x.toLowerCase()))x=`${n} ${k++}`;return x})}
 let OPT={};
 function fxOptOpen(i){if(RO)return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your unsaved deck changes first');DRAFT=null;
   if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:false,from:{},side:fxSideN(D.decks[i].cards)>0,reply:'',res:null,step:'',err:''};
