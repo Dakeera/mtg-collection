@@ -1273,9 +1273,31 @@ const fxGrpHtml=G=>{const ks=fxGrpOrd(G);if(!ks.length)return '<p class="mut">No
   return `<table class="gtab">${ks.map(k=>`<tr class="gh"><th colspan="2">${esc(k)}</th><th class="gq">${sum(G[k],x=>x.q)}</th></tr>`+fxGrpRows(G[k]).map(x=>`<tr><td class="gq">${x.q}×</td><td colspan="2"><span class="gp">${fxPips(x.name)}</span>${esc(x.name)}${x.alt.length?`<span class="gd">${/^pulled from /.test(x.alt[0])?esc(x.alt.join(', ').replace(/^pulled from /,'')):'or '+esc(x.alt.join(' / '))}</span>`:''}</td></tr>`).join('')).join('')}</table>`};
 
 /* ---------- ✨ Optimize Deck: the Deck Generator’s tools pointed at an existing deck ---------- */
+/* Deck Generator / Optimize: side deck on or off (owner request), the exact deck size, and topping up with basic lands */
+const aiSideOn=F=>!!F&&!F.single&&G.side!==false;
+function fxSideToggle(v,F){if(!F||F.single)return '';const S=v==='G'?G:OPT,on=v==='G'?S.side!==false:!!S.side;
+  return `<label style="margin-top:6px"><input type="checkbox" ${on?'checked':''} onchange="${v}.side=this.checked;${v==='G'?'fxGenKeep();G.res=null;':'OPT.res=null;'}render()">${v==='G'?'Include a side deck':'Let the AI change the side deck'}</label><p class="mut" style="font-size:12px;margin:2px 0 0">${on?`On: ${v==='G'?'a side deck of 1 to '+FXSIDEMAX+' cards is suggested too':'it may suggest side deck changes (1 to '+FXSIDEMAX+' cards in total)'}. Side cards don’t count toward the ${F.n}.`:v==='G'?'Off: no side deck — just the '+F.n+'-card deck.':'Off: the side deck is left exactly as it is.'}</p>`}
+const FXBAS={W:'Plains',U:'Island',B:'Swamp',R:'Mountain',G:'Forest'};
+/* basic lands you own, spread over the colors by weight (W:{color:count}); used = copies already planned per card */
+function fxBasicFill(need,W,used){const got={},av=k=>{const c=findCard(FXBAS[k]);return c?Math.max(0,freeCopies(c)-(used[norm(c.name)]||0)-(got[k]||0)):0};
+  const on=Object.keys(FXBAS).filter(k=>W[k]>0),all=Object.keys(FXBAS);
+  /* the deck's own colors first; only when you're out of those, other basic lands (marked off-color) so the size is still right */
+  for(let i=0;i<need;i++){const pick=L=>L.filter(k=>av(k)>0).sort((a,b)=>(W[b]||1)/((got[b]||0)+1)-(W[a]||1)/((got[a]||0)+1))[0];const k=pick(on)||pick(all);if(!k)break;got[k]=(got[k]||0)+1}
+  return Object.keys(got).map(k=>[FXBAS[k],got[k],on.length>0&&!on.includes(k)])}
+/* the Deck Generator's list: is the usable main deck the wrong size? */
+function aiSizeProblem(){const F=dfmt(G.fmt),r=G.res;if(!F||!F.n||!r)return null;const n=r.raw;if(n===F.n)return null;
+  const bad=r.ents.filter(e=>!e.sideOnly&&(e.add||0)<e.want).map(e=>`${e.want} ${e.name}: ${String(e.st).replace(/^[✗⚠]\s*/,'')}`);
+  return {n,want:F.n,msg:`Your main deck has ${n} usable cards but it must have EXACTLY ${F.n}.${bad.length?' These lines could not be used as written:\n'+bad.join('\n'):''}\nReplace or adjust cards so the main deck adds up to exactly ${F.n}${aiSideOn(F)?' (side deck cards don’t count)':''}.`}}
+const fxFixPrompt=(p,prev,msg)=>`${p}
+
+YOUR PREVIOUS ANSWER:
+${prev}
+
+PROBLEM WITH IT: ${msg}
+Reply again with the COMPLETE corrected answer in exactly the same format (not just the changes).`;
 let OPT={};
 function fxOptOpen(i){if(RO)return;if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return toast('Save or discard your unsaved deck changes first');DRAFT=null;
-  if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:false,from:{},reply:'',res:null,step:'',err:''};
+  if(OPT.deck!==i||OPT.dname!==D.decks[i].name)OPT={deck:i,dname:D.decks[i].name,goal:'',colors:[],legal:'',own:true,noDecks:false,from:{},side:fxSideN(D.decks[i].cards)>0,reply:'',res:null,step:'',err:''};
   V.opt=i;render();scrollTo(0,0);const F=dfmt(D.decks[i].format);if(F&&F.leg)ensureLegal().then(()=>render())}
 function fxOptClose(){if(OPT.busy)aiCancel2();V.opt=null;OPT.step='';render();scrollTo(0,0)}
 /* Deck Generator / Optimize: which decks may cards be taken from (owner request) — “Include all decks” / “Include none” on top, then one checkbox per deck (Optimize leaves out the deck being optimized). Nothing ticked = only cards that aren’t in any deck. */
@@ -1308,7 +1330,8 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=fxMain
   ${fxFromUI('OPT',i)}
   <label>Goal</label><textarea rows="3" oninput="OPT.goal=this.value" placeholder="How do you want to optimize?">${esc(OPT.goal)}</textarea>
   <p class="mut" style="font-size:12px;margin:4px 0 0">Describe a problem (“runs out of cards”, “too slow”), or a play style or ability to balance. Leave it blank and the AI looks for a more optimal build overall.</p>
-  <label><input type="checkbox" ${OPT.own?'checked':''} onchange="OPT.own=this.checked">Only use cards I own</label></div>
+  <label><input type="checkbox" ${OPT.own?'checked':''} onchange="OPT.own=this.checked">Only use cards I own</label>${fxSideToggle('OPT',F)}</div>
+  ${F&&F.n?`<p class="mut" style="margin:6px 0">After the changes the deck always has exactly ${F.n} cards: if the AI’s changes add up wrong, the app asks it to fix them (Option B) and then evens out with your basic lands.</p>`:''}
   <details class="aopt" ${fxAiOpen('a')} ontoggle="fxAiTog('a',this.open)"><summary><h3>Option A — use your own AI chat (no key needed)</h3></summary><ol class="st"><li>Set the options above.</li><li>Tap <b>Copy prompt</b>.</li><li>Paste it into a new chat in your AI app (Gemini, ChatGPT, Claude, etc.) and send.</li><li>Copy its whole answer, paste it into the <b>AI reply</b> box below and tap <b>Read reply</b>.</li></ol><button class="pri" onclick="fxOptCopy()">📋 Copy prompt</button></details>
   <details class="aopt" ${fxAiOpen('b')} ontoggle="fxAiTog('b',this.open)"><summary><h3>Option B — optimize here (needs an API key)</h3></summary><p class="mut">Uses the same provider, model and key as the Deck Generator.</p>
   ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}</details>
@@ -1317,7 +1340,7 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=fxMain
 function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=fxMainN(d.cards);
   d.cards.forEach(e=>{const k=norm(e.name);inDeck[k]=(inDeck[k]||0)+e.qty});
   const desc=c=>`${c.type} | ${c.colors} | MV ${c.cmc}`;
-  const deckRows=d.cards.filter(e=>fxMainQ(e)>0).map(e=>{const c=findCard(e.name);return `${fxMainQ(e)} ${e.name}${c?' | '+desc(c):''}`}),sideRows=d.cards.filter(e=>e.side>0).map(e=>{const c=findCard(e.name);return `${e.side} ${e.name}${c?' | '+desc(c):''}`}),sok=fxSideOK(d);
+  const deckRows=d.cards.filter(e=>fxMainQ(e)>0).map(e=>{const c=findCard(e.name);return `${fxMainQ(e)} ${e.name}${c?' | '+desc(c):''}`}),sideRows=d.cards.filter(e=>e.side>0).map(e=>{const c=findCard(e.name);return `${e.side} ${e.name}${c?' | '+desc(c):''}`}),sok=fxSideOK(d)&&!!OPT.side;
   const rows=D.cards.filter(c=>isReal(c)&&optLegal(c,F)&&!(F.leg&&c.custom)&&(!cc.cols.length||okColor(c,cc.cols)))
     .map(c=>({c,a:Math.min(aiAvail(c,al),Math.max(0,copyCap(c,F)-(inDeck[norm(c.name)]||0)))})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${desc(c)} | available ${a}`);
   const legal=F.leg?F.k:OPT.legal?(FMTS.find(x=>x[0]===OPT.legal)||[])[1]:'';
@@ -1328,20 +1351,20 @@ Goal: ${OPT.goal.trim()||'Review the cards available in my collection and the ca
 Format legality: ${legal?'only cards legal in '+legal+' (the list below is already filtered; a card marked restricted may appear only once)':'none — any card is fine'}
 Colors: ${cc.cols.length?(cmdC?'only cards inside the '+(F.cmdLabel||'commander').toLowerCase()+'’s color identity: ':'stay within ')+cc.cols.map(x=>CLRN[x]).join(', ')+(cmdC?'':' (colorless cards and lands are fine)'):'any'}
 ${OPT.own?'New cards must come ONLY from MY AVAILABLE CARDS below, spelled exactly as listed, never more copies than "available".':'Prefer cards from MY AVAILABLE CARDS below; you may suggest a few cards I do not own — put * at the end of those lines (I would have to get them first).'}
-The deck has ${tot} cards now and must have exactly ${F.n||tot} cards after your changes.
+DECK SIZE: the deck has ${tot} cards now and must have EXACTLY ${F.n||tot} after your changes: ${tot} − (cards you take OUT) + (cards you put IN) = ${F.n||tot}. Check this sum before answering.${fxSideOK(d)&&!sok?' Do NOT change the side deck — no SIDE lines.':''}
 
 OUTPUT FORMAT: list only the changes, one per line:
 OUT <quantity> <card name>   (a card to take out of the deck)
 IN <quantity> <card name>    (a card to put into the deck)${sok?`
 SIDE OUT <quantity> <card name>   (take a card out of the side deck)
 SIDE IN <quantity> <card name>    (put a card into the side deck)
-The side deck (sideboard) holds up to ${FXSIDEMAX} cards for tough matchups and is not counted in the deck size; the copy limit counts deck + side deck together. To move a card between the deck and the side deck, use OUT + SIDE IN (or SIDE OUT + IN) for the same card.`:''}
+The side deck (sideboard) holds 1 to ${FXSIDEMAX} cards for tough matchups and is not counted in the deck size; the copy limit counts deck + side deck together. To move a card between the deck and the side deck, use OUT + SIDE IN (or SIDE OUT + IN) for the same card.`:''}
 No headings or bullets. Then write a line containing only --- and explain the changes and why they help (under 200 words).
 
 CURRENT DECK (quantity name | type | colors | mana value):
 ${deckRows.join('\n')}${sok?`
 
-CURRENT SIDE DECK (${fxSideN(d.cards)}/${FXSIDEMAX}):
+CURRENT SIDE DECK (${fxSideN(d.cards)}/${FXSIDEMAX}; after your changes it should have 1 to ${FXSIDEMAX} cards):
 ${sideRows.join('\n')||'(empty)'}`:''}
 
 MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
@@ -1351,12 +1374,16 @@ async function fxOptCopy(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return t
 function aiCancel2(){if(OPT.ctl){OPT.cancelled=true;OPT.ctl.abort()}}
 async function fxOptRun(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
   const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)return toast('Enter a model and your API key first');if((F.leg||OPT.legal)&&!(await ensureLegal()))return;
-  OPT.busy=true;OPT.err='';OPT.t0=Date.now();OPT.ctl=new AbortController();render();const tick=setInterval(()=>{const b=$('#obusy');if(b)b.textContent='Waiting for the AI… '+fxElapsed(OPT.t0)},1000);let txt='';
-  try{txt=await fxCallAI(fxOptPrompt(),{signal:OPT.ctl.signal,timeout:180000,maxTokens:6000})}
+  OPT.busy=true;OPT.err='';OPT.t0=Date.now();OPT.ctl=new AbortController();OPT.bmsg='Waiting for the AI…';OPT.fixed=0;render();const tick=setInterval(()=>{const b=$('#obusy');if(b)b.textContent=OPT.bmsg+' '+fxElapsed(OPT.t0)},1000);let txt='';
+  try{const p=fxOptPrompt();txt=await fxCallAI(p,{signal:OPT.ctl.signal,timeout:180000,maxTokens:6000});
+    for(let t=1;t<=2&&txt;t++){OPT.reply=txt;{const ta=$('#oreply');if(ta)ta.value=txt}fxOptRead(true);const r=OPT.res,F2=dfmt(D.decks[OPT.deck].format);if(!r||!F2.n||r.total===F2.n)break;
+      const bad=[...r.outs,...r.ins,...(r.souts||[]),...(r.sins||[])].filter(e=>(e.n||0)<e.want).map(e=>`${e.want} ${e.name}: ${String(e.st).replace(/^[✗⚠]\s*/,'')}`);
+      OPT.bmsg=`The changes left ${r.total} cards, not ${F2.n} — asking the AI to fix it (${t} of 2)…`;const b=$('#obusy');if(b)b.textContent=OPT.bmsg;
+      const t2=await fxCallAI(fxFixPrompt(p,txt,`After your changes the deck has ${r.total} cards but it must have EXACTLY ${F2.n}.${bad.length?' These lines could not be used as written:\n'+bad.join('\n'):''}\nAdjust the OUT/IN lines so the deck ends with exactly ${F2.n} cards.`),{signal:OPT.ctl.signal,timeout:180000,maxTokens:6000});if(t2){txt=t2;OPT.fixed=t}}}
   catch(e){OPT.err=e&&e.name==='AbortError'?(OPT.cancelled?'Cancelled.':'The AI took longer than 3 minutes, so I stopped waiting. Try again, or pick a faster model.'):String(e&&e.message||e)}
   clearInterval(tick);OPT.busy=false;OPT.cancelled=false;OPT.ctl=null;if(txt&&!OPT.err){OPT.reply=txt;OPT.res=null}render();if(txt&&!OPT.err)fxOptRead()}
-function fxOptRead(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
-  OPT.reply=$('#oreply')?.value??OPT.reply;const parts=OPT.reply.split(/^\s*---+\s*$/m),why=(parts.slice(1).join('\n')).trim(),al=optAllowed(),cmdC=F.cmd&&d.commander&&findCard(d.commander),cc=optCols(d,F),sok=fxSideOK(d);
+function fxOptRead(noFill){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
+  OPT.reply=$('#oreply')?.value??OPT.reply;const parts=OPT.reply.split(/^\s*---+\s*$/m),why=(parts.slice(1).join('\n')).trim(),al=optAllowed(),cmdC=F.cmd&&d.commander&&findCard(d.commander),cc=optCols(d,F),sok=fxSideOK(d)&&!!OPT.side;
   const mainH={},sideH={};d.cards.forEach(e=>{const k=norm(e.name);mainH[k]=(mainH[k]||0)+fxMainQ(e);sideH[k]=(sideH[k]||0)+(e.side||0)});
   const L={out:[],in:[],sout:[],sin:[]},B={out:{},in:{},sout:{},sin:{}};
   parts[0].split('\n').forEach(l=>{l=l.replace(/^[\s•*]+/,'').replace(/\*\*/g,'');const m=l.match(/^(SIDE(?:BOARD)?\s+)?(OUT|IN|REMOVE|ADD|CUT|[-−+])\s*:?\s*(\d+)?\s*x?\s+(.+?)\s*$/i);if(!m)return;
@@ -1381,14 +1408,20 @@ function fxOptRead(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)return
     if(!n){e.st='✗ '+note.join(', ')+' (skipped)';return}
     const p2=planCard(c,n-ru,al);e.st=(note.length?'⚠ '+note.join(', ')+` (adding ${n}) · `:'')+(ru?`⇄ ${ru} moved ${isSide?'from the deck':'from the side deck'}${n-ru?' + ':''}`:'')+(n-ru?(p2.from.length?'↪ '+p2.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(p2.free?` + ${p2.free} free`:''):'✓ free in your collection'):'')};
   L.in.forEach(e=>putIn(e,false));L.sin.forEach(e=>putIn(e,true));
-  OPT.res={outs:L.out,ins:L.in,souts:L.sout,sins:L.sin,why,total,stotal,sok};fxOptPrev()}
+  /* always the right size: top up with your basic lands, or take extra basic lands out */
+  let filled=0,trimmed=0;
+  if(!noFill&&F.n&&total<F.n){const used={},W={};Object.keys(mA).forEach(k=>{used[k]=(mA[k]||0)+(sA[k]||0);const c=findCard(k);if(c&&mA[k]>0&&!/Land/.test(c.type))fxCI(c).forEach(x=>W[x]=(W[x]||0)+mA[k])});if(!Object.keys(W).length)cc.cols.forEach(x=>W[x]=1);
+    Object.keys(used).forEach(k=>{const c=findCard(k);if(c&&fxBasic(c))used[k]=Math.max(0,used[k]-(mainH[k]||0)-(sideH[k]||0))});
+    fxBasicFill(F.n-total,W,used).forEach(([nm,n,off])=>{const c=findCard(nm),k=norm(c.name);let e=L.in.find(x=>x.c&&norm(x.c.name)===k);if(e){e.n+=n;e.want=Math.max(e.want,e.n);e.st+=` · +${n} added by the app`}else L.in.push({name:c.name,c,want:n,n,reuse:0,st:off?`⚠ added by the app — off-color: you don’t have enough basic lands in the deck’s colors`:`➕ added by the app so the deck has exactly ${F.n} cards`,fill:true});mA[k]=(mA[k]||0)+n;total+=n;filled+=n})}
+  if(!noFill&&F.n&&total>F.n){Object.keys(mA).map(k=>[k,findCard(k)]).filter(([k,c])=>c&&fxBasic(c)&&mA[k]>0).sort((a,b)=>mA[b[0]]-mA[a[0]]).forEach(([k,c])=>{if(total<=F.n)return;const n=Math.min(mA[k],total-F.n);let e=L.out.find(x=>norm(x.name)===k);if(e){e.n+=n;e.want=Math.max(e.want,e.n);e.st+=` · −${n} more by the app`}else L.out.push({name:c.name,c,want:n,n,st:`➖ taken out by the app so the deck has exactly ${F.n} cards · ↩ back to ${fxCardLabel(c).k}`,fill:true});mA[k]-=n;total-=n;trimmed+=n})}
+  OPT.res={outs:L.out,ins:L.in,souts:L.sout,sins:L.sin,why,total,stotal,sok,filled,trimmed};if(!noFill)fxOptPrev()}
 function fxOptPrev(){const r=OPT.res,el=$('#oprev'),d=D.decks[OPT.deck],F=dfmt(d.format);if(!el)return;const so=r.souts||[],si=r.sins||[],no=sum(r.outs,e=>e.n)+sum(so,e=>e.n),ni=sum(r.ins,e=>e.n)+sum(si,e=>e.n);
   if(!r.outs.length&&!r.ins.length&&!so.length&&!si.length){el.innerHTML='<div class="warn">I couldn’t find any “OUT 1 Card” / “IN 1 Card” lines in that reply.</div>';return}
-  el.innerHTML=`<h3>Suggested changes</h3>${r.why?`<div class="sec" style="white-space:pre-wrap">${esc(r.why)}</div>`:''}
+  el.innerHTML=`<h3>Suggested changes</h3>${OPT.fixed?`<p class="mut">The AI’s first answer left the deck at the wrong size, so the app asked it to fix the count${OPT.fixed>1?' (twice)':''}.</p>`:''}${r.filled?`<p class="mut">➕ The app added ${fxPl(r.filled,'basic land')} so the deck has exactly ${F.n} cards.</p>`:''}${r.trimmed?`<p class="mut">➖ The app took out ${fxPl(r.trimmed,'basic land')} so the deck has exactly ${F.n} cards.</p>`:''}${r.why?`<div class="sec" style="white-space:pre-wrap">${esc(r.why)}</div>`:''}
   <h4>Take out (${sum(r.outs,e=>e.n)})</h4>${r.outs.length?tbl(['Qty','Card','Status'],r.outs.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
   <h4>Put in (${sum(r.ins,e=>e.n)})</h4>${r.ins.length?tbl(['Qty','Card','Comes from'],r.ins.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
   ${so.length||si.length?`<h4>Side deck — take out (${sum(so,e=>e.n)})</h4>${so.length?tbl(['Qty','Card','Status'],so.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}<h4>Side deck — put in (${sum(si,e=>e.n)})</h4>${si.length?tbl(['Qty','Card','Comes from'],si.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}`:''}
-  <p class="mut">After these changes the deck has <b>${r.total}${F&&F.n?'/'+F.n:''}</b> cards${r.sok?` and the side deck ${r.stotal}/${FXSIDEMAX}`:''}.${F&&F.n&&r.total<F.n?` That’s ${F.n-r.total} short — you can add cards by hand afterwards.`:''}</p>
+  <p class="mut">After these changes the deck has <b>${r.total}${F&&F.n?'/'+F.n:''}</b> cards${r.sok?` and the side deck ${r.stotal}/${FXSIDEMAX}`:''}.${F&&F.n&&r.total!==F.n?` <span style="color:#f39c12">That’s ${Math.abs(F.n-r.total)} ${r.total<F.n?'short':'over'} — there weren’t enough usable cards or basic lands to even it out. You can fix it by hand afterwards.</span>`:''}</p>
   ${no+ni?'<button class="pri big" onclick="OPT.step=\'confirm\';render();scrollTo(0,0)">Accept these changes ›</button>':'<div class="warn">None of the suggested changes can be made (see the reasons above).</div>'}`}
 function fxOptGroups(){const r=OPT.res,d=D.decks[OPT.deck],al=optAllowed(),outG={},inG={};
   r.outs.filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name);let n=e.n-Math.min(e.n,sum((r.sins||[]).filter(x=>x.reuse&&norm(x.name)===norm(e.name)),x=>x.reuse));[...actLoans()].reverse().filter(l=>l.to===d.name&&norm(l.card)===norm(e.name)).forEach(l=>{if(n<=0)return;const k=Math.min(n,l.qty);n-=k;fxGrpPut(outG,'Return to deck: '+l.from,k,e.name)});
@@ -1779,7 +1812,7 @@ function fxOverrideAuto(i){const d=D.decks[i];if(!d||!d.override||deckIssues(i).
 function aiCmdChoices(F){const al=aiAllowed(),cols=aiColors();
   return D.cards.filter(c=>isReal(c)&&cmdOK(c,F)&&okLegal(c)&&aiAvail(c,al)>0&&(!cols.length||okColor(c,cols)))}
 async function aiReset(){if(!(await ask('Start over?\n\nThis clears the deck type, colors, where cards may come from, theme, commander, the AI reply and the preview.\n\nYour saved API key and model stay as they are.\n\nOK = clear everything\nCancel = keep it')))return;
-  Object.assign(G,{fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:false,from:{},busy:false,res:null,reply:'',err:''});render();scrollTo(0,0);toast('Deck Generator cleared')}
+  Object.assign(G,{fmt:'',legal:'',theme:'',cmd:'',colors:[],rand:false,rc:null,own:true,noDecks:false,from:{},side:true,busy:false,res:null,reply:'',err:''});render();scrollTo(0,0);toast('Deck Generator cleared')}
 
 /* ---------- Add card tab: create a custom card by hand ---------- */
 const fxCustomAddBtn=()=>`<div class="sec" style="margin-top:14px"><h4>Custom card</h4><p class="mut" style="font-size:12px;margin:4px 0 8px">For proxies, homebrew or playtest cards that aren’t on Scryfall. They go in your ★ Custom cards group.</p><div class="row"><button class="pri" onclick="fxCustomNew()">★ Add a custom card</button></div></div>`;
