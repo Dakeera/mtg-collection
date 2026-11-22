@@ -318,7 +318,7 @@ function render(){
 const SCR={};const showTab=k=>{V.view=k;V.deck=null;render();scrollTo(0,k==='collection'?(SCR.collection||0):0);topBtn()};
 function go(k){if(k===V.view&&k==='more'&&V.sub&&IMP.stage!=='pick')V.sub='';if(k!==V.view){if(fxDraftDirty()){fxCanLeave().then(y=>{if(y)go(k)});return}DRAFT=null}if(k!==V.view){SCR[V.view]=scrollY;HIST.push(V.view);if(HIST.length>20)HIST.shift()}showTab(k)}
 document.addEventListener('click',e=>{const t=e.target;let b;
-  if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);
+  if(b=t.closest('[data-dec]'))return chg(b.dataset.dec,-1);if(b=t.closest('[data-inc]'))return chg(b.dataset.inc,1);if(b=t.closest('[data-sdec]'))return fxDraftChg(V.deck,b.dataset.sdec,-1,false,true);if(b=t.closest('[data-sinc]'))return fxDraftChg(V.deck,b.dataset.sinc,1,false,true);if(b=t.closest('[data-tos]'))return fxDraftSwap(V.deck,b.dataset.tos,true);if(b=t.closest('[data-tom]'))return fxDraftSwap(V.deck,b.dataset.tom,false);
   if(b=t.closest('[data-pd]'))return pickDeck(b.dataset.pd);if(b=t.closest('[data-adc]'))return fxDraftChg(V.deck,b.dataset.adc,1,true);
   if(b=t.closest('[data-flip]'))return flip(b.dataset.flip);if(b=t.closest('[data-dck]'))return dcFix(+b.dataset.dck);if(b=t.closest('[data-dcf]'))return dcKeep(+b.dataset.dcf);if(b=t.closest('[data-q]'))return qtyChange(b.dataset.qn,+b.dataset.q,b.dataset.qf,b.dataset.qs);if(b=t.closest('[data-sp]'))return setPrint(b.dataset.sp);if(b=t.closest('[data-zoom]'))return fxCopiesOpen(b.dataset.zoom)?void 0:zoom(b.dataset.zoom);if(b=t.closest('[data-vf]'))return findCard(b.dataset.vf)?.custom?fxCustomArt(b.dataset.vf):fxCopiesOpen(b.dataset.vf)?void 0:vfAsk(b.dataset.vf);if(b=t.closest('[data-cart]'))return fxCustomArt(b.dataset.cart);if(b=t.closest('[data-art]'))return artPicker(b.dataset.art);if(b=t.closest('[data-apv]'))return apView(b.dataset.apv);if(b=t.closest('[data-ap]'))return useArt(b.dataset.ap);if(b=t.closest('[data-pick]'))return pickName(b.dataset.pick);if(b=t.closest('[data-cand]'))return pick(+b.dataset.cand);
   if(b=t.closest('[data-card]'))return showCard(b.dataset.card);if(b=t.closest('[data-dcd]'))return dcDetail(+b.dataset.dcd);if(t.id==='modal')tryClose()});
@@ -404,7 +404,7 @@ async function qtyFins(e,src){const fm=finMapOf(e),own=Object.keys(fm).filter(k=
   const F=[];pp.forEach(p=>(p.finishes||['nonfoil']).forEach(f=>{const k=finMap[f]||f;if(!F.includes(k))F.push(k)}));F.sort((a,b)=>all.indexOf(a)-all.indexOf(b));return {fins:F.length?F:['Normal'],note}}
 function qtyNewSrc(name){const v=String(($('#qsrc')||{}).value||'').trim();if(!v)return toast('Please say where this copy came from');if(isCustomSrc(v))return toast('“Custom Cards” is only for custom cards — please pick another “Pulled from”');
   const ex=allSources().find(x=>x.toLowerCase()===v.toLowerCase());qtyChange(name,1,'',ex||autoNumber(v))}
-function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}</span><span class="mut">${sum(d.cards)} cards</span></div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
+function pickDeck(name){PD=name;openM(`<h3>Add “${esc(name)}” to…</h3>${D.decks.map((d,i)=>`<div class="res" onclick="addToDeck(${i},PD,1);closeM()"><span>${esc(d.name)}<br><span class="mut" style="font-size:12px">${fxMainN(d.cards)} cards${fxSideN(d.cards)?` + ${fxSideN(d.cards)} side`:''}</span></span>${fxSideOK(d)?`<button style="padding:6px 10px;flex:0 0 auto" onclick="event.stopPropagation();addToDeck(${i},PD,1,false,true);closeM()">＋ Side</button>`:''}</div>`).join('')||'<p class="mut">No decks yet — create one in the Decks tab.</p>'}`)}
 
 const vfAsk=async n=>{if(await ask(`The artwork for ${n} is marked verified ✓.\n\nDo you want to change it?`))artPicker(n)};
 let AP={name:'',list:[],q:''};
@@ -488,7 +488,7 @@ async function keepLoan(id){if(fxDraftDirty())return toast('Save or discard your
   if(!(await ask(`Make it permanent?\n\n${l.qty}× ${l.card} stays in ${l.to} and is taken off ${l.from}'s list, so ${l.from} is no longer flagged for it.`)))return;
   const fr=D.decks.find(d=>d.name===l.from),e=fr&&fr.cards.find(x=>norm(x.name)===norm(l.card));if(e){e.qty-=l.qty;if(e.qty<=0)fr.cards.splice(fr.cards.indexOf(e),1)}
   l.status='permanent';l.done=today();setSwapStatus(id,'Permanent '+today());save();render();toast(`${l.card} now belongs to ${l.to}`)}
-function whyIncomplete(d){const r=[],lo=loanedOut(d.name),t=target(d),n=sum(d.cards);if(lo)r.push(`${lo} card${lo>1?'s':''} loaned out`);
+function whyIncomplete(d){const r=[],lo=loanedOut(d.name),t=target(d),n=fxMainN(d.cards);if(lo)r.push(`${lo} card${lo>1?'s':''} loaned out`);
   const tb=sum((D.loans||[]).filter(l=>l.status==='returned'&&l.to===d.name),l=>l.qty);if(tb&&t&&n<t)r.push(`${t-n} short after cards were taken back`);return r}
 function loanBox(d){const out=actLoans().filter(l=>l.from===d.name),inn=actLoans().filter(l=>l.to===d.name),why=whyIncomplete(d);let h='';
   if(out.length)h+=`<div class="redbox"><b class="star">★ Incomplete — ${sum(out,l=>l.qty)} card${sum(out,l=>l.qty)>1?'s are':' is'} on loan</b>${out.map(l=>`<div class="kv"><span>${cl(l.card)} ×${l.qty} → ${esc(l.to)}</span><b><button onclick="returnLoan('${l.id}')">Get back</button> <button onclick="keepLoan('${l.id}')">Keep there</button></b></div>`).join('')}<p class="mut" style="margin:6px 0 0">“Get back” takes the card out of the other deck (which then shows as incomplete). “Keep there” makes the move permanent.</p></div>`;
@@ -497,15 +497,16 @@ function loanBox(d){const out=actLoans().filter(l=>l.from===d.name),inn=actLoans
   return h}
 const sleeveOf=d=>D.sleeves.find(s=>s.deck&&s.deck.toLowerCase().startsWith(d.name.toLowerCase()));
 const target=d=>fmtSize(d.format);
-async function addToDeck(i,name,n,ok){
-  if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return fxDraftChg(i,name,n);DRAFT=null;
+async function addToDeck(i,name,n,ok,side){
+  if(DRAFT&&DRAFT.deck===i&&fxDraftDirty())return fxDraftChg(i,name,n,false,side);DRAFT=null;
+  if(side&&fxSideN(D.decks[i].cards)+n>FXSIDEMAX)return toast(`The side deck of ${D.decks[i].name} is full (${FXSIDEMAX} cards)`);
   const d=D.decks[i],c=findCard(name);let plan=null;
   if(c&&c.type!=='Basic Land'&&n>freeCopies(c)){
     plan=planCard(c,n,D.decks.filter(x=>x!==d).map(x=>x.name));const from=plan.from.map(x=>`${x.q}× from ${x.deck}`).join(', ');
     if(!(await ask(`You own ${c.qty}× ${c.name} and only ${freeCopies(c)} ${freeCopies(c)===1?'is':'are'} free (not in a deck).\n\n${from?`Add it to ${d.name} by borrowing ${from}? That deck will show a red ★ (incomplete) until the card is returned.`:`No other deck has a copy to borrow. Add it to ${d.name} anyway?`}`)))return;
     plan.from.forEach(x=>makeLoan(c.name,x.q,x.deck,d.name))}
-  else if(!ok&&!(await ask(`Put ${n}× ${c?c.name:name} in ${d.name}?`)))return;
-  const e=d.cards.find(x=>norm(x.name)===norm(name));e?e.qty+=n:d.cards.push({name:c?c.name:name,qty:n,finish:c?.finish||'Normal'});save();toast('Added to '+d.name);if(V.view==='decks')render();
+  else if(!ok&&!(await ask(`Put ${n}× ${c?c.name:name} in ${side?'the side deck of ':''}${d.name}?${side?'\n\nSide cards get no sleeves.':''}`)))return;
+  let e=d.cards.find(x=>norm(x.name)===norm(name));if(e)e.qty+=n;else d.cards.push(e={name:c?c.name:name,qty:n,finish:c?.finish||'Normal'});if(side)e.side=(e.side||0)+n;save();toast(`Added to ${side?'the side deck of ':''}${d.name}`);if(V.view==='decks')render();
 }
 function chg(name,dl){fxDraftChg(V.deck,name,dl)}
 function vDecks(m){
@@ -513,21 +514,22 @@ function vDecks(m){
   if(V.opt!=null&&D.decks[V.opt]&&!RO&&D.decks[V.opt].name===OPT.dname)return fxOptView(m,V.opt);V.opt=null;
   if(V.deck!=null&&D.decks[V.deck])return vDeck(m,V.deck);
   const dq=(V.dq||'').trim().toLowerCase(),list=D.decks.map((d,i)=>({d,i})).filter(({d})=>!dq||[d.name,d.format,d.commander||'',fxDeckTitle(d)].join(' ').toLowerCase().includes(dq)||d.cards.some(e=>e.name.toLowerCase().includes(dq)));
-  m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" data-rw onclick="newDeck()">＋ Build a new deck</button></div>${D.decks.length>1?`<div class="bar" style="margin-bottom:10px"><span class="qw"><input id="dq" type="search" placeholder="Search decks, formats or a card in them…" value="${esc(V.dq||'')}"><button type="button" class="qx2" id="dqx" aria-label="Clear search">✕</button></span></div>`:''}`+(dq&&!list.length?'<p class="mut">No decks match.</p>':'')+list.map(({d,i})=>{const t=target(d),n=sum(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
-    return `<div class="deck deckrow" onclick="V.deck=${i};render();scrollTo(0,0)">${fxDeckStrip(d)}${fxDeckThumb(d)}<div class="dkt">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(RO?fxDeckTitle(d):d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${fxMissTag(d)}${d.legPending?`<br><span style="color:#8fb3ff;font-size:12px">⏳ Rules not checked yet (needs internet) — tap to check</span>`:''}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div></div>`}).join('');
+  m.innerHTML=`<div class="row"><h2 style="flex:3">Decks</h2><button class="pri" data-rw onclick="newDeck()">＋ Build a new deck</button></div>${D.decks.length>1?`<div class="bar" style="margin-bottom:10px"><span class="qw"><input id="dq" type="search" placeholder="Search decks, formats or a card in them…" value="${esc(V.dq||'')}"><button type="button" class="qx2" id="dqx" aria-label="Clear search">✕</button></span></div>`:''}`+(dq&&!list.length?'<p class="mut">No decks match.</p>':'')+list.map(({d,i})=>{const t=target(d),n=fxMainN(d.cards),sn=fxSideN(d.cards),s=sleeveOf(d),why=whyIncomplete(d);
+    return `<div class="deck deckrow" onclick="V.deck=${i};render();scrollTo(0,0)">${fxDeckStrip(d)}${fxDeckThumb(d)}<div class="dkt">${why.length?`<span class="star" title="${esc(why.join('; '))}">★</span>`:''}<b>${esc(RO?fxDeckTitle(d):d.name)}</b> <span class="mut">· ${esc(d.format)}${d.commander?' · '+esc(d.commander):''}</span><br><span class="mut">${n}${t?'/'+t:''} cards${sn?` + ${sn} side`:''} · Sleeves: ${sl(s?s.color:d.sleeve||'—')}</span>${fxIssueTag(d)}${fxMissTag(d)}${d.legPending?`<br><span style="color:#8fb3ff;font-size:12px">⏳ Rules not checked yet (needs internet) — tap to check</span>`:''}${why.length?`<br><span style="color:#ff6b6b;font-size:12px">★ ${esc(why.join('; '))}</span>`:''}</div></div>`}).join('');
   const dqi=$('#dq');if(dqi){dqi.oninput=e=>{V.dq=e.target.value;const p=e.target.selectionStart;render();const x=$('#dq');if(x){x.focus();x.setSelectionRange(p,p)}};$('#dqx').onclick=()=>{V.dq='';render()}}
 }
 function vDeck(m,i){
-  const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=sum(dl),cv=Array(8).fill(0),ty={};
-  ents.forEach(({e,c})=>{const k=c.type||'Other';ty[k]=(ty[k]||0)+e.qty;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=e.qty});
-  const mx=Math.max(1,...cv),DF=fxDF(d),fl=fxDFOn(DF),shown=fl?ents.filter(({e,c})=>fxDFMatch(DF,c)):ents;
-  m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(RO?fxDeckTitle(d):d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span><span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${fxDeckValue(d)}${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
+  const d=D.decks[i],dl=fxDeckCards(i),ents=dl.map(e=>({e,c:findCard(e.name)||e})),t=target(d),n=fxMainN(dl),sn=fxSideN(dl),sok=fxSideOK(d),cv=Array(8).fill(0),ty={};
+  ents.forEach(({e,c})=>{const q=fxMainQ(e);if(!q)return;const k=c.type||'Other';ty[k]=(ty[k]||0)+q;if(!/Land/.test(k))cv[Math.min(7,Math.round(parseFloat(c.cmc)||0))]+=q});
+  const mx=Math.max(1,...cv),DF=fxDF(d),fl=fxDFOn(DF),mainE=ents.filter(({e})=>fxMainQ(e)>0||e.d),sideE=ents.filter(({e})=>(e.side||0)>0||e.sd),shown=fl?mainE.filter(({e,c})=>fxDFMatch(DF,c)):mainE;
+  m.innerHTML=`<button onclick="fxLeaveDeck()">← Decks</button><h2>${whyIncomplete(d).length?'<span class="star">★</span>':''}${esc(RO?fxDeckTitle(d):d.name)}</h2><div class="tags"><span>${esc(d.format)}</span><span>${n}${t?'/'+t:''} cards</span>${sok||sn?`<span>Side ${sn}/${FXSIDEMAX}</span>`:''}<span>Sleeves: ${sl(sleeveOf(d)?.color||d.sleeve||'—')}</span>${fxDeckValue(d)}${d.commander?`<span>Commander: ${cl(d.commander)}</span>`:''}</div>
   ${fxModesBox(i)}${fxDeckSrcBox(i)}${fxLegalBox(i)}${fxIssueBox(i)}${fxMissBox(i)}${loanBox(d)}${t&&n!==t?`<div class="warn">${n<t?`${t-n} cards short of`:`${n-t} over`} the ${t}-card target.</div>`:''}
   <h3>Mana curve <span class="mut" style="font-size:12px">(non-land)</span></h3><div class="curve">${cv.map((v,k)=>`<div class="cvb${DF.mv.includes(k)?' on':''}" onclick="fxDFTog('mv',${k})" title="Show mana value ${k===7?'7+':k}"><i style="height:${v/mx*70}px"></i>${v}<br>${k===7?'7+':k}</div>`).join('')}</div>
   <div class="tags dft">${Object.entries(ty).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="${DF.ty.includes(k)?'on':''}" onclick="fxDFTog('ty',${esc(JSON.stringify(k))})">${esc(k)} ${v}</span>`).join('')}</div>
   <div class="row"><button onclick="fxDeckFind()">🔍 Search deck</button>${fl?'<button onclick="fxDFClear()">✕ Clear filter</button>':''}</div>${fl?`<p class="mut" style="margin:4px 0">Showing <b>${sum(shown.map(x=>x.e))}</b> of ${n} cards · ${esc(fxDFLabel(DF))}</p>`:''}
   <div class="row" data-rw><button class="pri" onclick="fxBuilder(true)">＋ Add cards</button><button class="pri" onclick="fxOptOpen(${i})">✨ Optimize Deck</button></div><div class="row" data-rw><button onclick="fxDeckEdit(${i})">✎ Edit details</button><button onclick="fxShareDeck(${i})">📤 Share deck</button><button class="danger" onclick="delDeck(${i})">Delete deck</button></div>${fxRoDeckBtns(i)}${fxDraftNote(i)}
-  <div class="grid">${(shown.length||!fl?'':'<p class="mut">No cards in this deck match the filter.</p>')+shown.map(({e,c})=>tile(c,'×'+e.qty+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:'')+(d.miss&&!RO&&fxMissQ(d,e.name)?` <i class="dl" title="missing">🛒${fxMissQ(d,e.name)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button></div>`)).join('')}</div>${fxDraftBar(i)}
+  <div class="grid">${(shown.length||!fl?'':'<p class="mut">No cards in this deck match the filter.</p>')+shown.map(({e,c})=>tile(c,'×'+fxMainQ(e)+(e.d?` <i class="dl">${e.d>0?'+':'−'}${Math.abs(e.d)}</i>`:'')+(d.miss&&!RO&&fxMissQ(d,e.name)?` <i class="dl" title="missing">🛒${fxMissQ(d,e.name)}</i>`:''),`<div class="ctl"><button data-dec="${esc(e.name)}">−</button><button data-inc="${esc(e.name)}">+</button>${sok&&fxMainQ(e)>0?`<button data-tos="${esc(e.name)}" title="Move one copy to the side deck">⇄</button>`:''}</div>`)).join('')}</div>
+  ${sok||sn?`<h3>Side deck <span class="mut" style="font-size:13px">${sn}/${FXSIDEMAX} · not sleeved${sok?'':` · ${esc(d.format)} has no side deck`}</span></h3>${RO?'':`<p class="mut" style="margin:0 0 6px;font-size:13px" data-rw>⇄ moves one copy between the deck and the side deck (nothing to pull — just sleeve or unsleeve it). Changes wait for <b>Save changes</b>.</p><div class="row" data-rw><button onclick="fxBuilder(true,'side')">＋ Add to side deck</button></div>`}<div class="grid">${sideE.length?sideE.map(({e,c})=>tile(c,'×'+(e.side||0)+(e.sd?` <i class="dl">${e.sd>0?'+':'−'}${Math.abs(e.sd)}</i>`:''),`<div class="ctl"><button data-sdec="${esc(e.name)}">−</button><button data-sinc="${esc(e.name)}">+</button>${e.side>0?`<button data-tom="${esc(e.name)}" title="Move one copy into the deck">⇄</button>`:''}</div>`)).join(''):'<p class="mut">No side cards yet.</p>'}</div>`:''}${fxDraftBar(i)}
   ${d.tokens.length?`<h3>Deck tokens (${sum(d.tokens)})</h3>${tbl(['Token','Qty','Details'],d.tokens.map(t=>[t.name,t.qty,{h:symHtml(t.text)}]))}`:''}`;
 }
 function deckSearch(first){
@@ -841,7 +843,7 @@ Colors: ${cols.length?cols.map(x=>CLRN[x]).join(', ')+' only (colorless cards an
 ${F.cmd?(G.cmd?F.cmdLabel+': '+G.cmd:'Choose the '+F.cmdLabel.toLowerCase()+' from my collection ('+F.cmdRule+').'):''}
 ${G.own?'Use ONLY cards from my collection list below, spelled exactly as listed, and never more copies than "available".':'Prefer cards from my collection, but you may add a few cards I do not own — put * at the end of those lines.'}
 The list below already excludes cards I can't use for this deck.
-OUTPUT FORMAT: one card per line as "<quantity> <card name>"${F.cmd?", "+F.cmdLabel.toLowerCase()+" first":""}${F.k==='Oathbreaker'?", signature spell second":""}. No headings or bullets. After the list, write a line containing only --- and then a short explanation (under 120 words).
+OUTPUT FORMAT: one card per line as "<quantity> <card name>"${F.cmd?", "+F.cmdLabel.toLowerCase()+" first":""}${F.k==='Oathbreaker'?", signature spell second":""}. No headings or bullets.${F.single?'':` Then suggest a side deck (sideboard) of up to ${FXSIDEMAX} cards for tough matchups: a line containing only SIDEBOARD, then its cards in the same "<quantity> <card name>" format. The copy limit counts the deck and side deck together, and the side deck also uses only available copies.`} After the list${F.single?'':'s'}, write a line containing only --- and then a short explanation (under 120 words).
 
 MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
 ${rows.join('\n')}`}
@@ -859,27 +861,28 @@ async function aiGenerate(){
 function aiCancel(){if(G.ctl){G.cancelled=true;G.ctl.abort()}}
 function readReply(){
   if(!aiNeedFmt())return;const F=dfmt(G.fmt);
-  G.reply=$('#greply')?.value??G.reply;const ents=[],by={},al=aiAllowed();
-  G.reply.split(/^\s*---+\s*$/m)[0].split('\n').forEach(l=>{l=l.replace(/^[\s\-•*]+/,'').replace(/^commander:\s*/i,'1 ');const m=l.match(/^(\d+)\s*x?\s+(.+?)\s*$/i);if(!m)return;
-    const nm=m[2].replace(/\*+$/,'').trim(),c=findCard(nm),k=norm(nm);if(by[k])return by[k].want+=+m[1];by[k]={name:c?c.name:nm,want:+m[1],c};ents.push(by[k])});
-  const cmdC=F.cmd?findCard(G.cmd||(ents[0]&&ents[0].name)||''):null;let run=0;
-  ents.forEach(e=>{if(!e.c||!isReal(e.c)){e.add=0;e.st='✗ not in collection (skipped)';return}
+  G.reply=$('#greply')?.value??G.reply;const ents=[],by={},al=aiAllowed();let inSide=false;
+  G.reply.split(/^\s*---+\s*$/m)[0].split('\n').forEach(l=>{if(/^[\s#*_]*(side ?board|side deck)\b[\s:*_]*(\(.*\))?\s*$/i.test(l)){inSide=!F.single;return}l=l.replace(/^[\s\-•*]+/,'').replace(/^commander:\s*/i,'1 ');const m=l.match(/^(\d+)\s*x?\s+(.+?)\s*$/i);if(!m)return;
+    const nm=m[2].replace(/\*+$/,'').trim(),c=findCard(nm),k=norm(nm);if(!by[k]){by[k]={name:c?c.name:nm,want:0,swant:0,c};ents.push(by[k])}if(inSide)by[k].swant+=+m[1];else by[k].want+=+m[1]});
+  const cmdC=F.cmd?findCard(G.cmd||(ents[0]&&ents[0].name)||''):null;let run=0,srun=0;
+  ents.forEach(e=>{e.sadd=0;const sw=e.swant||0;if(!e.want&&sw){e.sideOnly=true}
+    if(!e.c||!isReal(e.c)){e.add=0;e.st='✗ not in collection (skipped)';return}
     if(!okLegal(e.c)){e.add=0;e.st=`✗ not legal in ${(FMTS.find(x=>x[0]===G.legal)||[])[1]} (skipped)`;return}
-    const bad=fxRuleBlock(e.c,e.want,F,cmdC);if(bad){e.add=0;e.st='✗ '+bad+' (skipped)';return}
-    const cap=copyCap(e.c,F),capped=e.want>cap;if(capped)e.want=cap;
-    const pl=planCard(e.c,e.want,al);e.add=pl.got;
+    const bad=fxRuleBlock(e.c,e.want+sw,F,cmdC);if(bad){e.add=0;e.st='✗ '+bad+' (skipped)';return}
+    const cap=copyCap(e.c,F),capped=e.want+sw>cap;if(capped){const mw=Math.min(e.want,cap);e.swant=Math.min(sw,cap-mw);e.want=mw}
+    const pl=planCard(e.c,e.want+(e.swant||0),al);e.add=Math.min(pl.got,e.want);e.sadd=Math.min(pl.got-e.add,e.swant||0,Math.max(0,FXSIDEMAX-srun));srun+=e.sadd;if(e.sideOnly){e.st=e.sadd<(e.swant||0)?`⚠ side deck: using ${e.sadd} of ${sw}`:'✓ side deck';return}
     if(F.n&&run+e.add>F.n){const k=Math.max(0,F.n-run);e.st=`✗ the deck would go over ${F.n} cards (${k?'using '+k:'skipped'})`;e.add=k;run+=k;return}run+=e.add;
-    e.st=capped?`⚠ ${F.k} allows ${cap} (using ${pl.got})`:pl.got<e.want?`⚠ only ${pl.got} available (using ${pl.got})`:pl.from.length?'↪ '+pl.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(pl.free?` + ${pl.free} free`:''):'✓ free in your collection'});
+    e.st=(capped?`⚠ ${F.k} allows ${cap} (using ${e.add+e.sadd})`:e.add<e.want?`⚠ only ${e.add} available (using ${e.add})`:pl.from.length?'↪ '+pl.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(pl.free?` + ${pl.free} free`:''):'✓ free in your collection')+(e.sadd?` · +${e.sadd} in the side deck`:'')});
   G.res={ents};drawPrev();
 }
 function drawPrev(){
-  const r=G.res,t=fmtSize(G.fmt),tot=sum(r.ents,e=>e.add),el=$('#gprev');if(!el)return;
-  const dk=[...new Set(r.ents.flatMap(e=>e.c&&e.add?planCard(e.c,e.add,aiAllowed()).from.map(x=>x.deck):[]))];
-  el.innerHTML=r.ents.length?`<h3>Preview — ${tot}/${t} cards</h3>${G.rc?`<p class="mut">Random colors this time: ${G.rc.map(symImg).join('')}</p>`:''}${tbl(['Qty','Card','Comes from'],r.ents.map(e=>[e.add||e.want,{h:cl(e.name)},e.st]))}${dk.length?`<div class="redbox"><b class="star">★</b> This will take cards from <b>${esc(dk.join(', '))}</b>. Those decks will be marked incomplete (red ★) until you return the cards or make the move permanent.</div>`:''}<div class="f"><label>Deck name</label><input id="gname" value="${esc('AI: '+(G.theme||'New deck').slice(0,32))}"></div><br><button class="pri big" onclick="aiConfirm()">Create deck from this list ›</button><p class="mut">Cards you don’t own are skipped. Every card’s “Pulled from” (and the deck it came from, if any) is written to the Swap log.</p>`:'<div class="warn">I couldn’t find any “quantity card name” lines in that reply.</div>';
+  const r=G.res,t=fmtSize(G.fmt),tot=sum(r.ents,e=>e.add),stot=sum(r.ents,e=>e.sadd||0),el=$('#gprev');if(!el)return;
+  const dk=[...new Set(r.ents.flatMap(e=>e.c&&(e.add+(e.sadd||0))?planCard(e.c,e.add+(e.sadd||0),aiAllowed()).from.map(x=>x.deck):[]))],sideR=r.ents.filter(e=>e.swant>0);
+  el.innerHTML=r.ents.length?`<h3>Preview — ${tot}/${t} cards</h3>${G.rc?`<p class="mut">Random colors this time: ${G.rc.map(symImg).join('')}</p>`:''}${tbl(['Qty','Card','Comes from'],r.ents.filter(e=>!e.sideOnly).map(e=>[e.add||e.want,{h:cl(e.name)},e.st]))}${sideR.length?`<h3>Side deck — ${stot}/${FXSIDEMAX} <span class="mut" style="font-size:13px">not sleeved</span></h3>${tbl(['Qty','Card',''],sideR.map(e=>[e.sadd||0,{h:cl(e.name)},e.sideOnly?e.st:(e.sadd<e.swant?`⚠ using ${e.sadd} of ${e.swant}`:'✓')]))}`:''}${dk.length?`<div class="redbox"><b class="star">★</b> This will take cards from <b>${esc(dk.join(', '))}</b>. Those decks will be marked incomplete (red ★) until you return the cards or make the move permanent.</div>`:''}<div class="f"><label>Deck name</label><input id="gname" value="${esc('AI: '+(G.theme||'New deck').slice(0,32))}"></div><br><button class="pri big" onclick="aiConfirm()">Create deck from this list ›</button><p class="mut">Cards you don’t own are skipped. Every card’s “Pulled from” (and the deck it came from, if any) is written to the Swap log.</p>`:'<div class="warn">I couldn’t find any “quantity card name” lines in that reply.</div>';
 }
 /* Last check before a generated deck is created: every card grouped by where to pull it from. */
-function aiConfirm(){const r=G.res,name=($('#gname').value||'Generated deck').trim();if(!sum(r.ents,e=>e.add||0))return toast('No usable cards in this list — nothing to create');if(D.decks.some(d=>d.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
-  G.name=name;const inG={},al=aiAllowed();r.ents.filter(e=>e.c&&e.add>0).forEach(e=>{const pl=planCard(e.c,e.add,al);if(pl.free>0)fxPlanSrcs(e.c,pl.free).forEach(([s,q])=>fxGenPut(inG,e.c,s,q));pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,e.c.name))});
+function aiConfirm(){const r=G.res,name=($('#gname').value||'Generated deck').trim();if(!sum(r.ents,e=>(e.add||0)+(e.sadd||0)))return toast('No usable cards in this list — nothing to create');if(D.decks.some(d=>d.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
+  G.name=name;const inG={},al=aiAllowed();r.ents.filter(e=>e.c&&(e.add+(e.sadd||0))>0).forEach(e=>{const pl=planCard(e.c,e.add+(e.sadd||0),al);if(pl.free>0)fxPlanSrcs(e.c,pl.free).forEach(([s,q])=>fxGenPut(inG,e.c,s,q));pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,e.c.name))});
   const el=$('#gprev');el.innerHTML=`<h3>Check before creating “${esc(name)}”</h3><p class="mut">${fxPl(sum(Object.values(inG).flat(),x=>x.q),'card')}, grouped by where you pull them from — every “Pulled from” separately, basic lands together.</p>${fxGrpHtml(inG)}<div class="row"><button onclick="drawPrev()">‹ Back</button><button class="pri" onclick="mkAIDeck()">✓ Create the deck</button></div>`;el.scrollIntoView({block:'start'})}
 function mkAIDeck(){
   const r=G.res,name=(G.name||$('#gname')?.value||'Generated deck').trim(),f=G.fmt,need=fmtSize(f)||60,s=D.sleeves.find(x=>!x.deck&&x.total>=need);
@@ -887,7 +890,7 @@ function mkAIDeck(){
   const d={name,format:f,sleeve:s?s.color:'',commander:G.cmd||(isCmdFmt(f)?r.ents[0]?.name||'':''),info:'Built with the Deck Generator',cards:[],tokens:[]};D.decks.push(d);
   if(s){s.deck=sleeveLabel(name,f);s.inUse=Math.min(s.total,need)}
   const sec='Added by Deck Generator',hdr=['Card Name','Original Owner / Source Deck','Quantity','Date','Notes','Status'],lenders=new Set();let loaned=0;
-  r.ents.filter(e=>e.c&&e.add>0).forEach(e=>{const c=e.c,pl=planCard(c,e.add,aiAllowed()),q=pl.got;if(q<=0)return;d.cards.push({name:c.name,qty:q,finish:c.finish||'Normal'});
+  r.ents.filter(e=>e.c&&(e.add+(e.sadd||0))>0).forEach(e=>{const c=e.c,pl=planCard(c,e.add+(e.sadd||0),aiAllowed()),q=pl.got;if(q<=0)return;const sq=Math.min(e.sadd||0,q);d.cards.push(Object.assign({name:c.name,qty:q,finish:c.finish||'Normal'},sq?{side:sq}:{}));
     const src='Pulled from: '+(cardSources(c).join(', ')||'unknown source');
     pl.from.forEach(x=>{makeLoan(c.name,x.q,x.deck,name,sec+' — taken from another deck','Deck Generator · '+src);lenders.add(x.deck);loaned+=x.q});
     if(pl.free>0&&c.type!=='Basic Land')D.swaps.push({deck:name,section:sec+' — from collection',header:hdr,row:[c.name,'Collection',String(pl.free),today(),'Deck Generator · '+src,'In Deck / Active']})});

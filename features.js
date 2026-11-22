@@ -65,7 +65,7 @@ function fxSrcOwned(c){const m={};D.acq.filter(a=>norm(a.name)===norm(c.name)).f
   else if(tot>c.qty){let over=tot-c.qty;for(const k of Object.keys(m).reverse()){const t=Math.min(over,m[k]);m[k]-=t;over-=t;if(!m[k])delete m[k];if(!over)break}}
   return m}
 function fxDeckNeed(d,c){return Math.max(0,sum(d.cards.filter(e=>norm(e.name)===norm(c.name)))-loanedIn(d.name,c.name)-(d.miss?fxMissQ(d,c.name):0))}
-function fxAllocAll(){if(!D||RO)return;const own=new Map();
+function fxAllocAll(){if(!D||RO)return;D.decks.forEach(d=>d.cards.forEach(e=>{if(e.side>e.qty)e.side=e.qty;if(!(e.side>0))delete e.side}));const own=new Map();
   D.decks.forEach(d=>{d.srcs=d.srcs||{};const names=new Map();d.cards.forEach(e=>names.set(norm(e.name),e.name));
     Object.keys(d.srcs).forEach(k=>{if(!names.has(k))delete d.srcs[k]});
     names.forEach((nm,k)=>{const c=findCard(nm);if(!c){delete d.srcs[k];return}if(!own.has(k))own.set(k,{c,m:fxSrcOwned(c)});
@@ -152,24 +152,40 @@ addEventListener('scroll',()=>{try{if(V.view!=='collection')return;const m=docum
   if(m&&m.getBoundingClientRect().top<innerHeight+600){V.lim=(V.lim||150)+150;drawList()}}catch(e){}},{passive:true});
 
 /* ---------- deck editing: stage changes, then Save or Discard ---------- */
-function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEach(e=>{const k=norm(e.name);m[k]=m[k]||{name:e.name,base:0,qty:0};m[k].base+=e.qty;m[k].qty+=e.qty});DRAFT={deck:i,m}}return DRAFT}
-const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base);
-function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,d:x.qty-x.base}))}
-async function fxDraftChg(i,name,dl,fromSearch){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
-  if(dl>0&&F&&!D.decks[i].override){const pr=fxAddProblems(i,name,dl);if(pr.length&&!(await fxOverrideAsk(i,name,pr)))return}
-  const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0});
-  x.qty=Math.max(0,x.qty+dl);if(!x.qty&&!x.base)delete d.m[k];render();
+/* ---------- Side deck (owner request): every non-singleton (60-card) deck type, incl. Casual, may have up to 15 side cards. A deck entry's `side` is how many of its `qty` copies are on the side: they are pulled from sources like any copy (so usage/allocation/pull lists include them) but get no sleeves and don't count toward the deck size, curve, sleeves or game modes; the copy limit counts main + side together. ---------- */
+const FXSIDEMAX=15;
+const fxSideOK=d=>{const F=d&&dfmt(d.format);return !!F&&!F.single};
+const fxMainQ=e=>Math.max(0,(e.qty||0)-(e.side||0)),fxMainN=L=>sum(L,fxMainQ),fxSideN=L=>sum(L,e=>e.side||0);
+function fxDraft(i){if(!DRAFT||DRAFT.deck!==i){const m={};D.decks[i].cards.forEach(e=>{const k=norm(e.name);m[k]=m[k]||{name:e.name,base:0,qty:0,side:0,sbase:0};m[k].base+=e.qty;m[k].qty+=e.qty;m[k].side+=e.side||0;m[k].sbase+=e.side||0});DRAFT={deck:i,m}}return DRAFT}
+const fxDraftDirty=()=>!!DRAFT&&Object.values(DRAFT.m).some(x=>x.qty!==x.base||(x.side||0)!==(x.sbase||0));
+function fxDeckCards(i){const d=D.decks[i];if(!DRAFT||DRAFT.deck!==i)return d.cards;return Object.values(DRAFT.m).map(x=>({name:x.name,qty:x.qty,side:x.side||0,d:(x.qty-(x.side||0))-(x.base-(x.sbase||0)),sd:(x.side||0)-(x.sbase||0)}))}
+/* move one copy between main and side (no cards are pulled or put back — it just gets sleeved / unsleeved) */
+async function fxDraftSwap(i,name,toSide){if(RO||!D.decks[i])return;const dd=D.decks[i],F=dfmt(dd.format);if(!fxSideOK(dd))return toast('This deck type has no side deck');
+  const d=fxDraft(i),x=d.m[norm(name)];if(!x)return;const L=fxDeckCards(i);
+  if(toSide){if(x.qty-(x.side||0)<=0)return;if(fxSideN(L)+1>FXSIDEMAX)return toast(`The side deck is full (${FXSIDEMAX} cards)`);x.side=(x.side||0)+1}
+  else{if(!(x.side>0))return;if(fxMainN(L)+1>F.n&&!dd.override){const pr=[`The deck would have ${fxMainN(L)+1} cards — ${F.k} decks hold ${F.n}`];if(!(await fxOverrideAsk(i,name,pr)))return}x.side--}
+  render()}
+async function fxDraftChg(i,name,dl,fromSearch,toSide){if(RO||i==null||!D.decks[i])return;const F=dfmt(D.decks[i].format);
+  if(toSide&&!fxSideOK(D.decks[i]))return toast('This deck type has no side deck');
+  if(toSide&&dl>0&&fxSideN(fxDeckCards(i))+dl>FXSIDEMAX)return toast(`The side deck is full (${FXSIDEMAX} cards)`);
+  if(dl>0&&F&&!D.decks[i].override){const pr=fxAddProblems(i,name,dl,toSide);if(pr.length&&!(await fxOverrideAsk(i,name,pr)))return}
+  const d=fxDraft(i),k=norm(name),c=findCard(name),x=d.m[k]||(d.m[k]={name:c?c.name:name,base:0,qty:0,side:0,sbase:0});
+  if(dl<0){if(toSide){if(!(x.side>0))return;x.side--;x.qty--}else{if(x.qty-(x.side||0)<=0)return;x.qty+=dl}}
+  else{x.qty+=dl;if(toSide)x.side=(x.side||0)+dl}
+  if(!x.qty&&!x.base)delete d.m[k];render();
   if(fromSearch)fxBuilder()}
 async function fxCanLeave(){if(fxDraftDirty()){if(!(await ask('You have deck changes that are not saved.\n\nOK = discard them\nCancel = stay and keep editing')))return false}DRAFT=null;return true}
 async function fxLeaveDeck(){if(!(await fxCanLeave()))return;V.deck=null;render();scrollTo(0,0)}
 const fxDraftNote=i=>RO?'':'<p class="mut" data-rw>Use + / − or “Add card” to make as many changes as you like. Nothing changes until you tap <b>Save changes</b>.</p>';
-function fxDraftBar(i){if(!DRAFT||DRAFT.deck!==i||!fxDraftDirty())return '';const ch=Object.values(DRAFT.m),a=sum(ch,x=>Math.max(0,x.qty-x.base)),r=sum(ch,x=>Math.max(0,x.base-x.qty));
-  return `<div style="height:76px"></div><div id="dbar"><span><b>Not saved:</b> ${a?'+'+a:''}${a&&r?' / ':''}${r?'−'+r:''} card${a+r===1?'':'s'}</span><button onclick="fxDraftDiscard()">Discard</button><button class="pri" onclick="fxDraftSave()">Save changes</button></div>`}
+function fxDraftBar(i){if(!DRAFT||DRAFT.deck!==i||!fxDraftDirty())return '';const ch=Object.values(DRAFT.m),a=sum(ch,x=>Math.max(0,x.qty-x.base)),r=sum(ch,x=>Math.max(0,x.base-x.qty)),mv=fxDraftMoves();
+  return `<div style="height:76px"></div><div id="dbar"><span><b>Not saved:</b> ${a?'+'+a:''}${a&&r?' / ':''}${r?'−'+r:''}${a+r?` card${a+r===1?'':'s'}`:''}${mv?`${a+r?' · ':''}side deck ${mv>0?'changed':''}`:''}</span><button onclick="fxDraftDiscard()">Discard</button><button class="pri" onclick="fxDraftSave()">Save changes</button></div>`}
+/* side-deck moves in the draft: copies that changed between main and side without being added/removed */
+function fxDraftMoves(){return sum(Object.values(DRAFT?DRAFT.m:{}),x=>Math.abs((x.side||0)-(x.sbase||0)))}
 async function fxDraftDiscard(){if(!(await ask('Discard all the changes you made to this deck?\n\nOK = discard\nCancel = keep editing')))return;DRAFT=null;render();toast('Changes discarded')}
 async function fxDraftSave(opt){opt=opt||{};
-  if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],ch=Object.values(DRAFT.m).filter(x=>x.qty!==x.base),adds=ch.filter(x=>x.qty>x.base),rems=ch.filter(x=>x.qty<x.base);
-  const na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty);
-  if(!opt.yes&&!(await ask(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.\n\nOK = save\nCancel = keep editing`)))return;
+  if(!DRAFT)return;const i=DRAFT.deck,d=D.decks[i],all=Object.values(DRAFT.m),ch=all.filter(x=>x.qty!==x.base),adds=ch.filter(x=>x.qty>x.base),rems=ch.filter(x=>x.qty<x.base);
+  const na=sum(adds,x=>x.qty-x.base),nr=sum(rems,x=>x.base-x.qty),sNow=sum(all,x=>x.side||0),sWas=sum(all,x=>x.sbase||0),sCh=all.filter(x=>(x.side||0)!==(x.sbase||0));
+  if(!opt.yes&&!(await ask(`Save these changes to ${d.name}?\n\n${fxPl(na,'card')} added, ${nr} removed.${sCh.length?`\nSide deck: ${sWas} → ${sNow} cards (${sCh.map(x=>`${x.name} ${x.sbase||0}→${x.side||0}`).join(', ')}) — side cards get no sleeves.`:''}\n\nOK = save\nCancel = keep editing`)))return;
   const inG={},outG={},put=(G,k,q,name,alt)=>(G[k]=G[k]||[]).push({q,name,alt:alt||[]}),others=opt.allowed||D.decks.filter(x=>x!==d).map(x=>x.name),before=fxSrcSnap(d);
   // 1) removals: decide where each physical copy goes, then take it off the list
   rems.forEach(x=>{const n=x.base-x.qty,c=findCard(x.name),lo=loanedOut(d.name,x.name);let perm=Math.max(0,lo-x.qty),phys=n-Math.min(n,perm);perm=Math.min(n,perm);
@@ -188,6 +204,7 @@ async function fxDraftSave(opt){opt=opt||{};
       pl.from.forEach(f=>{makeLoan(c.name,f.q,f.deck,d.name);put(inG,'From deck: '+f.deck,f.q,c.name)});
       if(pl.short>0)put(inG,'Not enough copies — you own fewer than the deck lists',pl.short,c.name)}
     const e=d.cards.find(e=>norm(e.name)===norm(x.name));e?e.qty+=n:d.cards.push({name:c?c.name:x.name,qty:n,finish:c?.finish||'Normal'})});
+  all.forEach(x=>{const es=d.cards.filter(e=>norm(e.name)===norm(x.name));let s=Math.max(0,x.side||0);es.forEach(e=>{const k=Math.min(s,e.qty);if(k)e.side=k;else delete e.side;s-=k})});
   if(d.miss){d.miss.forEach(m=>{const have=sum(d.cards.filter(e=>norm(e.name)===norm(m.name)));m.qty=Math.min(m.qty,have)});d.miss=d.miss.filter(m=>m.qty>0);if(!d.miss.length)delete d.miss}
   DRAFT=null;save();fxAllocDiff(d,before,inG,outG);fxOverrideAuto(i);render();fxPullSplash(d.name,inG,outG)}
 function fxPullSplash(deck,inG,outG){
@@ -462,7 +479,7 @@ function simCard(c,name){
     o.fly=has('flying');o.reach=has('reach');o.trample=has('trample');o.haste=has('haste');o.dt=has('deathtouch');o.ll=has('lifelink');o.ds=has('double strike');o.fs=o.ds||has('first strike');o.vig=has('vigilance');o.menace=has('menace');o.def=has('defender');o.ind=has('indestructible');o.hex=has('hexproof')||has('shroud')||has('ward');return o}
   o.k=/planeswalker/i.test(ty)?'pw':'spell';return o}
 function simDeck(deck,cards,label){const idx=new Map(cards.map(c=>[norm(front(c.name)),c])),lib=[],unk=new Set();let cmdr=null;const cn=deck.commander?norm(front(deck.commander)):'';
-  deck.cards.forEach(e=>{const c=idx.get(norm(front(e.name)));for(let i=0;i<e.qty;i++){const s=simCard(c,e.name);if(s.unk)unk.add(e.name);if(cn&&norm(front(e.name))===cn&&!cmdr&&s.k!=='land'){cmdr=s;continue}lib.push(s)}});
+  deck.cards.forEach(e=>{const c=idx.get(norm(front(e.name)));for(let i=0;i<fxMainQ(e);i++){const s=simCard(c,e.name);if(s.unk)unk.add(e.name);if(cn&&norm(front(e.name))===cn&&!cmdr&&s.k!=='land'){cmdr=s;continue}lib.push(s)}});
   return {fmt:deck.format||'',name:label||deck.name,lib,cmdr,unk:[...unk],n:lib.length+(cmdr?1:0),cmdFmt:isCmdFmt(deck.format),life:(dfmt(deck.format)||{}).life||20,list:deck.cards.map(e=>`${e.qty} ${e.name}`).join('\n'),commander:deck.commander||''}}
 const simShuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const simDraw=(p,n)=>{while(n-->0&&p.lib.length)p.hand.push(p.lib.pop())};
@@ -713,7 +730,7 @@ async function fxSaveFriend(j,status,opt){await ocLoad();const ex=opt.separate?n
 
 /* ---------- sharing: signed share files and deck links ---------- */
 async function fxShareData(scope,i){const keep=['name','colors','cost','cmc','type','subtype','power','toughness','text','keywords','qty','finish','set','setName','cn','scryId','art','art2','leg','legAt','price','priceAt','verified','custom'];
-  let decks=D.decks.map(d=>({name:d.name,format:d.format,commander:d.commander||'',cards:d.cards.map(e=>({name:e.name,qty:e.qty,finish:e.finish||'Normal'})),tokens:d.tokens||[]})),cards=D.cards;
+  let decks=D.decks.map(d=>({name:d.name,format:d.format,commander:d.commander||'',cards:d.cards.map(e=>({name:e.name,qty:e.qty,finish:e.finish||'Normal',...(e.side>0?{side:e.side}:{})})),tokens:d.tokens||[]})),cards=D.cards;
   if(scope==='deck'){decks=[decks[i]];const s=new Set(decks[0].cards.map(e=>norm(e.name)));cards=cards.filter(c=>s.has(norm(c.name)))}
   const body={kind:'mtg-share',v:1,scope,uid:D.uid,name:D.owner||'Collection',updated:D.updated||Date.now(),pub:D.keys?D.keys.pub:null,cards:cards.map(c=>{const o={};keep.forEach(k=>{if(c[k]!=null)o[k]=c[k]});return o}),decks};
   const im={};cards.forEach(c=>{if(c.custom&&CIMG[c.name])im[c.name]=CIMG[c.name]});if(Object.keys(im).length)body.customImgs=im;
@@ -728,17 +745,19 @@ async function fxPack(o){const b=new TextEncoder().encode(JSON.stringify(o));let
   return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 /* Compact deck code (prefix c / C): cards with a known set + number are sent as “#set:number”, others by name; qty 1 is left out. */
 async function fxPackDeck(d){const lines=[d.name,d.format||'',d.commander||'',D.owner||'',(D.uid||'').replace(/-/g,'')].map(x=>String(x).replace(/[\n|]/g,' '));
-  const L=d.cards.map(e=>{const c=findCard(e.name),id=c&&!c.custom&&c.set&&c.cn?'#'+c.set+':'+c.cn:e.name.replace(/[\n|]/g,' ');return (e.qty>1?e.qty+'*':'')+id});
-  if(!D.keys)await fxKeys();let txt=lines.join('\n')+'\n'+L.join('|');
+  const id=e=>{const c=findCard(e.name);return c&&!c.custom&&c.set&&c.cn?'#'+c.set+':'+c.cn:e.name.replace(/[\n|]/g,' ')},L=d.cards.filter(e=>fxMainQ(e)>0).map(e=>(fxMainQ(e)>1?fxMainQ(e)+'*':'')+id(e)),S=d.cards.filter(e=>e.side>0).map(e=>(e.side>1?e.side+'*':'')+id(e));
+  /* side deck on its own “side:” line (older app versions just ignore it and show the main deck) */
+  if(!D.keys)await fxKeys();let txt=lines.join('\n')+'\n'+L.join('|')+(S.length?'\nside:'+S.join('|'):'');
   /* signed with this collection's key, so the receiver can check who it came from (same key as share files) */
   if(D.keys&&D.keys.pub){txt+='\nk:'+D.keys.pub.x+'.'+D.keys.pub.y;const s=await fxSign(txt);if(s)txt+='\ns:'+s}
   const b=new TextEncoder().encode(txt);let out=b,z='C';try{if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());z='c'}}catch(e){}
   return z+fxB64(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+const fxUnL=x=>String(x||'').split('|').filter(Boolean).map(x=>{const m=x.match(/^(\d+)\*(.*)$/),q=m?+m[1]:1,v=m?m[2]:x;const k=v.match(/^#([^:]+):(.+)$/);return k?[q,'',k[1],k[2]]:[q,v]});
 async function fxUnpack(s){const z=s[0];
   if(z==='c'||z==='C'){let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='c')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
     const all=new TextDecoder().decode(b),t=all.split('\n'),u=t[4]||'',uid=u.length===32?u.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5'):u;
     const kl=t.find(x=>/^k:/.test(x)),sl=t.find(x=>/^s:/.test(x)),kx=kl?kl.slice(2).split('.'):null,signed=sl?all.slice(0,all.lastIndexOf('\ns:')):'';
-    return {n:t[0],f:t[1],c:t[2],o:t[3],u:uid,pub:kx&&kx.length===2?{kty:'EC',crv:'P-256',x:kx[0],y:kx[1],ext:true}:null,sig:sl?sl.slice(2):'',signed,l:(t[5]||'').split('|').filter(Boolean).map(x=>{const m=x.match(/^(\d+)\*(.*)$/),q=m?+m[1]:1,v=m?m[2]:x;const k=v.match(/^#([^:]+):(.+)$/);return k?[q,'',k[1],k[2]]:[q,v]})}}let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
+    return {n:t[0],f:t[1],c:t[2],o:t[3],u:uid,pub:kx&&kx.length===2?{kty:'EC',crv:'P-256',x:kx[0],y:kx[1],ext:true}:null,sig:sl?sl.slice(2):'',signed,l:fxUnL(t[5]),ls:fxUnL((t.find(x=>/^side:/.test(x))||'').slice(5))}}let b=fxUnB64(s.slice(1).replace(/-/g,'+').replace(/_/g,'/'));if(z==='z')b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());return JSON.parse(new TextDecoder().decode(b))}
 /* Deck links: a TinyURL short link (needs internet). Offline, the app offers an app-only link that carries the compact deck code itself. */
 /* “Nick's Collection - Rakdos Aggro” — a deck's name with its owner, for sharing and for other people's decks */
 const fxDeckTitle=(d,owner)=>{const o=owner!=null?owner:(RO?(RO.given||RO.name):D.owner)||'';return o?`${o} - ${d.name}`:d.name};
@@ -773,19 +792,22 @@ async function fxOpenShort(u){const H=isNative()&&window.Capacitor.Plugins.Capac
   if(H){try{toast('Opening the short link…');const r=await H.get({url:u,responseType:'text'}),fin=String(r&&r.url||''),m=fin.match(/[#?&]d=[A-Za-z0-9_\-]+/)||String(r&&r.data||'').match(/[#?&]d=[A-Za-z0-9_\-]+/);if(m)return fxOpenLink(m[0])}catch(e){}}
   if(!navigator.onLine)return toast('You’re offline — short links need the internet to open');
   if(isNative())window.open(u,'_system');else location.href=u}
-function fxShareDeck(i){const d=D.decks[i];fxAsk(`Share “${esc(d.name)}”`,'<p class="mut"><b>File</b>: signed, includes the card details, opens in the app under Other collections.<br><b>Link</b>: quickest — a short TinyURL link (needs internet) that opens the deck in the app or on the web. Links aren’t signed.</p>',[{t:'📄 Send as a file',cls:'pri',fn:()=>fxShareFile('deck',i)},{t:'🔗 Share as a link',fn:()=>fxDeckLink(i)},{t:'Cancel'}])}
+function fxShareDeck(i){const d=D.decks[i];fxAsk(`Share “${esc(d.name)}”`,'<p class="mut"><b>File</b>: signed, includes the card details, opens in the app under Other collections.<br><b>Link</b>: quickest — a short TinyURL link (needs internet) that opens the deck in the app or on the web. Links aren’t signed.</p>',[{t:'📄 Send as a file',cls:'pri',fn:()=>fxShareFile('deck',i)},{t:'🔗 Share as a link',fn:()=>fxDeckLink(i)},{t:'📋 Copy as a text list',fn:()=>fxDeckTextCopy(i)},{t:'Cancel'}])}
+/* plain deck list (the usual “4 Card name” format other apps read), side deck under “Sideboard” */
+function fxDeckText(d){const L=d.cards.filter(e=>fxMainQ(e)>0).map(e=>`${fxMainQ(e)} ${e.name}`),S=d.cards.filter(e=>e.side>0).map(e=>`${e.side} ${e.name}`);return L.join('\n')+(S.length?'\n\nSideboard\n'+S.join('\n'):'')}
+async function fxDeckTextCopy(i){const t=fxDeckText(D.decks[i]);try{await navigator.clipboard.writeText(t);toast('Deck list copied')}catch(e){openM(`<h3>Copy this list</h3><textarea rows="14" readonly style="width:100%">${esc(t)}</textarea>`)}}
 function fxCardObj(c,src,n,fin){const f=c.card_faces?.[0]||c,L={W:'White',U:'Blue',B:'Black',R:'Red',G:'Green'},ci=(c.color_identity||[]).map(x=>L[x]).join('/'),tl=c.type_line||f.type_line||'';
   return {name:c.name,source:src,colors:ci||(/Land/.test(tl)?'Land':'Colorless'),cost:c.mana_cost||f.mana_cost||'None',cmc:String(c.cmc??0),type:catOf(c),subtype:(tl.split(' — ')[1]||'None'),power:f.power||'None',toughness:f.toughness||'None',
     text:c.oracle_text||f.oracle_text||'',keywords:(c.keywords||[]).join(', ')||'None',legal:c.legalities?.commander==='banned'?'Restricted: Banned in Commander':'None (Sanctioned Legal)',qty:n,finish:fin||'Normal',status:'Added in app'}}
 async function fxOpenLink(text){const m=String(text||'').match(/[#?&]d=([A-Za-z0-9_\-]+)/);if(!m){const sh=String(text||'').match(/https?:\/\/(?:www\.)?(?:tinyurl\.com|is\.gd)\/[A-Za-z0-9_\-]+/i);if(sh)return fxOpenShort(sh[0]);return toast('That doesn’t look like a deck link')}let o;try{o=await fxUnpack(m[1]);if(!o||!Array.isArray(o.l)||!o.n)throw 0}catch(e){return toast('That deck link is damaged or incomplete')}
   const n=sum(o.l,x=>+x[0]||0);fxAsk('A deck was shared with you',`<div class="sec"><b>${esc((o.o?o.o+' - ':'')+o.n)}</b> <span class="mut">· ${esc(o.f||'')} · ${fxPl(n,'card')}</span><br>from ${fxWho(o.o||'someone',o.u)}</div><p class="mut">Links aren’t signed, so the sender can’t be verified. The deck is view-only until you copy it to your own decks.</p>`,[{t:'👁 View the deck',cls:'pri',fn:()=>fxLinkImport(o)},{t:'Cancel'}])}
-async function fxLinkImport(o){toast('Looking the cards up…');const items=o.l.map(([q,nm,st,cn])=>({name:String(nm||''),qty:+q||1,set:st||'',num:cn||'',sid:''})),need=[];
+async function fxLinkImport(o){toast('Looking the cards up…');const it=side=>([q,nm,st,cn])=>({name:String(nm||''),qty:+q||1,set:st||'',num:cn||'',sid:'',side}),items=[...o.l.map(it(false)),...(o.ls||[]).map(it(true))],need=[];
   items.forEach(x=>{const c=x.name&&findCard(x.name);if(c)x.own=c;else need.push(x)});try{if(need.length)await fxResolve(need)}catch(e){return toast('Couldn’t reach Scryfall to look the cards up — check your internet connection')}
   items.forEach(x=>{if(!x.own&&x.card){const c=findCard(x.card.name);if(c)x.own=c;else if(!x.name)x.name=x.card.name}});
-  const cards=[],seen=new Set();items.forEach(x=>{const src=x.own||(x.card&&Object.assign(fxCardObj(x.card,'',x.qty),{art:sImg(x.card),set:x.card.set,setName:x.card.set_name,cn:x.card.collector_number,scryId:x.card.id,leg:legOf(x.card.legalities)}));if(!src)return;x.name=src.name;if(seen.has(norm(src.name)))return;seen.add(norm(src.name));const c=JSON.parse(JSON.stringify(src));delete c.source;c.qty=x.qty;cards.push(c)});
+  const cards=[],seen=new Set();items.forEach(x=>{const src=x.own||(x.card&&Object.assign(fxCardObj(x.card,'',x.qty),{art:sImg(x.card),set:x.card.set,setName:x.card.set_name,cn:x.card.collector_number,scryId:x.card.id,leg:legOf(x.card.legalities)}));if(!src)return;x.name=src.name;if(seen.has(norm(src.name))){const c=cards.find(y=>norm(y.name)===norm(src.name));if(c)c.qty+=x.qty;return}seen.add(norm(src.name));const c=JSON.parse(JSON.stringify(src));delete c.source;c.qty=x.qty;cards.push(c)});
   /* Signed links are checked with the sender's key. A verified deck joins that person's entry in Other collections (grouped by sender);
      unsigned or unverifiable links stay in a separate “shared by link” entry. A link signed with this collection's own key is one of your own decks. */
-  const ok=!!(o.pub&&o.sig&&o.u&&await fxVerify(o.signed,o.sig,o.pub)),deck={name:o.n,format:o.f||'Casual',commander:o.c||'',cards:items.map(x=>({name:x.name,qty:x.qty,finish:'Normal'})),tokens:[]};
+  const ok=!!(o.pub&&o.sig&&o.u&&await fxVerify(o.signed,o.sig,o.pub)),deck={name:o.n,format:o.f||'Casual',commander:o.c||'',cards:[],tokens:[]};items.forEach(x=>{let e=deck.cards.find(y=>norm(y.name)===norm(x.name));if(!e)deck.cards.push(e={name:x.name,qty:0,finish:'Normal'});e.qty+=x.qty;if(x.side)e.side=(e.side||0)+x.qty});
   if(ok&&D.uid&&o.u===D.uid&&D.keys&&D.keys.pub&&D.keys.pub.x===o.pub.x&&D.keys.pub.y===o.pub.y){const i=D.decks.findIndex(d=>d.name.toLowerCase()===o.n.toLowerCase());
     if(i>=0){V.view='decks';V.deck=i;render();scrollTo(0,0);return toast('This is your own deck — it’s already in your decks')}
     if(!(await ask(`“${o.n}” is one of your own decks (signed with your collection’s key), but it isn’t in your decks on this device.\n\nAdd it to your decks?`)))return;
@@ -798,7 +820,7 @@ function fxCheckLink(){try{if(/#d=/.test(location.hash)){const h=location.hash;h
 addEventListener('hashchange',()=>fxCheckLink());
 const fxRoDeckBtns=i=>RO?`<div class="row"><button class="pri" onclick="fxBuildPlan(${i})">🛠 Build this deck with my cards</button><button onclick="fxSimVs(${i})">⚔ Simulate vs my decks</button></div>`:'';
 function fxCopyDeck(i){const d=D.decks[i],from=RO.name,base=fxDeckTitle(d);roExit();let nm=base,k=2;while(D.decks.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=`${base} ${k++}`;
-  const cards=d.cards.map(e=>({name:(findCard(e.name)||e).name,qty:e.qty,finish:'Normal'})),own=cards.filter(e=>{const c=findCard(e.name);return c&&(c.type==='Basic Land'||c.qty>=e.qty)}).length;
+  const cards=d.cards.map(e=>({name:(findCard(e.name)||e).name,qty:e.qty,finish:'Normal',...(e.side>0?{side:e.side}:{})})),own=cards.filter(e=>{const c=findCard(e.name);return c&&(c.type==='Basic Land'||c.qty>=e.qty)}).length;
   D.decks.push({name:nm,format:d.format||'Casual',sleeve:'',commander:d.commander||'',info:'Copied from '+from,cards,tokens:[]});save();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
   fxAsk('Deck copied to your decks',`<p>You own enough copies of <b>${own} of ${cards.length}</b> card titles in this deck.</p><p class="mut">Cards you don’t own are still on the list, so you can see what you’d need to get. No cards were added to your collection.</p>`,[{t:'Done',cls:'pri'}])}
 function fxSimVs(i){const id=RO.id;roExit();V.view='more';V.sub='matchups';V.simB=`o:${id}:${i}`;render();scrollTo(0,0)}
@@ -819,24 +841,25 @@ function fxNativeLinks(){try{if(!isNative())return;const A=window.Capacitor.Plug
 
 /* ---------- building a deck by hand ---------- */
 let FXB=[];
-async function fxBuilder(first){const i=V.deck,d=D.decks[i];if(RO||!d)return;
-  if(first){const F=dfmt(d.format);if(F&&F.leg){const need=D.cards.filter(c=>isReal(c)&&!c.leg&&!c.legMiss);if(need.length&&!(await ensureLegal(need))){d.legPending=true;save();render();toast('Offline — rule warnings are incomplete until the cards are checked')}}V.bq='';V.bt='';V.bc='';V.bfree=false;V.bown=true;V.bsrc=V.bsrc||'';const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
-    openM(`<h3>Add cards to ${esc(d.name)}</h3><div id="bhead" class="sec" style="position:sticky;top:0;z-index:2"></div>
+async function fxBuilder(first,mode){const i=V.deck,d=D.decks[i];if(RO||!d)return;
+  if(first){V.bside=mode==='side'&&fxSideOK(d);const F=dfmt(d.format);if(F&&F.leg){const need=D.cards.filter(c=>isReal(c)&&!c.leg&&!c.legMiss);if(need.length&&!(await ensureLegal(need))){d.legPending=true;save();render();toast('Offline — rule warnings are incomplete until the cards are checked')}}V.bq='';V.bt='';V.bc='';V.bfree=false;V.bown=true;V.bsrc=V.bsrc||'';const types=[...new Set(D.cards.filter(isReal).map(c=>c.type))].sort();
+    openM(`<h3>Add cards to ${esc(d.name)}</h3><div id="bhead" class="sec" style="position:sticky;top:0;z-index:2"></div>${fxSideOK(d)?`<div class="chips" id="bmode" style="margin:0 0 8px"></div>`:''}
     <input id="bq" type="search" placeholder="Search name or rules text…" style="width:100%" oninput="V.bq=this.value;fxBuilder()">
     <div class="brow" style="margin:8px 0"><select onchange="V.bt=this.value;fxBuilder()"><option value="">All types</option>${types.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select onchange="V.bc=this.value;fxBuilder()"><option value="">All colors</option>${['White','Blue','Black','Red','Green','Colorless','Land'].map(x=>`<option>${x}</option>`).join('')}</select></div>
     <label style="margin:0 0 4px"><input type="checkbox" onchange="V.bfree=this.checked;fxBuilder()">Only show cards with a copy that isn’t in another deck</label>
     <label style="margin:0 0 8px"><input type="checkbox" checked onchange="V.bown=this.checked;fxBuilder()">Only add cards that are in my collection</label>
     <div id="bnew" class="sec" hidden><p class="mut" style="margin:0 0 6px">Cards you don’t own yet (e.g. you bought the whole deck) are searched on Scryfall. Adding one puts it in your collection <b>and</b> in this deck.</p><label style="margin:0">New cards are pulled from</label><input id="bsrc" list="bsrcl" placeholder="e.g. Singles Orders or the deck you bought" value="${esc(V.bsrc)}" oninput="V.bsrc=this.value"><datalist id="bsrcl">${allSources().filter(s=>!isCustomSrc(s)).map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div><div id="bres"></div><div id="bscry"></div><div class="row"><button class="pri" onclick="closeM()">Done</button></div>`)}
-  const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),t=target(d),n=sum(dl),F=dfmt(d.format),cmdC=d.commander&&findCard(d.commander);
-  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?` <span style="color:#f39c12">· ${n>t?'over the limit':'full'}</span>`:''}${d.override?' <span style="color:#ff6b6b">· ⛔ override on</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
+  const el=document.getElementById('bres');if(!el)return;const q=(V.bq||'').toLowerCase(),dl=fxDeckCards(i),inDeck=n=>sum(dl.filter(e=>norm(e.name)===norm(n))),inPart=n=>sum(dl.filter(e=>norm(e.name)===norm(n)),e=>V.bside?(e.side||0):fxMainQ(e)),t=target(d),n=fxMainN(dl),sn=fxSideN(dl),F=dfmt(d.format),cmdC=d.commander&&findCard(d.commander);
+  {const bm=document.getElementById('bmode');if(bm)bm.innerHTML=`<span class="mut" style="font-size:13px;margin-right:4px">Adding to:</span><button class="${V.bside?'':'on'}" onclick="V.bside=false;fxBuilder()">Deck (sleeved)</button><button class="${V.bside?'on':''}" onclick="V.bside=true;fxBuilder()">Side deck</button>`}
+  document.getElementById('bhead').innerHTML=`<b>${n}${t?' / '+t:''} cards</b> in this ${F?esc(F.k)+' ':''}deck${fxSideOK(d)||sn?` · <b>${sn}/${FXSIDEMAX}</b> side`:''}${fxDraftDirty()?' <span class="dl">· not saved yet</span>':''}${t&&n>=t?` <span style="color:#f39c12">· ${n>t?'over the limit':'full'}</span>`:''}${d.override?' <span style="color:#ff6b6b">· ⛔ override on</span>':''}<br><span class="mut" style="font-size:12px">Tap + or − as much as you like, then Done and “Save changes”.</span>`;
   const list=D.cards.filter(c=>isReal(c)&&(!q||c.name.toLowerCase().includes(q)||String(c.text||'').toLowerCase().includes(q))&&(!V.bt||c.type===V.bt)&&(!V.bc||String(c.colors).includes(V.bc))&&(!V.bfree||freeCopies(c)>0||inDeck(c.name)>0)).sort((a,b)=>(inDeck(b.name)>0)-(inDeck(a.name)>0)||a.name.localeCompare(b.name));
   FXB=list.slice(0,60).map(c=>c.name);
   {const bn=document.getElementById('bnew');if(bn)bn.hidden=!!V.bown;fxBScry(q)}
-  el.innerHTML=list.slice(0,60).map((c,k)=>{const u=usage(c.name).filter(x=>x.d!==d),fr=freeCopies(c),have=inDeck(c.name);
-    const iss=fxCardIssues(c,have,F,cmdC);
+  el.innerHTML=list.slice(0,60).map((c,k)=>{const u=usage(c.name).filter(x=>x.d!==d),fr=freeCopies(c),have=inPart(c.name);
+    const iss=fxCardIssues(c,inDeck(c.name),F,cmdC);
     return `<div class="res" style="cursor:default;flex-wrap:wrap"><span style="flex:1;min-width:0">${esc(c.name)} ${costHtml(c.cost)}${iss.length?` <button class="isb" onclick="this.closest('.res').querySelector('.isd').hidden^=1">⚠ ${esc(iss[0].title)}${iss.length>1?' +'+(iss.length-1):''}</button>`:''}<br><span class="mut" style="font-size:12px">${esc(c.type)} · own ${c.qty} · ${c.type==='Basic Land'?'basic land':fr>0?fr+' free':'<b style="color:#f39c12">none free</b>'}${u.length?' · in '+esc(u.map(x=>x.d.name).join(', ')):''}</span></span>
     <span style="display:flex;align-items:center;gap:8px;flex:0 0 auto"><button style="padding:6px 12px" onclick="fxBAdd(${k},-1)" ${have?'':'disabled'}>−</button><b style="min-width:22px;text-align:center">${have}</b><button class="pri" style="padding:6px 12px" onclick="fxBAdd(${k},1)">+</button></span>${iss.length?`<div class="isd" hidden>${iss.map(x=>`<p><b>${esc(x.title)}.</b> ${esc(x.msg)}</p>`).join('')}<p class="mut">You can still add it — this is just so you know.</p></div>`:''}</div>`}).join('')+(list.length>60?`<p class="mut">Showing 60 of ${list.length} — search or filter to narrow it down.</p>`:'')||`<p class="mut">${V.bown?'No cards match.':'None of your cards match.'}</p>`}
-async function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const d=D.decks[V.deck];if(dl>0&&!(await ask(`Pull 1× ${n} from your collection into ${d.name}?\n\n(It’s staged — tap Save changes on the deck to apply.)`)))return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true);document.getElementById('modal').scrollTop=y}
+async function fxBAdd(k,dl){const n=FXB[k];if(n==null)return;const d=D.decks[V.deck];if(dl>0&&!(await ask(`Pull 1× ${n} from your collection into ${V.bside?'the side deck of ':''}${d.name}?${V.bside?'\n\nSide cards get no sleeves.':''}\n\n(It’s staged — tap Save changes on the deck to apply.)`)))return;const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,n,dl,true,!!V.bside);document.getElementById('modal').scrollTop=y}
 /* Builder with “Only add cards that are in my collection” switched off: search Scryfall for cards you don't own and add them to the collection + this deck */
 let BSC={q:'',list:null,t:0,busy:false};
 function fxBScry(q){const el=document.getElementById('bscry');if(V.bown||!el){clearTimeout(BSC.t);if(el)el.innerHTML='';return}
@@ -852,7 +875,7 @@ async function fxBNew(k){const c=(BSC.list||[])[k],d=D.decks[V.deck];if(!c||!d)r
   if(isCustomSrc(src))return toast('“Custom Cards” is only for custom cards — pick another “Pulled from”');if(!allSources().some(s=>s.toLowerCase()===src.toLowerCase()))src=autoNumber(src);
   if(!(await ask(`Add ${q}× ${c.name} to your collection AND put it in ${d.name}?\n\nPulled from: ${src}\n(The deck change is staged — tap Save changes on the deck to apply.)`)))return;
   fxAddCard(c,q,'Normal',src,'','Added while building '+d.name);V.bsrc=src;{const bi=document.getElementById('bsrc');if(bi)bi.value=src}IDX=null;saveArt();save();BSC.list=BSC.list.filter(x=>x!==c);
-  const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,c.name,q,true);document.getElementById('modal').scrollTop=y;toast(`${q}× ${c.name} added to your collection`)}
+  const y=document.getElementById('modal').scrollTop;fxDraftChg(V.deck,c.name,q,true,!!V.bside);document.getElementById('modal').scrollTop=y;toast(`${q}× ${c.name} added to your collection`)}
 function fxDeckEdit(i){const d=D.decks[i];openM(`<h3>Edit deck details</h3><div class="f"><label>Name</label><input id="en" value="${esc(d.name)}"><label>Format</label><select id="ef">${fmtOptions(dfmt(d.format)?d.format:'Casual')}</select>
   <label>Commander (optional)</label><input id="ec" list="ecl" value="${esc(d.commander||'')}"><datalist id="ecl">${fxDeckCards(i).map(e=>`<option value="${esc(e.name)}">`).join('')}</datalist>
   <label>Sleeves <span id="sl" class="mut"></span></label><label style="margin:2px 0 4px;font-weight:400"><input type="checkbox" id="nsa" onchange="NSA=this.checked;sleeveOpts(window.FXCUR)">Auto-select from available sleeves</label><div class="swr" id="ns"></div></div><br><div class="row"><button onclick="closeM()">Cancel</button><button class="pri" onclick="fxDeckEditSave(${i})">Save details</button></div>`);
@@ -1243,13 +1266,13 @@ function fxFromUI(v,skip){const S=fxFromS(v),L=fxFromList(v);if(!L.length)return
   <label style="margin:2px 0;font-weight:600"><input type="checkbox" ${on===L.length?'checked':''} onchange="fxFromAll('${v}',this.checked)"> Include all decks</label>
   <label style="margin:2px 0;font-weight:600"><input type="checkbox" ${on===0?'checked':''} onchange="fxFromAll('${v}',!this.checked)"> Include none</label>
   <div style="border-top:1px solid var(--line,#333);margin:6px 0 4px"></div>
-  ${L.map(({d,i})=>`<label style="margin:2px 0"><input type="checkbox" ${S.from[d.name]?'checked':''} onchange="fxFromSet('${v}',${i},this.checked)"> ${esc(d.name)} <span class="mut">· ${sum(d.cards)} cards</span></label>`).join('')}</div>
+  ${L.map(({d,i})=>`<label style="margin:2px 0"><input type="checkbox" ${S.from[d.name]?'checked':''} onchange="fxFromSet('${v}',${i},this.checked)"> ${esc(d.name)} <span class="mut">· ${fxMainN(d.cards)} cards${fxSideN(d.cards)?` + ${fxSideN(d.cards)} side`:''}</span></label>`).join('')}</div>
   <p class="mut" style="margin:6px 0">${on?`${on} of ${fxPl(L.length,'deck')} included. Cards taken from a deck are recorded as a loan; that deck gets a red ★ until you return them or make it permanent.`:'No decks included — only cards that aren’t in any deck will be used.'}</p>`}
 const optAllowed=()=>OPT.noDecks?[]:D.decks.filter((d,k)=>k!==OPT.deck&&OPT.from[d.name]).map(d=>d.name);
 function optCols(d,F){const cmdC=F&&F.cmd&&d.commander&&findCard(d.commander);if(cmdC)return {cols:fxIdCols(cmdC),why:'the '+F.cmdLabel.toLowerCase()+'’s colors'};
   if(OPT.colors.length)return {cols:OPT.colors,why:'the colors you picked'};const s=new Set();d.cards.forEach(e=>{const c=findCard(e.name);if(c)fxCI(c).forEach(x=>s.add(x))});return {cols:CLR.filter(x=>s.has(x)),why:'the deck’s current colors',soft:true}}
 const optLegal=(c,F)=>{const k=F&&F.leg||OPT.legal;return !k||!!(c.leg&&(c.leg[k]==='l'||c.leg[k]==='r'))};
-function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=sum(L),cc=optCols(d,F);
+function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=fxMainN(L),cc=optCols(d,F);
   if(OPT.step==='confirm')return fxOptConfirm(m,i);
   m.innerHTML=`<button onclick="fxOptClose()">← ${esc(d.name)}</button><h2 style="margin:10px 0 4px">✨ Optimize Deck</h2>
   <div class="tags"><span>${esc(d.format)}</span><span>${tot}${F&&F.n?'/'+F.n:''} cards</span>${d.commander?`<span>${esc(F&&F.cmdLabel||'Commander')}: ${cl(d.commander)}</span>`:''}</div>
@@ -1267,10 +1290,10 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=sum(L)
   ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}</details>
   <h3>AI reply</h3><textarea id="oreply" rows="6" oninput="OPT.reply=this.value" placeholder="Paste the AI's answer here (Option B fills this in for you)">${esc(OPT.reply)}</textarea><br><br><button onclick="fxOptRead()">Read reply</button><div id="oprev"></div>`;
   if(OPT.res)fxOptPrev()}
-function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=sum(d.cards);
+function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=fxMainN(d.cards);
   d.cards.forEach(e=>{const k=norm(e.name);inDeck[k]=(inDeck[k]||0)+e.qty});
   const desc=c=>`${c.type} | ${c.colors} | MV ${c.cmc}`;
-  const deckRows=d.cards.map(e=>{const c=findCard(e.name);return `${e.qty} ${e.name}${c?' | '+desc(c):''}`});
+  const deckRows=d.cards.filter(e=>fxMainQ(e)>0).map(e=>{const c=findCard(e.name);return `${fxMainQ(e)} ${e.name}${c?' | '+desc(c):''}`}),sideRows=d.cards.filter(e=>e.side>0).map(e=>{const c=findCard(e.name);return `${e.side} ${e.name}${c?' | '+desc(c):''}`}),sok=fxSideOK(d);
   const rows=D.cards.filter(c=>isReal(c)&&optLegal(c,F)&&!(F.leg&&c.custom)&&(!cc.cols.length||okColor(c,cc.cols)))
     .map(c=>({c,a:Math.min(aiAvail(c,al),Math.max(0,copyCap(c,F)-(inDeck[norm(c.name)]||0)))})).filter(x=>x.a>0).map(({c,a})=>`${c.name} | ${desc(c)} | available ${a}`);
   const legal=F.leg?F.k:OPT.legal?(FMTS.find(x=>x[0]===OPT.legal)||[])[1]:'';
@@ -1285,11 +1308,17 @@ The deck has ${tot} cards now and must have exactly ${F.n||tot} cards after your
 
 OUTPUT FORMAT: list only the changes, one per line:
 OUT <quantity> <card name>   (a card to take out of the deck)
-IN <quantity> <card name>    (a card to put into the deck)
+IN <quantity> <card name>    (a card to put into the deck)${sok?`
+SIDE OUT <quantity> <card name>   (take a card out of the side deck)
+SIDE IN <quantity> <card name>    (put a card into the side deck)
+The side deck (sideboard) holds up to ${FXSIDEMAX} cards for tough matchups and is not counted in the deck size; the copy limit counts deck + side deck together. To move a card between the deck and the side deck, use OUT + SIDE IN (or SIDE OUT + IN) for the same card.`:''}
 No headings or bullets. Then write a line containing only --- and explain the changes and why they help (under 200 words).
 
 CURRENT DECK (quantity name | type | colors | mana value):
-${deckRows.join('\n')}
+${deckRows.join('\n')}${sok?`
+
+CURRENT SIDE DECK (${fxSideN(d.cards)}/${FXSIDEMAX}):
+${sideRows.join('\n')||'(empty)'}`:''}
 
 MY AVAILABLE CARDS (name | type | colors | mana value | copies available):
 ${rows.join('\n')||'(none)'}`}
@@ -1303,51 +1332,59 @@ async function fxOptRun(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return to
   catch(e){OPT.err=e&&e.name==='AbortError'?(OPT.cancelled?'Cancelled.':'The AI took longer than 3 minutes, so I stopped waiting. Try again, or pick a faster model.'):String(e&&e.message||e)}
   clearInterval(tick);OPT.busy=false;OPT.cancelled=false;OPT.ctl=null;if(txt&&!OPT.err){OPT.reply=txt;OPT.res=null}render();if(txt&&!OPT.err)fxOptRead()}
 function fxOptRead(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
-  OPT.reply=$('#oreply')?.value??OPT.reply;const parts=OPT.reply.split(/^\s*---+\s*$/m),why=(parts.slice(1).join('\n')).trim(),al=optAllowed(),cmdC=F.cmd&&d.commander&&findCard(d.commander),cc=optCols(d,F);
-  const inDeck={};d.cards.forEach(e=>{const k=norm(e.name);inDeck[k]=(inDeck[k]||0)+e.qty});
-  const outs=[],ins=[],byO={},byI={};
-  parts[0].split('\n').forEach(l=>{l=l.replace(/^[\s•*]+/,'').replace(/\*\*/g,'');const m=l.match(/^(OUT|IN|REMOVE|ADD|CUT|[-−+])\s*:?\s*(\d+)?\s*x?\s+(.+?)\s*$/i);if(!m)return;
-    const isOut=/^(OUT|REMOVE|CUT|-|−)$/i.test(m[1]),q=+(m[2]||1),nm=m[3].replace(/\*+$/,'').replace(/\s*\(.*\)\s*$/,'').trim(),k=norm(nm),B=isOut?byO:byI,A=isOut?outs:ins;
-    if(B[k])B[k].want+=q;else{B[k]={name:nm,want:q,c:findCard(nm)};A.push(B[k])}});
-  const after=Object.assign({},inDeck);
-  outs.forEach(e=>{const k=norm(e.name),have=inDeck[k]||0;if(e.c)e.name=e.c.name;
-    if(!have){e.n=0;e.st='✗ not in this deck (skipped)';return}
-    if(cmdC&&k===norm(cmdC.name)){e.n=0;e.st='✗ the '+(F.cmdLabel||'commander').toLowerCase()+' stays (skipped)';return}
-    e.n=Math.min(e.want,have);after[k]-=e.n;const src=e.c?(loanedIn(d.name,e.c.name)?'↩ back to the deck it was borrowed from':'↩ back to '+fxCardLabel(e.c).k):'';e.st=(e.n<e.want?`⚠ the deck only has ${have} (removing ${e.n}) · `:'')+(src||'✓ removed')});
-  let total=sum(Object.values(after),x=>x);
-  ins.forEach(e=>{const c=e.c;if(!c||!isReal(c)){e.n=0;e.st=OPT.own?'✗ not in your collection (skipped)':'✗ you don’t own it — add it to your collection first (skipped)';return}e.name=c.name;const k=norm(c.name);
+  OPT.reply=$('#oreply')?.value??OPT.reply;const parts=OPT.reply.split(/^\s*---+\s*$/m),why=(parts.slice(1).join('\n')).trim(),al=optAllowed(),cmdC=F.cmd&&d.commander&&findCard(d.commander),cc=optCols(d,F),sok=fxSideOK(d);
+  const mainH={},sideH={};d.cards.forEach(e=>{const k=norm(e.name);mainH[k]=(mainH[k]||0)+fxMainQ(e);sideH[k]=(sideH[k]||0)+(e.side||0)});
+  const L={out:[],in:[],sout:[],sin:[]},B={out:{},in:{},sout:{},sin:{}};
+  parts[0].split('\n').forEach(l=>{l=l.replace(/^[\s•*]+/,'').replace(/\*\*/g,'');const m=l.match(/^(SIDE(?:BOARD)?\s+)?(OUT|IN|REMOVE|ADD|CUT|[-−+])\s*:?\s*(\d+)?\s*x?\s+(.+?)\s*$/i);if(!m)return;
+    const isOut=/^(OUT|REMOVE|CUT|-|−)$/i.test(m[2]),side=!!m[1],t=(side?'s':'')+(isOut?'out':'in'),q=+(m[3]||1),nm=m[4].replace(/\*+$/,'').replace(/\s*\(.*\)\s*$/,'').trim(),k=norm(nm);
+    if(side&&!sok)return;if(B[t][k])B[t][k].want+=q;else{B[t][k]={name:nm,want:q,c:findCard(nm)};L[t].push(B[t][k])}});
+  const mA=Object.assign({},mainH),sA=Object.assign({},sideH),freed={};
+  const takeOut=(e,H,A,isSide)=>{const k=norm(e.name),have=H[k]||0;if(e.c)e.name=e.c.name;
+    if(!have){e.n=0;e.st=`✗ not in this ${isSide?'side deck':'deck'} (skipped)`;return}
+    if(!isSide&&cmdC&&k===norm(cmdC.name)){e.n=0;e.st='✗ the '+(F.cmdLabel||'commander').toLowerCase()+' stays (skipped)';return}
+    e.n=Math.min(e.want,have);A[k]-=e.n;freed[k]=(freed[k]||0)+e.n;const src=e.c?(loanedIn(d.name,e.c.name)?'↩ back to the deck it was borrowed from':'↩ back to '+fxCardLabel(e.c).k):'';e.st=(e.n<e.want?`⚠ only ${have} there (removing ${e.n}) · `:'')+(src||'✓ removed')};
+  L.out.forEach(e=>takeOut(e,mainH,mA,false));L.sout.forEach(e=>takeOut(e,sideH,sA,true));
+  let total=sum(Object.values(mA),x=>x),stotal=sum(Object.values(sA),x=>x);
+  const putIn=(e,isSide)=>{const c=e.c;if(!c||!isReal(c)){e.n=0;e.st=OPT.own?'✗ not in your collection (skipped)':'✗ you don’t own it — add it to your collection first (skipped)';return}e.name=c.name;const k=norm(c.name),both=(mA[k]||0)+(sA[k]||0);
     if(!optLegal(c,F)){e.n=0;e.st='✗ not legal'+(F.leg?' in '+F.k:'')+' (skipped)';return}
     if(!cmdC&&cc.cols.length&&!okColor(c,cc.cols)){e.n=0;e.st='✗ outside '+cc.why+' (skipped)';return}
-    const bad=fxRuleBlock(c,(after[k]||0)+e.want,F,cmdC);if(bad){e.n=0;e.st='✗ '+bad+' (skipped)';return}
-    const cap=copyCap(c,F),room=Math.max(0,cap-(after[k]||0));let n=Math.min(e.want,room);const note=[];if(n<e.want)note.push(`${F.k} allows ${cap}`);
-    const pl=planCard(c,n,al);if(pl.got<n){note.push(`only ${pl.got} available`);n=pl.got}
-    if(F.n&&total+n>F.n){const k2=Math.max(0,F.n-total);note.push(`the deck would go over ${F.n} cards`);n=Math.min(n,k2)}
-    e.n=n;after[k]=(after[k]||0)+n;total+=n;if(!n){e.st='✗ '+note.join(', ')+' (skipped)';return}
-    const p2=planCard(c,n,al);e.st=(note.length?'⚠ '+note.join(', ')+` (adding ${n}) · `:'')+(p2.from.length?'↪ '+p2.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(p2.free?` + ${p2.free} free`:''):'✓ free in your collection')});
-  OPT.res={outs,ins,why,total};fxOptPrev()}
-function fxOptPrev(){const r=OPT.res,el=$('#oprev'),d=D.decks[OPT.deck],F=dfmt(d.format);if(!el)return;const no=sum(r.outs,e=>e.n),ni=sum(r.ins,e=>e.n);
-  if(!r.outs.length&&!r.ins.length){el.innerHTML='<div class="warn">I couldn’t find any “OUT 1 Card” / “IN 1 Card” lines in that reply.</div>';return}
+    const bad=fxRuleBlock(c,both+e.want,F,cmdC);if(bad){e.n=0;e.st='✗ '+bad+' (skipped)';return}
+    const cap=copyCap(c,F),room=Math.max(0,cap-both);let n=Math.min(e.want,room);const note=[];if(n<e.want)note.push(`${F.k} allows ${cap}${sok?' (deck + side deck)':''}`);
+    const reuse=Math.min(n,freed[k]||0),pl=planCard(c,n-reuse,al);if(pl.got<n-reuse){note.push(`only ${pl.got+reuse} available`);n=pl.got+reuse}
+    if(isSide){if(stotal+n>FXSIDEMAX){note.push(`the side deck holds ${FXSIDEMAX}`);n=Math.max(0,Math.min(n,FXSIDEMAX-stotal))}}
+    else if(F.n&&total+n>F.n){const k2=Math.max(0,F.n-total);note.push(`the deck would go over ${F.n} cards`);n=Math.min(n,k2)}
+    e.n=n;(isSide?sA:mA)[k]=((isSide?sA:mA)[k]||0)+n;if(isSide)stotal+=n;else total+=n;const ru=Math.min(n,freed[k]||0);freed[k]=(freed[k]||0)-ru;e.reuse=ru;
+    if(!n){e.st='✗ '+note.join(', ')+' (skipped)';return}
+    const p2=planCard(c,n-ru,al);e.st=(note.length?'⚠ '+note.join(', ')+` (adding ${n}) · `:'')+(ru?`⇄ ${ru} moved ${isSide?'from the deck':'from the side deck'}${n-ru?' + ':''}`:'')+(n-ru?(p2.from.length?'↪ '+p2.from.map(x=>`${x.q} from ${x.deck}`).join(', ')+(p2.free?` + ${p2.free} free`:''):'✓ free in your collection'):'')};
+  L.in.forEach(e=>putIn(e,false));L.sin.forEach(e=>putIn(e,true));
+  OPT.res={outs:L.out,ins:L.in,souts:L.sout,sins:L.sin,why,total,stotal,sok};fxOptPrev()}
+function fxOptPrev(){const r=OPT.res,el=$('#oprev'),d=D.decks[OPT.deck],F=dfmt(d.format);if(!el)return;const so=r.souts||[],si=r.sins||[],no=sum(r.outs,e=>e.n)+sum(so,e=>e.n),ni=sum(r.ins,e=>e.n)+sum(si,e=>e.n);
+  if(!r.outs.length&&!r.ins.length&&!so.length&&!si.length){el.innerHTML='<div class="warn">I couldn’t find any “OUT 1 Card” / “IN 1 Card” lines in that reply.</div>';return}
   el.innerHTML=`<h3>Suggested changes</h3>${r.why?`<div class="sec" style="white-space:pre-wrap">${esc(r.why)}</div>`:''}
-  <h4>Take out (${no})</h4>${r.outs.length?tbl(['Qty','Card','Status'],r.outs.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
-  <h4>Put in (${ni})</h4>${r.ins.length?tbl(['Qty','Card','Comes from'],r.ins.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
-  <p class="mut">After these changes the deck has <b>${r.total}${F&&F.n?'/'+F.n:''}</b> cards.${F&&F.n&&r.total<F.n?` That’s ${F.n-r.total} short — you can add cards by hand afterwards.`:''}</p>
+  <h4>Take out (${sum(r.outs,e=>e.n)})</h4>${r.outs.length?tbl(['Qty','Card','Status'],r.outs.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
+  <h4>Put in (${sum(r.ins,e=>e.n)})</h4>${r.ins.length?tbl(['Qty','Card','Comes from'],r.ins.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}
+  ${so.length||si.length?`<h4>Side deck — take out (${sum(so,e=>e.n)})</h4>${so.length?tbl(['Qty','Card','Status'],so.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}<h4>Side deck — put in (${sum(si,e=>e.n)})</h4>${si.length?tbl(['Qty','Card','Comes from'],si.map(e=>[e.n||e.want,{h:cl(e.name)},e.st])):'<p class="mut">Nothing.</p>'}`:''}
+  <p class="mut">After these changes the deck has <b>${r.total}${F&&F.n?'/'+F.n:''}</b> cards${r.sok?` and the side deck ${r.stotal}/${FXSIDEMAX}`:''}.${F&&F.n&&r.total<F.n?` That’s ${F.n-r.total} short — you can add cards by hand afterwards.`:''}</p>
   ${no+ni?'<button class="pri big" onclick="OPT.step=\'confirm\';render();scrollTo(0,0)">Accept these changes ›</button>':'<div class="warn">None of the suggested changes can be made (see the reasons above).</div>'}`}
 function fxOptGroups(){const r=OPT.res,d=D.decks[OPT.deck],al=optAllowed(),outG={},inG={};
-  r.outs.filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name);let n=e.n;[...actLoans()].reverse().filter(l=>l.to===d.name&&norm(l.card)===norm(e.name)).forEach(l=>{if(n<=0)return;const k=Math.min(n,l.qty);n-=k;fxGrpPut(outG,'Return to deck: '+l.from,k,e.name)});
+  r.outs.filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name);let n=e.n-Math.min(e.n,sum((r.sins||[]).filter(x=>x.reuse&&norm(x.name)===norm(e.name)),x=>x.reuse));[...actLoans()].reverse().filter(l=>l.to===d.name&&norm(l.card)===norm(e.name)).forEach(l=>{if(n<=0)return;const k=Math.min(n,l.qty);n-=k;fxGrpPut(outG,'Return to deck: '+l.from,k,e.name)});
     if(n>0){const L=c?fxCardLabel(c):{k:'Not in your collection',alt:[]};fxGrpPut(outG,L.k,n,e.name,L.alt)}});
-  r.ins.filter(e=>e.n>0).forEach(e=>{const pl=planCard(e.c,e.n,al),L=fxCardLabel(e.c);fxGrpPut(inG,L.k,e.c.type==='Basic Land'?e.n:pl.free,e.c.name,L.alt);if(e.c.type!=='Basic Land')pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,e.c.name))});
+  (r.souts||[]).filter(e=>e.n>0).forEach(e=>{const c=e.c||findCard(e.name),mv=sum((r.ins||[]).filter(x=>x.reuse&&norm(x.name)===norm(e.name)),x=>x.reuse),n=e.n-Math.min(e.n,mv);if(n>0){const L=c?fxCardLabel(c):{k:'Not in your collection',alt:[]};fxGrpPut(outG,L.k,n,e.name+' (side deck)',L.alt)}});
+  [...r.ins,...(r.sins||[])].filter(e=>e.n>0).forEach(e=>{const sd=(r.sins||[]).includes(e),n=e.n-(e.reuse||0);if(e.reuse)fxGrpPut(inG,sd?'⇄ Moved from the deck to the side deck':'⇄ Moved from the side deck to the deck',e.reuse,e.c.name);if(n<=0)return;const pl=planCard(e.c,n,al),L=fxCardLabel(e.c),nm=e.c.name+(sd?' (side deck)':'');fxGrpPut(inG,L.k,e.c.type==='Basic Land'?n:pl.free,nm,L.alt);if(e.c.type!=='Basic Land')pl.from.forEach(f=>fxGrpPut(inG,'From deck: '+f.deck,f.q,nm))});
   return {outG,inG}}
 function fxOptConfirm(m,i){const d=D.decks[i],F=dfmt(d.format),{outG,inG}=fxOptGroups(),no=sum(Object.values(outG).flat(),x=>x.q),ni=sum(Object.values(inG).flat(),x=>x.q);
   m.innerHTML=`<button onclick="OPT.step='';render();scrollTo(0,0)">‹ Back to the suggestions</button><h2 style="margin:10px 0 4px">Confirm changes to ${esc(d.name)}</h2>
   <p class="mut">Check every card. Nothing changes until you tap <b>Update deck</b>.</p>
   <h3>Cards removed (${no}) — they go back to:</h3>${fxGrpHtml(outG)}
   <h3>Cards added (${ni}) — pull them from:</h3>${fxGrpHtml(inG)}
-  <p class="mut">The deck will have <b>${OPT.res.total}${F&&F.n?'/'+F.n:''}</b> cards. Cards taken from other decks are recorded as loans (red ★ on that deck).</p>
+  <p class="mut">The deck will have <b>${OPT.res.total}${F&&F.n?'/'+F.n:''}</b> cards${OPT.res.sok?` and the side deck <b>${OPT.res.stotal}/${FXSIDEMAX}</b> (not sleeved)`:''}. Cards taken from other decks are recorded as loans (red ★ on that deck).</p>
   <div class="row"><button onclick="OPT.step='';render();scrollTo(0,0)">‹ Back</button><button class="pri" onclick="fxOptApply()">✓ Update deck</button></div>`}
 function fxOptApply(){const i=OPT.deck,d=D.decks[i],r=OPT.res;if(!d||d.name!==OPT.dname)return toast('That deck changed — open Optimize again');
   DRAFT=null;const dr=fxDraft(i);
-  r.outs.filter(e=>e.n>0).forEach(e=>{const x=dr.m[norm(e.name)];if(x)x.qty=Math.max(0,x.qty-e.n)});
-  r.ins.filter(e=>e.n>0).forEach(e=>{const k=norm(e.c.name),x=dr.m[k]||(dr.m[k]={name:e.c.name,base:0,qty:0});x.qty+=e.n});
+  r.outs.filter(e=>e.n>0).forEach(e=>{const x=dr.m[norm(e.name)];if(x)x.qty=Math.max(x.side||0,x.qty-e.n)});
+  (r.souts||[]).filter(e=>e.n>0).forEach(e=>{const x=dr.m[norm(e.name)];if(x){const n=Math.min(e.n,x.side||0);x.side-=n;x.qty-=n}});
+  r.ins.filter(e=>e.n>0).forEach(e=>{const k=norm(e.c.name),x=dr.m[k]||(dr.m[k]={name:e.c.name,base:0,qty:0,side:0,sbase:0});x.qty+=e.n});
+  (r.sins||[]).filter(e=>e.n>0).forEach(e=>{const k=norm(e.c.name),x=dr.m[k]||(dr.m[k]={name:e.c.name,base:0,qty:0,side:0,sbase:0});x.qty+=e.n;x.side=(x.side||0)+e.n});
   const al=optAllowed();d.info=((d.info||'')+(d.info?' · ':'')+'Optimized '+today()).slice(-300);
   OPT={};V.opt=null;fxDraftSave({yes:true,allowed:al});scrollTo(0,0)}
 
@@ -1359,8 +1396,8 @@ const fxMissUsd=m=>{const c=findCard(m.name);return (c&&c.price?fxUnit(c).Normal
 const fxMissQ=(d,n)=>sum((d.miss||[]).filter(m=>norm(m.name)===norm(n)),m=>m.qty);
 let BP=null;
 function fxBuildPlan(i){const d=D.decks[i],snap={};d.cards.forEach(e=>{const c=findCard(e.name)||{};snap[norm(e.name)]={type:c.type||'',cmc:c.cmc||'',colors:c.colors||'',cost:c.cost||'',art:ART[c.name]||c.art||'',usd:c.price?fxUnit(c).Normal||0:0}});
-  const src={name:d.name,format:d.format||'Casual',commander:d.commander||'',owner:RO.given||RO.name,cards:d.cards.map(e=>({name:e.name,qty:e.qty}))};roExit();
-  const rows=[];src.cards.forEach(e=>{const c=findCard(e.name),s=snap[norm(e.name)]||{},r={name:c?c.name:e.name,need:e.qty,snap:s,c};
+  const src={name:d.name,format:d.format||'Casual',commander:d.commander||'',owner:RO.given||RO.name,cards:d.cards.map(e=>({name:e.name,qty:e.qty,side:e.side||0}))};roExit();
+  const rows=[];src.cards.forEach(e=>{const c=findCard(e.name),s=snap[norm(e.name)]||{},r={name:c?c.name:e.name,need:e.qty,side:e.side||0,snap:s,c};
     if(!c||!isReal(c)){r.free=0;r.lend=[];r.buy=e.qty}
     else{r.free=Math.min(e.qty,freeCopies(c));let left=e.qty-r.free;r.lend=[];if(c.type!=='Basic Land')D.decks.map(x=>({deck:x.name,t:takeable(c,x.name)})).filter(x=>x.t>0).sort((a,b)=>b.t-a.t).forEach(x=>{if(left<=0)return;const k=Math.min(left,x.t);r.lend.push({deck:x.deck,q:k});left-=k});r.buy=left}
     r.usd=(c&&c.price?fxUnit(c).Normal:0)||s.usd||0;r.borrow=false;rows.push(r)});
@@ -1378,7 +1415,7 @@ function fxBuildDraw(){const B=BP;if(!B)return;const tot=k=>sum(B.rows,r=>k(r)),
 async function fxBuildMake(){const B=BP,name=(B.name||'').trim();if(!name)return toast('Give the deck a name');if(D.decks.some(x=>x.name.toLowerCase()===name.toLowerCase()))return toast('You already have a deck with that name — pick another');
   {const bor=sum(B.rows.filter(r=>r.borrow),r=>sum(r.lend,x=>x.q)),mis=sum(B.rows,r=>r.buy+(r.borrow?0:sum(r.lend,x=>x.q)));if(!(await ask(`Create “${name}”?${bor?`\n\n${fxPl(bor,'card')} will be borrowed from your other decks (they get a red ★).`:''}${mis?`\n${fxPl(mis,'card')} will be listed as missing.`:''}`)))return}
   const d={name,format:B.src.format,sleeve:'',commander:B.src.commander,info:`Built from ${B.src.owner}’s “${B.src.name}”`,cards:[],tokens:[],miss:[]};D.decks.push(d);const inG={},sec='Built from a shared deck';
-  B.rows.forEach(r=>{const e={name:r.name,qty:r.need,finish:'Normal'};if(!r.c){Object.assign(e,{type:r.snap.type,cmc:r.snap.cmc,colors:r.snap.colors})}d.cards.push(e);
+  B.rows.forEach(r=>{const e={name:r.name,qty:r.need,finish:'Normal'};if(r.side>0)e.side=Math.min(r.side,r.need);if(!r.c){Object.assign(e,{type:r.snap.type,cmc:r.snap.cmc,colors:r.snap.colors})}d.cards.push(e);
     r.lend.forEach(x=>{if(r.borrow){makeLoan(r.name,x.q,x.deck,name,sec+' — borrowed from another deck');fxGrpPut(inG,'From deck: '+x.deck,x.q,r.name)}else d.miss.push({name:r.name,qty:x.q,why:'deck',deck:x.deck,st:'missing',at:today()})});
     if(r.buy)d.miss.push({name:r.name,qty:r.buy,why:'buy',st:'missing',at:today(),usd:r.usd||0})});
   if(!d.miss.length)delete d.miss;BP=null;save();fxAllocDiff(d,{},inG,null);closeM();V.view='decks';V.deck=D.decks.length-1;render();scrollTo(0,0);
@@ -1531,9 +1568,11 @@ function fxCardIssues(c,qty,F,cmdC){if(!F||!c)return [];const out=[],st=F.leg&&c
   if(qty>cap&&cap<999)out.push(st==='r'?{kind:'restricted',title:`Restricted in ${F.k}`,msg:`${c.name} is on the ${F.k} restricted list: a deck may include only 1 copy. This deck has ${qty}.`,cap}:{kind:'copies',title:`Too many copies (${qty})`,msg:`${F.single?F.k+' is a singleton format: only 1 copy of each card, except basic lands.':F.k+' allows up to '+cap+' copies of a card, except basic lands.'} This deck has ${qty}.`,cap});
   if(F.cmd&&cmdC&&norm(c.name)!==norm(cmdC.name)){const cc=fxIdCols(cmdC);if(!okColor(c,cc))out.push({kind:'color',title:'Outside the commander’s colors',msg:`${F.k} decks may only use cards inside the ${F.cmdLabel.toLowerCase()}’s color identity (${cc.length?cc.map(x=>CLRN[x]).join(', '):'colorless'}). ${c.name} is ${fxCI(c).map(x=>CLRN[x]).join('/')||'colorless'}.`})}
   return out}
-function deckIssues(i,Fo){const d=D.decks[i],F=Fo||(d&&dfmt(d.format));if(!d||!F)return [];const L=fxDeckCards(i),tot=sum(L),ign=Fo&&Fo.k!==d.format?[]:(d.ok||[]),out=[],cmdC=d.commander&&findCard(d.commander),
+function deckIssues(i,Fo){const d=D.decks[i],F=Fo||(d&&dfmt(d.format));if(!d||!F)return [];const L=fxDeckCards(i),tot=fxMainN(L),sd=fxSideN(L),ign=Fo&&Fo.k!==d.format?[]:(d.ok||[]),out=[],cmdC=d.commander&&findCard(d.commander),
   add=(card,x,fixes)=>out.push(Object.assign({card,fixes,ign:ign.includes(x.kind+'|'+norm(card||''))},x));
   if(tot>F.n)add('',{kind:'size',title:`${tot} cards — ${F.k} decks hold ${F.n}`,msg:`${F.single?F.k+' decks must have exactly '+F.n+' cards.':'This app keeps '+F.k+' decks at '+F.n+' cards.'} This deck has ${tot-F.n} too many.`},[{t:'Open the card picker',a:'pick'}]);
+  if(sd&&F.single)add('',{kind:'side',title:`${sd} side card${sd>1?'s':''} — ${F.k} has no side deck`,msg:`${F.k} decks are exactly ${F.n} cards with no side deck. Move the side cards into the deck or take them out.`},[{t:'Open the card picker',a:'pick'}]);
+  else if(sd>FXSIDEMAX)add('',{kind:'side',title:`${sd} side cards — up to ${FXSIDEMAX}`,msg:`A side deck holds up to ${FXSIDEMAX} cards. This one has ${sd-FXSIDEMAX} too many.`},[{t:'Open the card picker',a:'pick'}]);
   if(F.cmd){if(!d.commander)add('',{kind:'nocmd',title:`No ${F.cmdLabel.toLowerCase()} chosen`,msg:`${F.k} decks are built around a ${F.cmdLabel.toLowerCase()} (${F.cmdRule}). Choose one so the color rules can be checked.`},[{t:'Choose one',a:'edit'}]);
     else if(cmdC&&!cmdOK(cmdC,F))add(d.commander,{kind:'badcmd',title:`${cmdC.name} can’t be the ${F.cmdLabel.toLowerCase()}`,msg:`In ${F.k} the ${F.cmdLabel.toLowerCase()} must be ${F.cmdRule}. ${cmdC.name} is a ${cmdC.type}.`},[{t:'Choose another',a:'edit'}])}
   L.forEach(e=>{const c=findCard(e.name);if(!c)return;fxCardIssues(c,e.qty,F,cmdC).forEach(x=>add(c.name,x,x.kind==='unknown'?[...(c.legSug?[{t:'Use '+c.legSug,a:'sug'}]:[]),{t:c.legSug?'Something else':'Find a match',a:'match'},{t:'Mark as custom card',a:'custom'}]:x.cap?[{t:`Reduce to ${x.cap}`,a:'cut',n:e.qty-x.cap}]:[{t:'Remove from deck',a:'cut',n:e.qty}]))});
@@ -1563,8 +1602,8 @@ async function fxLegalCheck(i,list,quiet){const d=D.decks[i];if(!d||RO)return tr
   if(ok){d.legPending=false;save();render();if(!quiet)toast(`${d.name}: rules checked`);return true}
   if(!d.legPending){d.legPending=true;save()}render();return false}
 /* ---------- Deck page → 🎮 Game modes (owner request): for every deck type, how many of the deck's cards are legal there and whether the whole deck fits its rules (size, copies, commander…); “Switch to …” changes the deck type after approval (card target, sleeve label, rule checks follow). ---------- */
-function fxModeStat(i,F){const d=D.decks[i],L=fxDeckCards(i),n=sum(L);let ok=0,unk=0;
-  L.forEach(e=>{const c=findCard(e.name);if(!F.leg||c&&(c.type==='Basic Land'||fxBasic(c))){ok+=e.qty;return}if(!c||c.custom)return;if(!c.leg){unk+=e.qty;return}const st=c.leg[F.leg];if(st==='l'||st==='r')ok+=e.qty});
+function fxModeStat(i,F){const d=D.decks[i],L=fxDeckCards(i),n=fxMainN(L);let ok=0,unk=0;
+  L.forEach(e=>{const q=fxMainQ(e);if(!q)return;const c=findCard(e.name);if(!F.leg||c&&(c.type==='Basic Land'||fxBasic(c))){ok+=q;return}if(!c||c.custom)return;if(!c.leg){unk+=q;return}const st=c.leg[F.leg];if(st==='l'||st==='r')ok+=q});
   const iss=deckIssues(i,F).filter(x=>!x.ign);return {n,ok,unk,iss,fits:!iss.length&&!unk&&ok===n&&n===F.n}}
 function fxModesBox(i){const d=D.decks[i];if(!d)return '';const cur=dfmt(d.format),R=DFMT.map(F=>({F,s:fxModeStat(i,F)})),fits=R.filter(r=>r.s.fits&&r.F.leg),unk=Math.max(0,...R.map(r=>r.s.unk));
   const row=({F,s})=>{const me=cur&&F.k===cur.k,short=s.n<F.n?F.n-s.n:0;
@@ -1649,8 +1688,8 @@ async function fxCustomPhotoSet(name,b){{const c=findCard(name);if(!c||!b)return
 async function fxCustomPhotoDel(name){const c=findCard(name);if(!c||!(await ask(`Remove the photo of ${c.name}?`)))return;delete CIMG[c.name];fxImgDel(c.name);c.imgAt=Date.now();save();render();showCard(c.name)}
 
 /* ---------- rule override: two approvals, once per deck ---------- */
-function fxAddProblems(i,name,dl){const d=D.decks[i],F=dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=sum(L),out=[],c=findCard(name),cmdC=d.commander&&findCard(d.commander);
-  if(tot+dl>F.n)out.push(`The deck would have ${tot+dl} cards — ${F.k} decks hold ${F.n}`);
+function fxAddProblems(i,name,dl,side){const d=D.decks[i],F=dfmt(d.format);if(!F)return [];const L=fxDeckCards(i),tot=fxMainN(L),out=[],c=findCard(name),cmdC=d.commander&&findCard(d.commander);
+  if(!side&&tot+dl>F.n)out.push(`The deck would have ${tot+dl} cards — ${F.k} decks hold ${F.n}`);
   if(c){const have=sum(L.filter(e=>norm(e.name)===norm(c.name)));fxCardIssues(c,have+dl,F,cmdC).filter(x=>x.kind!=='unknown').forEach(x=>out.push(`${x.title}${x.title.includes(c.name)?'':' ('+c.name+')'}`))}
   return [...new Set(out)]}
 async function fxOverrideAsk(i,name,pr){const d=D.decks[i],F=dfmt(d.format);
