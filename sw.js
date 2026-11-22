@@ -1,4 +1,4 @@
-const V='mtg-v55', KEEP=[V,'mtg-img','mtg-lib'], SHELL=['./','index.html','features.js','sim.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/nav-generate.png','icons/nav-collection.png','icons/nav-decks.svg','icons/nav-add.svg','icons/nav-generate-orb.svg','icons/nav-more.svg'];
+const V='mtg-v56', KEEP=[V,'mtg-img','mtg-lib'], SHELL=['./','index.html','features.js','sim.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/nav-generate.png','icons/nav-collection.png','icons/nav-decks.svg','icons/nav-add.svg','icons/nav-generate-orb.svg','icons/nav-more.svg'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>Promise.all(SHELL.map(u=>c.add(u).catch(()=>{})))));self.skipWaiting()});
 self.addEventListener('activate',e=>{imgMetaInit().catch(()=>{});e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>!KEEP.includes(x)).map(x=>caches.delete(x)))));self.clients.claim()});
 const cacheFirst=(e,name)=>e.respondWith(caches.open(name).then(async c=>{const h=await c.match(e.request);if(h)return h;

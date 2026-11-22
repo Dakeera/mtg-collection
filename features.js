@@ -631,17 +631,37 @@ const simGet=id=>(D.sims||[]).find(s=>s.id===id);
 function fxSimCopy(id){const s=simGet(id);if(!s)return;navigator.clipboard.writeText(fxSimPrompt(s)).then(()=>toast('Prompt copied — paste it into your AI app, then paste its answer back here'),()=>toast('Could not copy'))}
 async function fxSimNote(id){const s=simGet(id),el=document.getElementById('sn-'+id);if(!s||!el)return;if(!(await ask('Save this note on the matchup?')))return;s.note=el.value.trim();V.simOpen=id;save();render();toast('Commentary saved')}
 // One place that talks to the AI providers. Times out (default 3 min) and can be cancelled; gives a clear message for every failure.
+/* AI call (Option B). Streams the answer (owner report: generating hit the 3-minute limit): text arrives bit by bit, o.onText(textSoFar) shows progress,
+   and the call is only stopped when NOTHING arrives for o.idle ms (default 2 min) or the whole answer takes longer than o.timeout (default 10 min).
+   If streaming isn't possible it falls back to a normal request. */
 async function fxCallAI(p,o){o=o||{};const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)throw new Error('Enter your API key on the Deck Generator tab first (Option B).');
-  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),o.timeout||180000);if(o.signal)o.signal.addEventListener('abort',()=>ctl.abort());let r,j,txt='';
-  try{
-    if(G.prov==='anthropic'){r=await fetch('https://api.anthropic.com/v1/messages',{signal:ctl.signal,method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:o.maxTokens||1500,messages:[{role:'user',content:p}]})});j=await r.json();txt=(j.content||[]).map(b=>b.text||'').join('')}
-    else if(G.prov==='openai'){r=await fetch('https://api.openai.com/v1/chat/completions',{signal:ctl.signal,method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({model,messages:[{role:'user',content:p}]})});j=await r.json();txt=j.choices?.[0]?.message?.content||''}
-    else{r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{signal:ctl.signal,method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});j=await r.json();
-      txt=(j.candidates?.[0]?.content?.parts||[]).filter(x=>!x.thought).map(x=>x.text||'').join('');if(!txt&&j.candidates?.[0]?.finishReason)txt='';if(!txt&&j.promptFeedback?.blockReason)throw new Error('Gemini blocked the request ('+j.promptFeedback.blockReason+').')}}
-  catch(e){clearTimeout(to);if(e.name==='AbortError')throw e;if(e instanceof TypeError)throw new Error('Couldn’t reach '+(FXPN[G.prov]||'the provider')+' — check your internet connection.');throw e}
-  clearTimeout(to);
+  const ctl=new AbortController(),idle=o.idle||120000;let why='',to=setTimeout(()=>{why='total';ctl.abort()},o.timeout||600000),it=null;const poke=()=>{clearTimeout(it);it=setTimeout(()=>{why='idle';ctl.abort()},idle)};
+  if(o.signal)o.signal.addEventListener('abort',()=>ctl.abort());let r,j,txt='';const stream=o.stream!==false;
+  const req=()=>{const mt=o.maxTokens||1500;
+    if(G.prov==='anthropic')return ['https://api.anthropic.com/v1/messages',{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},{model,max_tokens:mt,stream,messages:[{role:'user',content:p}]}];
+    if(G.prov==='openai')return ['https://api.openai.com/v1/chat/completions',{'content-type':'application/json',Authorization:'Bearer '+key},Object.assign({model,messages:[{role:'user',content:p}]},stream?{stream:true}:{})];
+    return [`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${stream?'streamGenerateContent?alt=sse':'generateContent'}`,{'content-type':'application/json','x-goog-api-key':key},{contents:[{parts:[{text:p}]}]}]};
+  const gem=x=>(x.candidates?.[0]?.content?.parts||[]).filter(y=>!y.thought).map(y=>y.text||'').join('');let fin='';
+  try{poke();const [u,h,body]=req();r=await fetch(u,{signal:ctl.signal,method:'POST',headers:h,body:JSON.stringify(body)});poke();
+    if(!r.ok){try{j=await r.json()}catch(e){j=null}}
+    else if(stream&&r.body&&r.body.getReader){const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+      const line=l=>{l=l.trim();if(!l.startsWith('data:'))return;const d=l.slice(5).trim();if(!d||d==='[DONE]')return;let x;try{x=JSON.parse(d)}catch(e){return}
+        if(x.error||x.type==='error')throw new Error(`${FXPN[G.prov]||'The provider'} said: ${(x.error&&(x.error.message||x.error.type))||'error'}`);
+        let add='';if(G.prov==='anthropic'){if(x.type==='content_block_delta'&&x.delta&&x.delta.type==='text_delta')add=x.delta.text||'';if(x.type==='message_delta'&&x.delta&&x.delta.stop_reason)fin=x.delta.stop_reason}
+        else if(G.prov==='openai'){add=x.choices?.[0]?.delta?.content||'';fin=x.choices?.[0]?.finish_reason||fin}
+        else{add=gem(x);fin=x.candidates?.[0]?.finishReason||fin;if(x.promptFeedback?.blockReason)throw new Error('Gemini blocked the request ('+x.promptFeedback.blockReason+').')}
+        if(add){txt+=add;o.onText&&o.onText(txt)}};
+      for(;;){const {done,value}=await rd.read();if(done)break;poke();buf+=dec.decode(value,{stream:true});const ls=buf.split('\n');buf=ls.pop();ls.forEach(line)}
+      if(buf)line(buf)}
+    else{j=await r.json();if(G.prov==='anthropic')txt=(j.content||[]).map(b=>b.text||'').join('');else if(G.prov==='openai')txt=j.choices?.[0]?.message?.content||'';
+      else{txt=gem(j);if(!txt&&j.promptFeedback?.blockReason)throw new Error('Gemini blocked the request ('+j.promptFeedback.blockReason+').')}}}
+  catch(e){clearTimeout(to);clearTimeout(it);if(e.name==='AbortError'){if(why&&!(o.signal&&o.signal.aborted)){const t=new Error(why==='idle'?`The AI stopped sending anything for ${Math.round(idle/60000)} minutes, so I stopped waiting. Try again, or pick a faster model (names with “flash”, “mini”, “haiku” or “sonnet” are usually quicker).`:'The AI was still writing after 10 minutes, so I stopped waiting. Try again, or pick a faster model.');t.name='Timeout';throw t}throw e}
+    if(e instanceof TypeError)throw new Error('Couldn’t reach '+(FXPN[G.prov]||'the provider')+' — check your internet connection.');throw e}
+  clearTimeout(to);clearTimeout(it);
   if(!r.ok){const m=j&&j.error&&(j.error.message||j.error.type)||('error '+r.status);throw new Error(`${FXPN[G.prov]||'The provider'} said: ${m}${r.status===404||/model/i.test(m)?' — tap “My models” to pick a model your key can use.':r.status===401||r.status===403?' — check the API key.':r.status===429?' — you’ve hit a usage or rate limit; wait a minute or check your plan.':''}`)}
-  if(!txt)throw new Error('The AI sent back an empty reply'+(j.candidates?.[0]?.finishReason?` (${j.candidates[0].finishReason})`:j.stop_reason?` (${j.stop_reason})`:'')+'. Try again or pick another model.');return txt}
+  if(!txt)throw new Error('The AI sent back an empty reply'+(fin?` (${fin})`:j&&j.candidates?.[0]?.finishReason?` (${j.candidates[0].finishReason})`:j&&j.stop_reason?` (${j.stop_reason})`:'')+'. Try again or pick another model.');return txt}
+/* progress text while the AI writes: how many card lines have arrived */
+const fxAiProg=t=>{const n=(String(t).split(/^\s*---+\s*$/m)[0].match(/^\s*[-•*]?\s*(?:(?:SIDE\s+)?(?:IN|OUT)\s+)?\d+\s*x?\s+\S/gim)||[]).length;return n?`The AI is writing… ${n} card line${n>1?'s':''} so far`:'The AI is thinking…'};
 async function fxSimAsk(id){const s=simGet(id);if(!s)return;if(!(await ask(s.note?'Ask the AI to explain this matchup?\n\nIts answer replaces the current note.':'Ask the AI to explain this matchup?\n\nIts answer is saved as the note.')))return;toast('Asking the AI…');try{s.note=(await fxCallAI(fxSimPrompt(s))).trim();V.simOpen=id;save();render();toast('Commentary added')}catch(e){toast(String(e&&e.message||e).slice(0,140))}}
 
 /* ---------- card prices (Scryfall, USD) and collection sorting ---------- */
@@ -1310,7 +1330,7 @@ function aiNameIdeas(r){const out=[],add=n=>{n=String(n||'').replace(/\s+/g,' ')
   return out.slice(0,6).map(n=>{let x=n,k=2;while(D.decks.some(d=>d.name.toLowerCase()===x.toLowerCase()))x=`${n} ${k++}`;return x})}
 /* Synergy (owner request after a casual deck got Command Tower): commander-only cards never reach a deck without a commander, every card in the prompt lists carries a short rules-text summary so the AI can see what it does, and both prompts carry the same deck-quality rules */
 const fxCmdOnly=c=>/\bcommander\b|command zone/i.test(String(c&&c.text||'').replace(/\([^)]*\)/g,''))||/^Command Tower$/i.test(c&&c.name||'');
-const fxTxtShort=c=>{const t=String(c.text&&c.text!=='None'?c.text:'').replace(/\([^)]*\)/g,'').replace(/\s*\n\s*/g,'; ').replace(/\s+/g,' ').trim();return t.length>110?t.slice(0,107)+'…':t};
+const fxTxtShort=c=>{const t=String(c.text&&c.text!=='None'?c.text:'').replace(/\([^)]*\)/g,'').replace(/\s*\n\s*/g,'; ').replace(/\s+/g,' ').trim();return t.length>90?t.slice(0,87)+'…':t};
 const fxLandGoal=n=>n<=40?'16–17':n<=60?'22–25':n<=80?'30–32':'35–38';
 function fxQualityRules(F,n,cols){return `DECK QUALITY (important — every card must earn its place):
 - Every card must be useful in a ${F.k} game.${F.cmd?'':' This deck has NO commander, so never include cards that refer to a commander or the command zone (e.g. Command Tower, Arcane Signet, Commander’s Sphere) — they do nothing here.'}
@@ -1359,7 +1379,7 @@ function fxOptView(m,i){const d=D.decks[i],F=dfmt(d.format),L=d.cards,tot=fxMain
   ${F&&F.n?`<p class="mut" style="margin:6px 0">After the changes the deck always has exactly ${F.n} cards: if the AI’s changes add up wrong, the app asks it to fix them (Option B) and then evens out with your basic lands.</p>`:''}
   <details class="aopt" ${fxAiOpen('a')} ontoggle="fxAiTog('a',this.open)"><summary><h3>Option A — use your own AI chat (no key needed)</h3></summary><ol class="st"><li>Set the options above.</li><li>Tap <b>Copy prompt</b>.</li><li>Paste it into a new chat in your AI app (Gemini, ChatGPT, Claude, etc.) and send.</li><li>Copy its whole answer, paste it into the <b>AI reply</b> box below and tap <b>Read reply</b>.</li></ol><button class="pri" onclick="fxOptCopy()">📋 Copy prompt</button></details>
   <details class="aopt" ${fxAiOpen('b')} ontoggle="fxAiTog('b',this.open)"><summary><h3>Option B — optimize here (needs an API key)</h3></summary><p class="mut">Uses the same provider, model and key as the Deck Generator.</p>
-  ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. It stops by itself after 3 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}</details>
+  ${aiKeyUI()}<br>${OPT.busy?`<div class="sec"><b id="obusy">Waiting for the AI… ${fxElapsed(OPT.t0)}</b><p class="mut" style="margin:4px 0 8px">This usually takes 20 seconds to 2 minutes. You can see it writing below; it only gives up if the AI goes silent for 2 minutes.</p><button onclick="aiCancel2()">Cancel</button></div>`:'<button class="pri" onclick="fxOptRun()">✨ Optimize deck</button>'}${OPT.err?`<div class="warn">${esc(OPT.err)}</div>`:''}</details>
   <h3>AI reply</h3><textarea id="oreply" rows="6" oninput="OPT.reply=this.value" placeholder="Paste the AI's answer here (Option B fills this in for you)">${esc(OPT.reply)}</textarea><br><br><button onclick="fxOptRead()">Read reply</button><div id="oprev"></div>`;
   if(OPT.res)fxOptPrev()}
 function fxOptPrompt(){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format),al=optAllowed(),cc=optCols(d,F),cmdC=F.cmd&&d.commander&&findCard(d.commander),inDeck={},tot=fxMainN(d.cards);
@@ -1402,11 +1422,11 @@ function aiCancel2(){if(OPT.ctl){OPT.cancelled=true;OPT.ctl.abort()}}
 async function fxOptRun(){const F=dfmt(D.decks[OPT.deck].format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
   const key=AIKEY.trim(),model=G.model.trim();if(!key||!model)return toast('Enter a model and your API key first');if((F.leg||OPT.legal)&&!(await ensureLegal()))return;
   OPT.busy=true;OPT.err='';OPT.t0=Date.now();OPT.ctl=new AbortController();OPT.bmsg='Waiting for the AI…';OPT.fixed=0;render();const tick=setInterval(()=>{const b=$('#obusy');if(b)b.textContent=OPT.bmsg+' '+fxElapsed(OPT.t0)},1000);let txt='';
-  try{const p=fxOptPrompt();txt=await fxCallAI(p,{signal:OPT.ctl.signal,timeout:180000,maxTokens:6000});
+  try{const p=fxOptPrompt();txt=await fxCallAI(p,{signal:OPT.ctl.signal,maxTokens:6000,onText:t=>{OPT.bmsg=fxAiProg(t);const b=$('#obusy');if(b)b.textContent=OPT.bmsg+' '+fxElapsed(OPT.t0)}});
     for(let t=1;t<=2&&txt;t++){OPT.reply=txt;{const ta=$('#oreply');if(ta)ta.value=txt}fxOptRead(true);const r=OPT.res,F2=dfmt(D.decks[OPT.deck].format);if(!r||!F2.n||r.total===F2.n)break;
       const bad=[...r.outs,...r.ins,...(r.souts||[]),...(r.sins||[])].filter(e=>(e.n||0)<e.want).map(e=>`${e.want} ${e.name}: ${String(e.st).replace(/^[✗⚠]\s*/,'')}`);
       OPT.bmsg=`The changes left ${r.total} cards, not ${F2.n} — asking the AI to fix it (${t} of 2)…`;const b=$('#obusy');if(b)b.textContent=OPT.bmsg;
-      const t2=await fxCallAI(fxFixPrompt(p,txt,`After your changes the deck has ${r.total} cards but it must have EXACTLY ${F2.n}.${bad.length?' These lines could not be used as written:\n'+bad.join('\n'):''}\nAdjust the OUT/IN lines so the deck ends with exactly ${F2.n} cards.`),{signal:OPT.ctl.signal,timeout:180000,maxTokens:6000});if(t2){txt=t2;OPT.fixed=t}}}
+      let t2='';try{t2=await fxCallAI(fxFixPrompt(p,txt,`After your changes the deck has ${r.total} cards but it must have EXACTLY ${F2.n}.${bad.length?' These lines could not be used as written:\n'+bad.join('\n'):''}\nAdjust the OUT/IN lines so the deck ends with exactly ${F2.n} cards.`),{signal:OPT.ctl.signal,maxTokens:6000,onText:t=>{OPT.bmsg=fxAiProg(t);const b=$('#obusy');if(b)b.textContent=OPT.bmsg+' '+fxElapsed(OPT.t0)}});if(t2){txt=t2;OPT.fixed=t}}catch(e){if(e.name==='AbortError')throw e;break}}}
   catch(e){OPT.err=e&&e.name==='AbortError'?(OPT.cancelled?'Cancelled.':'The AI took longer than 3 minutes, so I stopped waiting. Try again, or pick a faster model.'):String(e&&e.message||e)}
   clearInterval(tick);OPT.busy=false;OPT.cancelled=false;OPT.ctl=null;if(txt&&!OPT.err){OPT.reply=txt;OPT.res=null}render();if(txt&&!OPT.err)fxOptRead()}
 function fxOptRead(noFill){const i=OPT.deck,d=D.decks[i],F=dfmt(d.format);if(!F)return toast('Give this deck a deck type first (✎ Edit details)');
